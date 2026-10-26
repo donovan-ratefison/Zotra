@@ -1,0 +1,47 @@
+# Zotra
+
+From credit policy to a tested, branded approval app in minutes. The AI drafts and tests. Humans decide.
+
+![CI](https://github.com/donovan-ratefison/Zotra/actions/workflows/ci.yml/badge.svg)
+
+## Status
+
+Work in progress for the Meta Global AI Developer Hackathon (October 26 to November 4, 2026).
+
+## What it does
+
+1. **Design.** You import a credit policy, and the AI drafts the steps, the roles, the data scope and the CEL rules, each with a link to its source paragraph.
+2. **Test.** Test cases run through the process on an animated diagram, and each untested branch turns from red to green.
+3. **Version.** You freeze a version, compare two versions, and start a new draft from an old one.
+4. **Ship.** Each role gets a branded app with an inbox, a step screen, supervision, and a tamper-evident audit log.
+
+## Meta models
+
+| Model | Tasks |
+|-------|-------|
+| Muse Spark 1.3 | Policy to process, rules, test cases, explanations, document reading. |
+| SAM 3.1 | Signature, stamp and ID areas on scanned documents. |
+
+## The AI never decides
+
+Only CEL rules and people decide on a case. A manual mode works without AI.
+
+## Stack
+
+Go (net/http, cel-go, PostgreSQL), React (Vite, React Flow, Tailwind CSS, shadcn/ui). One single binary.
+
+## Run it
+
+You need Go 1.27, Node 22 and pnpm.
+
+```
+cp .env.example .env
+make build
+./zotra
+```
+
+The app runs at http://localhost:8080.
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE).
