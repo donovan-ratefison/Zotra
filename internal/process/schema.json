@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "name",
+    "currency",
+    "policy_document_id",
+    "theme",
+    "roles",
+    "fields",
+    "scope",
+    "nodes",
+    "edges",
+    "sources"
+  ],
+  "properties": {
+    "schema_version": { "const": "1" },
+    "name": { "type": "string" },
+    "currency": { "type": "string" },
+    "policy_document_id": { "type": ["string", "null"] },
+    "theme": { "$ref": "#/$defs/theme" },
+    "roles": { "type": "array", "items": { "$ref": "#/$defs/role" } },
+    "fields": { "type": "array", "items": { "$ref": "#/$defs/field" } },
+    "scope": { "type": "array", "items": { "$ref": "#/$defs/scope" } },
+    "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } },
+    "edges": { "type": "array", "items": { "$ref": "#/$defs/edge" } },
+    "sources": { "type": "array", "items": false }
+  },
+  "$defs": {
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["brand_name", "primary_color", "logo_url"],
+      "properties": {
+        "brand_name": { "type": "string" },
+        "primary_color": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "logo_url": { "type": ["string", "null"] }
+      }
+    },
+    "role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "department"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "department": { "type": "string" }
+      }
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "label", "type", "options", "computed"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "label": { "type": "string" },
+        "type": {
+          "enum": [
+            "string",
+            "enum",
+            "number",
+            "money",
+            "integer",
+            "boolean",
+            "date",
+            "document"
+          ]
+        },
+        "options": { "type": "array", "items": { "type": "string" } },
+        "computed": { "type": ["string", "null"] }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "role", "access"],
+      "properties": {
+        "field": { "type": "string" },
+        "role": { "type": "string" },
+        "access": { "enum": ["read", "write", "hidden"] }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "expression", "message", "plain_text", "citations"],
+      "properties": {
+        "id": { "type": "string" },
+        "expression": { "type": "string" },
+        "message": { "type": "string" },
+        "plain_text": { "type": ["string", "null"] },
+        "citations": { "$ref": "#/$defs/citations" }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "name",
+        "role",
+        "deadline_hours",
+        "documents",
+        "signature",
+        "checks",
+        "decisions",
+        "end_result",
+        "scope_overrides",
+        "source_ids",
+        "citations"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "enum": ["start", "task", "gateway", "end"] },
+        "name": { "type": "string" },
+        "role": { "type": ["string", "null"] },
+        "deadline_hours": { "type": ["integer", "null"] },
+        "documents": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "signature": { "type": "boolean" },
+        "checks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/check" }
+        },
+        "decisions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "end_result": { "enum": ["approved", "refused", null] },
+        "scope_overrides": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/scope" }
+        },
+        "source_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "citations": { "$ref": "#/$defs/citations" }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "from",
+        "to",
+        "label",
+        "decision",
+        "condition",
+        "is_default"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "label": { "type": ["string", "null"] },
+        "decision": { "type": ["string", "null"] },
+        "condition": { "type": ["string", "null"] },
+        "is_default": { "type": "boolean" }
+      }
+    },
+    "citations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^p[0-9]+-[0-9]+$"
+      }
+    }
+  }
+}

@@ -1,0 +1,180 @@
+{
+  "schema_version": "1",
+  "name": "Slim",
+  "currency": "EUR",
+  "policy_document_id": null,
+  "theme": {
+    "brand_name": "Slim",
+    "primary_color": "#111111",
+    "logo_url": null
+  },
+  "roles": [
+    {
+      "id": "advisor",
+      "name": "Advisor",
+      "department": "Branch"
+    },
+    {
+      "id": "analyst",
+      "name": "Analyst",
+      "department": "Risk"
+    }
+  ],
+  "fields": [
+    {
+      "name": "client_name",
+      "label": "Client name",
+      "type": "string",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "amount",
+      "label": "Amount",
+      "type": "money",
+      "options": [],
+      "computed": null
+    }
+  ],
+  "scope": [
+    {
+      "field": "client_name",
+      "role": "advisor",
+      "access": "write"
+    },
+    {
+      "field": "client_name",
+      "role": "analyst",
+      "access": "read"
+    },
+    {
+      "field": "amount",
+      "role": "advisor",
+      "access": "write"
+    },
+    {
+      "field": "amount",
+      "role": "analyst",
+      "access": "read"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "name": "Start",
+      "role": null,
+      "deadline_hours": null,
+      "documents": [],
+      "signature": false,
+      "checks": [],
+      "decisions": [],
+      "end_result": null,
+      "scope_overrides": [],
+      "source_ids": [],
+      "citations": []
+    },
+    {
+      "id": "form",
+      "type": "task",
+      "name": "Form",
+      "role": "advisor",
+      "deadline_hours": null,
+      "documents": [],
+      "signature": false,
+      "checks": [],
+      "decisions": [],
+      "end_result": null,
+      "scope_overrides": [],
+      "source_ids": [],
+      "citations": []
+    },
+    {
+      "id": "approved",
+      "type": "task",
+      "name": "Approved",
+      "role": "advisor",
+      "deadline_hours": null,
+      "documents": [],
+      "signature": false,
+      "checks": [],
+      "decisions": [],
+      "end_result": null,
+      "scope_overrides": [],
+      "source_ids": [],
+      "citations": []
+    },
+    {
+      "id": "review",
+      "type": "task",
+      "name": "Review",
+      "role": "analyst",
+      "deadline_hours": null,
+      "documents": [],
+      "signature": false,
+      "checks": [],
+      "decisions": [
+        "ok",
+        "ko"
+      ],
+      "end_result": null,
+      "scope_overrides": [],
+      "source_ids": [],
+      "citations": []
+    },
+    {
+      "id": "refused",
+      "type": "task",
+      "name": "Refused",
+      "role": "advisor",
+      "deadline_hours": null,
+      "documents": [],
+      "signature": false,
+      "checks": [],
+      "decisions": [],
+      "end_result": null,
+      "scope_overrides": [],
+      "source_ids": [],
+      "citations": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "start",
+      "to": "form",
+      "label": null,
+      "decision": null,
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e2",
+      "from": "form",
+      "to": "review",
+      "label": null,
+      "decision": null,
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e3",
+      "from": "review",
+      "to": "approved",
+      "label": null,
+      "decision": "ok",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e4",
+      "from": "review",
+      "to": "refused",
+      "label": null,
+      "decision": "ko",
+      "condition": null,
+      "is_default": false
+    }
+  ],
+  "sources": []
+}
