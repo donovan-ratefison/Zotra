@@ -1,0 +1,163 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+
+:root,
+[data-color-theme="default"] {
+  --background: hsl(0 0% 100%);
+  --foreground: hsl(240 10% 3.9%);
+  --card: hsl(0 0% 100%);
+  --canvas: hsl(240 5% 96.5%);
+  --muted: hsl(240 4.8% 95.9%);
+  --muted-foreground: hsl(240 3.8% 46.1%);
+  --accent: hsl(240 4.8% 95.9%);
+  --primary: hsl(240 5.9% 10%);
+  --primary-foreground: hsl(0 0% 98%);
+  --border: hsl(240 5.9% 90%);
+  --ring: hsl(240 5.9% 10%);
+  --card-foreground: hsl(240 10% 3.9%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(240 10% 3.9%);
+  --secondary: hsl(240 4.8% 95.9%);
+  --secondary-foreground: hsl(240 5.9% 10%);
+  --accent-foreground: hsl(240 5.9% 10%);
+  --destructive: hsl(0 72% 51%);
+  --destructive-foreground: hsl(0 0% 98%);
+  --input: hsl(240 5.9% 90%);
+
+  /* Card surface colors (feedback-1, design 5.1). */
+  --surface-gray: #f1f1f3;
+  --surface-red: #fbe9e9;
+  --surface-orange: #fcefe3;
+  --surface-yellow: #faf5d9;
+  --surface-green: #e6f4e8;
+  --surface-teal: #e0f2ef;
+  --surface-blue: #e5edfb;
+  --surface-purple: #eee9fa;
+  /* Frame backgrounds: the card color at 55% alpha. */
+  --surface-gray-soft: rgb(241 241 243 / 55%);
+  --surface-red-soft: rgb(251 233 233 / 55%);
+  --surface-orange-soft: rgb(252 239 227 / 55%);
+  --surface-yellow-soft: rgb(250 245 217 / 55%);
+  --surface-green-soft: rgb(230 244 232 / 55%);
+  --surface-teal-soft: rgb(224 242 239 / 55%);
+  --surface-blue-soft: rgb(229 237 251 / 55%);
+  --surface-purple-soft: rgb(238 233 250 / 55%);
+
+  /* Board backgrounds (feedback-1, design 5.1). */
+  --canvas-blueprint: #edf3fb;
+  --grid-minor: rgb(59 130 246 / 12%);
+  --grid-major: rgb(59 130 246 / 24%);
+  --canvas-notebook: #fdfdfb;
+  --notebook-line: rgb(59 130 246 / 16%);
+  --notebook-margin: rgb(239 68 68 / 35%);
+
+  /* Picker dots, same in both themes. */
+  --swatch-gray: #a1a1aa;
+  --swatch-red: #f87171;
+  --swatch-orange: #fb923c;
+  --swatch-yellow: #facc15;
+  --swatch-green: #4ade80;
+  --swatch-teal: #2dd4bf;
+  --swatch-blue: #60a5fa;
+  --swatch-purple: #a78bfa;
+}
+
+.dark,
+.dark [data-color-theme="default"] {
+  --background: hsl(240 10% 3.9%);
+  --foreground: hsl(0 0% 98%);
+  --card: hsl(240 8% 8%);
+  --canvas: hsl(240 8% 5.5%);
+  --muted: hsl(240 3.7% 15.9%);
+  --muted-foreground: hsl(240 5% 64.9%);
+  --accent: hsl(240 3.7% 15.9%);
+  --primary: hsl(0 0% 98%);
+  --primary-foreground: hsl(240 5.9% 10%);
+  --border: hsl(240 3.7% 15.9%);
+  --ring: hsl(240 4.9% 83.9%);
+  --card-foreground: hsl(0 0% 98%);
+  --popover: hsl(240 8% 8%);
+  --popover-foreground: hsl(0 0% 98%);
+  --secondary: hsl(240 3.7% 15.9%);
+  --secondary-foreground: hsl(0 0% 98%);
+  --accent-foreground: hsl(0 0% 98%);
+  --destructive: hsl(0 62% 50%);
+  --destructive-foreground: hsl(0 0% 98%);
+  --input: hsl(240 3.7% 15.9%);
+
+  /* Card surface colors (feedback-1, design 5.1). */
+  --surface-gray: #202024;
+  --surface-red: #2d1c1d;
+  --surface-orange: #2c2217;
+  --surface-yellow: #29261a;
+  --surface-green: #18261b;
+  --surface-teal: #152523;
+  --surface-blue: #182235;
+  --surface-purple: #231d33;
+  /* Frame backgrounds: the card color at 55% alpha. */
+  --surface-gray-soft: rgb(32 32 36 / 55%);
+  --surface-red-soft: rgb(45 28 29 / 55%);
+  --surface-orange-soft: rgb(44 34 23 / 55%);
+  --surface-yellow-soft: rgb(41 38 26 / 55%);
+  --surface-green-soft: rgb(24 38 27 / 55%);
+  --surface-teal-soft: rgb(21 37 35 / 55%);
+  --surface-blue-soft: rgb(24 34 53 / 55%);
+  --surface-purple-soft: rgb(35 29 51 / 55%);
+
+  /* Board backgrounds (feedback-1, design 5.1). */
+  --canvas-blueprint: #0c1624;
+  --grid-minor: rgb(96 165 250 / 10%);
+  --grid-major: rgb(96 165 250 / 20%);
+  --canvas-notebook: #121215;
+  --notebook-line: rgb(148 163 184 / 12%);
+  --notebook-margin: rgb(248 113 113 / 25%);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-canvas: var(--canvas);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-input: var(--input);
+  --radius: 0.5rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", monospace;
+}
+
+body {
+  @apply bg-background text-foreground font-sans antialiased;
+}
+
+/* shadcn base: a bare "border" class uses the theme border token (Tailwind 4 defaults to currentColor, near black). */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+}
+
+/* Closing animations keep their last frame until the element goes away. */
+[data-state="closed"] {
+  --tw-animation-fill-mode: forwards;
+}
