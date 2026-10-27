@@ -12,7 +12,7 @@ func TestNewHandler(t *testing.T) {
 		"index.html":    &fstest.MapFile{Data: []byte("<p>index</p>")},
 		"assets/app.js": &fstest.MapFile{Data: []byte("console.log(1)")},
 	}
-	handler := NewHandler(static, "test", "")
+	handler := NewHandler(static, "test", nil, "")
 
 	tests := []struct {
 		name       string

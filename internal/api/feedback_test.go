@@ -27,7 +27,7 @@ func newFeedbackAPI(t *testing.T) (http.Handler, string) {
 	t.Helper()
 	static := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<p>index</p>")}}
 	dir := filepath.Join(t.TempDir(), "feedback")
-	return NewHandler(static, "v-test", dir), dir
+	return NewHandler(static, "v-test", nil, dir), dir
 }
 
 func post(t *testing.T, h http.Handler, path, body string) *httptest.ResponseRecorder {
@@ -448,7 +448,7 @@ func TestFeedbackRoutes(t *testing.T) {
 
 	t.Run("18 no routes without dir", func(t *testing.T) {
 		static := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<p>index</p>")}}
-		rec := get(t, NewHandler(static, "v-test", ""), "/api/dev/feedback")
+		rec := get(t, NewHandler(static, "v-test", nil, ""), "/api/dev/feedback")
 		checkError(t, rec, http.StatusNotFound, "not_found", "no route for GET /api/dev/feedback")
 	})
 

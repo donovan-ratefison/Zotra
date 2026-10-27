@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/donovan-ratefison/zotra/internal/api"
+	"github.com/donovan-ratefison/zotra/internal/store"
 	"github.com/donovan-ratefison/zotra/web"
 )
 
@@ -39,9 +40,20 @@ func run() error {
 
 	feedbackDir := os.Getenv("ZOTRA_FEEDBACK_DIR")
 
+	databaseURL := os.Getenv("ZOTRA_DATABASE_URL")
+	var st *store.Store
+	if databaseURL != "" {
+		var err error
+		st, err = store.Open(context.Background(), databaseURL)
+		if err != nil {
+			return fmt.Errorf("open store: %w", err)
+		}
+		defer st.Close()
+	}
+
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           api.NewHandler(dist, version, feedbackDir),
+		Handler:           api.NewHandler(dist, version, st, feedbackDir),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

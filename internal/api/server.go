@@ -7,11 +7,24 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+
+	"github.com/donovan-ratefison/zotra/internal/store"
 )
 
+// msgInvalidJSON is the message of every invalid_json answer.
+const msgInvalidJSON = "the request body is not valid JSON"
+
+// apiDeps carries the dependencies of the store routes.
+type apiDeps struct {
+	st      *store.Store
+	version string
+}
+
 // NewHandler returns the handler of Zotra: the API routes and the web app.
-// A non-empty feedbackDir mounts the feedback routes.
-func NewHandler(static fs.FS, version string, feedbackDir string) http.Handler {
+// A non-empty feedbackDir mounts the feedback routes. A non-nil store
+// mounts the process, version, case and inbox routes. A nil store
+// answers 404 for them through the /api/ fallback.
+func NewHandler(static fs.FS, version string, st *store.Store, feedbackDir string) http.Handler {
 	mux := http.NewServeMux()
 
 	health := map[string]string{"status": "ok", "version": version}
@@ -36,6 +49,29 @@ func NewHandler(static fs.FS, version string, feedbackDir string) http.Handler {
 		newFeedbackStore(feedbackDir, version).mount(mux)
 	}
 
+	// The store routes exist only when the database is wired. Each
+	// pattern carries one method: a wrong method falls to the /api/
+	// fallback below and answers 404 not_found.
+	if st != nil {
+		d := apiDeps{st: st, version: version}
+		mux.HandleFunc("GET /api/processes", d.listProcesses)
+		mux.HandleFunc("POST /api/processes", d.createProcess)
+		mux.HandleFunc("GET /api/processes/{id}/versions", d.listVersions)
+		mux.HandleFunc("POST /api/processes/{id}/versions", d.createVersion)
+		mux.HandleFunc("GET /api/versions/{id}", d.readVersion)
+		mux.HandleFunc("PUT /api/versions/{id}", d.updateVersion)
+		mux.HandleFunc("POST /api/versions/{id}/validate", d.validateVersion)
+		mux.HandleFunc("POST /api/versions/{id}/freeze", d.freezeVersion)
+		mux.HandleFunc("POST /api/versions/{id}/publish", d.publishVersion)
+		mux.HandleFunc("POST /api/versions/{id}/fork", d.forkVersion)
+		mux.HandleFunc("POST /api/cases", d.createCase)
+		mux.HandleFunc("GET /api/cases/{id}", d.readCase)
+		mux.HandleFunc("GET /api/cases/{id}/events", d.listEvents)
+		mux.HandleFunc("POST /api/cases/{id}/commands", d.runCommand)
+		mux.HandleFunc("GET /api/cases/{id}/verify", d.verifyCase)
+		mux.HandleFunc("GET /api/inbox", d.listInbox)
+	}
+
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found",
 			fmt.Sprintf("no route for %s %s", r.Method, r.URL.Path))
@@ -55,6 +91,47 @@ func NewHandler(static fs.FS, version string, feedbackDir string) http.Handler {
 	}))
 
 	return mux
+}
+
+// writeJSON writes one JSON answer with the status.
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	b, err := json.Marshal(body)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal",
+			"cannot complete the request")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write(b)
+}
+
+// writeStoreError maps a store error to the API answer. The store
+// returns untyped errors, so the mapping reads the error text.
+func writeStoreError(w http.ResponseWriter, err error) {
+	text := err.Error()
+	// <kind> <id> does not exist: 404, or 403 for the user kind.
+	for _, kind := range []string{"user", "process", "version", "case"} {
+		prefix := kind + " "
+		suffix := " does not exist"
+		if strings.HasPrefix(text, prefix) && strings.HasSuffix(text, suffix) {
+			id := strings.TrimSuffix(strings.TrimPrefix(text, prefix), suffix)
+			if kind == "user" {
+				writeError(w, http.StatusForbidden, "forbidden", "unknown user "+id)
+				return
+			}
+			writeError(w, http.StatusNotFound, "not_found", "no "+kind+" "+id)
+			return
+		}
+	}
+	// version <id> is not a draft, version <id> is not frozen: 409.
+	if strings.HasPrefix(text, "version ") &&
+		(strings.Contains(text, " is not a ") || strings.Contains(text, " is not ")) {
+		writeError(w, http.StatusConflict, "conflict", text)
+		return
+	}
+	writeError(w, http.StatusInternalServerError, "internal",
+		"cannot complete the request")
 }
 
 // writeError writes the JSON error body of the API.
