@@ -9,6 +9,22 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: zotra
+          POSTGRES_PASSWORD: zotra
+          POSTGRES_DB: zotra
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U zotra"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ZOTRA_TEST_DATABASE_URL: postgres://zotra:zotra@localhost:5432/zotra_test?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
