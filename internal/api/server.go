@@ -10,8 +10,7 @@ import (
 )
 
 // NewHandler returns the handler of Zotra: the API routes and the web app.
-// A non-empty feedbackDir mounts the feedback routes of plan.md
-// section 8.
+// A non-empty feedbackDir mounts the feedback routes.
 func NewHandler(static fs.FS, version string, feedbackDir string) http.Handler {
 	mux := http.NewServeMux()
 
@@ -58,7 +57,7 @@ func NewHandler(static fs.FS, version string, feedbackDir string) http.Handler {
 	return mux
 }
 
-// writeError writes the JSON error body of plan.md section 5.
+// writeError writes the JSON error body of the API.
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	var body struct {
 		Error struct {

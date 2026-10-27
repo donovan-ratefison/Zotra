@@ -1,5 +1,4 @@
-// One PNG of one page, at 1366 x 768. Contract: local/plan.md
-// section 8.
+// One PNG of one page, at 1366 x 768.
 import { chromium } from 'playwright'
 
 /* global process, console */

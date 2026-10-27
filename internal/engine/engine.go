@@ -528,8 +528,8 @@ func mergeValues(def process.Definition, data map[string]any, values map[string]
 	}
 }
 
-// coerceValue converts one value to the Go shape of its field
-// (local/plan.md section 2): int64 for integer, float64 for money and
+// coerceValue converts one value to the Go shape of its field:
+// int64 for integer, float64 for money and
 // number, string for string and enum, bool for boolean, time.Time for
 // date (an RFC 3339 string is parsed), []string for document. A value
 // of another shape passes through unchanged.

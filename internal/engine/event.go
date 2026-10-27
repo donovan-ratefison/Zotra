@@ -1,7 +1,6 @@
 // Package engine runs a case on a process definition. Commands become
 // a hash-chained event log (Handle), the state is rebuilt from the
-// log (Fold), and the chain is checked (Verify). The contract is
-// local/plan.md section 3.
+// log (Fold), and the chain is checked (Verify).
 package engine
 
 import (
@@ -11,8 +10,8 @@ import (
 	"time"
 )
 
-// Types of the events of the case log. source_fetched is lot 7 and is
-// not defined here.
+// Types of the events of the case log. source_fetched comes with the
+// external sources and is not defined here.
 const (
 	EventCaseCreated    = "case_created"
 	EventStepEntered    = "step_entered"
@@ -25,8 +24,8 @@ const (
 	EventCaseClosed     = "case_closed"
 )
 
-// Event is one entry of the append-only case log. The contract is
-// local/plan.md section 3. The field order fixes the canonical JSON.
+// Event is one entry of the append-only case log. The field order
+// fixes the canonical JSON.
 type Event struct {
 	CaseID   string          `json:"case_id"`
 	Seq      int             `json:"seq"`

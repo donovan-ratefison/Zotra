@@ -1,5 +1,4 @@
-// The board of the reported remarks, at /_feedback. Contract:
-// local/plan.md section 8, "Report button and board (lot 2.0c)".
+// The board of the reported remarks, at /_feedback.
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/ui/badge";

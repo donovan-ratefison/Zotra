@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Review server: build and serve the main branch on port 8090.
-# Contract: local/plan.md section 8.
 set -euo pipefail
 
 MAIN="$(cd "$(dirname "$0")/.." && pwd)"

@@ -1,8 +1,7 @@
 package api
 
-// Tests of the feedback routes of plan.md section 8. The 24 rows run
-// in order, on one handler and one directory. Contract of each row:
-// local/lots/2.0b/brief.md.
+// Tests of the feedback routes. The 24 rows run in order, on one
+// handler and one directory.
 
 import (
 	"bytes"

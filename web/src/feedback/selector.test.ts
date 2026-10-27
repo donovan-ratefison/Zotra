@@ -1,5 +1,5 @@
-// Vitest table test of buildSelector. The 10 rows of the brief,
-// lot 2.0c. No DOM: the function is pure.
+// Vitest table test of buildSelector. The 10 rows. No DOM: the
+// function is pure.
 import { describe, expect, test } from "vitest";
 import { buildSelector, type SelectorStep } from "./selector";
 

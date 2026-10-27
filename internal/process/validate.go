@@ -400,7 +400,7 @@ func seenNode(def *Definition, id string) bool {
 	return false
 }
 
-// checkReferences is semantic rule 7 of local/plan.md section 2:
+// checkReferences checks the references of a definition:
 // scope references, the kind of edge that can carry a decision, a
 // condition or the default flag, the edges of start and end nodes,
 // enum options, and unique check ids.

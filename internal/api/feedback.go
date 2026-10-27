@@ -1,7 +1,7 @@
 package api
 
-// The feedback store of plan.md section 8. It saves each remark of
-// Donovan as one JSON file in ZOTRA_FEEDBACK_DIR, with an optional PNG.
+// The feedback store. It saves each remark of the tester as one JSON
+// file in ZOTRA_FEEDBACK_DIR, with an optional PNG.
 
 import (
 	"bytes"
@@ -19,8 +19,7 @@ import (
 	"unicode/utf8"
 )
 
-// FeedbackItem is one remark of Donovan, stored as one JSON file.
-// Contract: local/plan.md section 8.
+// FeedbackItem is one remark of the tester, stored as one JSON file.
 type FeedbackItem struct {
 	ID          string            `json:"id"`
 	Status      string            `json:"status"`

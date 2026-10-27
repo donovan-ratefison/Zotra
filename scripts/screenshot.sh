@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # One PNG of one page of the working tree, at 1366 x 768.
-# Contract: local/plan.md section 8.
 set -euo pipefail
 
 MAIN="$(cd "$(dirname "$0")/.." && pwd)"

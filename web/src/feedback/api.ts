@@ -1,5 +1,4 @@
-// The client of the feedback API of lot 2.0b. Plain fetch, no
-// library. Contract: local/plan.md section 8.
+// The client of the feedback API. Plain fetch, no library.
 
 export type FeedbackBox = { x: number; y: number; width: number; height: number };
 

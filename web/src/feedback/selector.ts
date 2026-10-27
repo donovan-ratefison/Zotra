@@ -1,5 +1,4 @@
-// The CSS selector of a reported element. Contract: local/plan.md
-// section 8, "Report button and board (lot 2.0c)".
+// The CSS selector of a reported element.
 
 // One step of the DOM walk, from the picked element up.
 export type SelectorStep = {

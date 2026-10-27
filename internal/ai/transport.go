@@ -17,9 +17,8 @@ import (
 	"time"
 )
 
-// Transport is an http.RoundTripper with the four modes of
-// local/plan.md section 6: live, cache, replay and off, and the
-// budget guard of local/cadrage.md section 8.
+// Transport is an http.RoundTripper with four modes: live, cache,
+// replay and off, and a daily budget guard.
 type Transport struct {
 	cfg  Config
 	next http.RoundTripper

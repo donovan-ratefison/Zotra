@@ -9,8 +9,8 @@ import (
 	"github.com/donovan-ratefison/zotra/internal/process"
 )
 
-// CheckDefinition applies rule 5 and rule 8 of local/plan.md section
-// 2 to a definition that process.Validate accepted. Rule 5: each
+// CheckDefinition applies the expression rules to a definition that
+// process.Validate accepted. Rule 5: each
 // computed expression compiles to the CEL type of its field, each
 // check expression and each non-null edge condition compiles to bool.
 // Rule 8: no computed field uses itself, directly or through other
@@ -126,8 +126,8 @@ func ComputedOrder(def process.Definition) ([]string, error) {
 	return order, nil
 }
 
-// ValidateDocument is the validation entry point of local/plan.md
-// section 2. It runs process.Validate. If that gives errors, it
+// ValidateDocument is the validation entry point. It runs
+// process.Validate. If that gives errors, it
 // returns them. Else it decodes the document and returns
 // CheckDefinition. It never returns nil.
 func ValidateDocument(data []byte) []process.Error {

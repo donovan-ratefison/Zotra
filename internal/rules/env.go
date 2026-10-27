@@ -1,6 +1,5 @@
 // Package rules compiles and evaluates the CEL expressions of a
-// process: checks, conditions and computed fields. The contract is
-// local/plan.md sections 2 and 3.
+// process: checks, conditions and computed fields.
 package rules
 
 import (
@@ -28,8 +27,8 @@ type Program struct {
 	expr string
 }
 
-// FieldType returns the CEL result type of one field, from the table
-// of local/plan.md section 2: string and enum give string, number and
+// FieldType returns the CEL result type of one field: string and
+// enum give string, number and
 // money give double, integer gives int, boolean gives bool, date
 // gives google.protobuf.Timestamp, document gives list(string). It
 // returns an error for an unknown field type.
@@ -142,7 +141,7 @@ func (e *Env) Compile(expression string, result *cel.Type) (Program, error) {
 }
 
 // Eval evaluates the program. values holds the set fields, by name,
-// with the Go shapes of local/plan.md section 2. now is the event
+// with the Go shapes of the field types. now is the event
 // time, decision the decision being made, or "". A used variable
 // without a value is an error. The result is a Go value of the result
 // type.

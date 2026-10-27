@@ -1,5 +1,5 @@
 // Package process holds the process file format: types, JSON Schema
-// and validation. The contract is local/plan.md section 2.
+// and validation.
 package process
 
 import "encoding/json"
@@ -89,7 +89,7 @@ type Edge struct {
 }
 
 // normalize replaces every nil slice with the empty slice, so that
-// the engine of lot 1.3 can range over it.
+// the engine can range over it.
 func normalize(def *Definition) {
 	set := func(s []string) []string {
 		if s == nil {

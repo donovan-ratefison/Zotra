@@ -1,5 +1,5 @@
-// The Report button of plan.md section 8: one probe at start, the
-// pick mode, and the report dialog.
+// The Report button: one probe at start, the pick mode, and the
+// report dialog.
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/ui/button";

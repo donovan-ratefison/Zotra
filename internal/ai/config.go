@@ -1,6 +1,6 @@
 // Package ai gives the server one HTTP path to the models. It holds
-// the four modes of local/plan.md section 6 (live, cache, replay,
-// off) and the budget guard of local/cadrage.md section 8.
+// four transport modes (live, cache, replay, off) and a daily
+// budget guard.
 package ai
 
 import (
