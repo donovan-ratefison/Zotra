@@ -1,6 +1,6 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: web build dev serve check clean
+.PHONY: web build dev serve check clean review-server screenshot
 
 web:
 	cd web && pnpm install --frozen-lockfile && pnpm build
@@ -21,6 +21,15 @@ serve: build
 	echo "  this machine:    http://localhost:$$port"; \
 	if [ -n "$$ip" ]; then echo "  other machines:  http://$$ip:$$port"; fi; \
 	ZOTRA_ADDR="0.0.0.0:$$port" ./zotra
+
+# review-server serves the main branch for review, on port 8090.
+review-server:
+	scripts/review-server.sh
+
+# screenshot captures one page of the working tree at 1366 x 768.
+# Usage: make screenshot URL=/ OUT=file.png
+screenshot:
+	URL="$(URL)" OUT="$(OUT)" scripts/screenshot.sh
 
 check: web
 	cd web && pnpm lint && pnpm typecheck && pnpm test
