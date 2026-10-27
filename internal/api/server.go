@@ -71,6 +71,11 @@ func NewHandler(static fs.FS, version string, st *store.Store, feedbackDir strin
 		mux.HandleFunc("GET /api/cases/{id}/verify", d.verifyCase)
 		mux.HandleFunc("GET /api/inbox", d.listInbox)
 		mux.HandleFunc("POST /api/ai/generate-tests", d.generateTests)
+		mux.HandleFunc("POST /api/cases/{id}/documents", d.uploadDocument)
+		mux.HandleFunc("GET /api/cases/{id}/documents", d.listCaseDocuments)
+		mux.HandleFunc("GET /api/documents/{id}", d.readDocument)
+		mux.HandleFunc("GET /api/documents/{id}/bytes", d.readDocumentBytes)
+		mux.HandleFunc("POST /api/documents/{id}/zones", d.documentZones)
 	}
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +117,7 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 func writeStoreError(w http.ResponseWriter, err error) {
 	text := err.Error()
 	// <kind> <id> does not exist: 404, or 403 for the user kind.
-	for _, kind := range []string{"user", "process", "version", "case"} {
+	for _, kind := range []string{"user", "process", "version", "case", "document"} {
 		prefix := kind + " "
 		suffix := " does not exist"
 		if strings.HasPrefix(text, prefix) && strings.HasSuffix(text, suffix) {

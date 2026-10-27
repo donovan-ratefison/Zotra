@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -446,4 +447,86 @@ func (s *Store) ListEvents(ctx context.Context, caseID string) ([]engine.Event, 
 		events = append(events, e)
 	}
 	return events, rows.Err()
+}
+
+// Document is one stored scan: the bytes and the hash they had at
+// the upload.
+type Document struct {
+	ID        string
+	CaseID    *string
+	Name      string
+	MIME      string
+	SHA256    string
+	Bytes     []byte
+	CreatedAt time.Time
+}
+
+// SaveDocument stores one scan with the hash it receives.
+func (s *Store) SaveDocument(ctx context.Context, caseID *string, name, mime, sha string, data []byte) (Document, error) {
+	d := Document{ID: newID(), CaseID: caseID, Name: name, MIME: mime,
+		SHA256: sha, Bytes: data}
+	err := s.db.QueryRow(ctx, `
+		INSERT INTO documents (id, case_id, name, mime, sha256, bytes)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING created_at`,
+		d.ID, d.CaseID, d.Name, d.MIME, d.SHA256, d.Bytes).
+		Scan(&d.CreatedAt)
+	return d, err
+}
+
+// GetDocument returns the metadata of one scan, without the bytes.
+func (s *Store) GetDocument(ctx context.Context, id string) (Document, error) {
+	if !isUUID(id) {
+		return Document{}, notExist("document", id)
+	}
+	var d Document
+	err := s.db.QueryRow(ctx, `
+		SELECT id, case_id, name, mime, sha256, created_at
+		FROM documents WHERE id = $1`, id).
+		Scan(&d.ID, &d.CaseID, &d.Name, &d.MIME, &d.SHA256, &d.CreatedAt)
+	if isAbsent(err) {
+		return Document{}, notExist("document", id)
+	}
+	return d, err
+}
+
+// DocumentBytes returns the bytes of one scan.
+func (s *Store) DocumentBytes(ctx context.Context, id string) ([]byte, error) {
+	if !isUUID(id) {
+		return nil, notExist("document", id)
+	}
+	var data []byte
+	err := s.db.QueryRow(ctx,
+		`SELECT bytes FROM documents WHERE id = $1`, id).Scan(&data)
+	if isAbsent(err) {
+		return nil, notExist("document", id)
+	}
+	return data, err
+}
+
+// ListCaseDocuments returns the scans of one case, metadata only,
+// newest first: created_at DESC, then id DESC. A non-uuid case id
+// gives an empty list: the route validates the case first.
+func (s *Store) ListCaseDocuments(ctx context.Context, caseID string) ([]Document, error) {
+	docs := []Document{}
+	if !isUUID(caseID) {
+		return docs, nil
+	}
+	rows, err := s.db.Query(ctx, `
+		SELECT id, case_id, name, mime, sha256, created_at
+		FROM documents WHERE case_id = $1
+		ORDER BY created_at DESC, id DESC`, caseID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var d Document
+		if err := rows.Scan(&d.ID, &d.CaseID, &d.Name, &d.MIME, &d.SHA256,
+			&d.CreatedAt); err != nil {
+			return nil, err
+		}
+		docs = append(docs, d)
+	}
+	return docs, rows.Err()
 }
