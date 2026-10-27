@@ -42,6 +42,9 @@ make build
 
 The app runs at http://localhost:8080.
 
+To test from another machine on the same network, run `make serve`.
+It binds 0.0.0.0, picks a free port, and prints the URL.
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).

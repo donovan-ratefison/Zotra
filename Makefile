@@ -1,6 +1,6 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: web build dev check clean
+.PHONY: web build dev serve check clean
 
 web:
 	cd web && pnpm install --frozen-lockfile && pnpm build
@@ -11,6 +11,16 @@ build: web
 dev:
 	@echo "Run in two terminals: go run ./cmd/zotra"
 	@echo "cd web && pnpm dev"
+
+# serve runs the app on all interfaces, on one free port. Use it to
+# test the app from another machine on the same network.
+serve: build
+	@port=$$(python3 -c 'import socket; s=socket.socket(); s.bind(("0.0.0.0", 0)); print(s.getsockname()[1]); s.close()'); \
+	ip=$$(hostname -I 2>/dev/null | cut -d" " -f1); \
+	echo "The app listens on 0.0.0.0:$$port"; \
+	echo "  this machine:    http://localhost:$$port"; \
+	if [ -n "$$ip" ]; then echo "  other machines:  http://$$ip:$$port"; fi; \
+	ZOTRA_ADDR="0.0.0.0:$$port" ./zotra
 
 check: web
 	cd web && pnpm lint && pnpm typecheck && pnpm test
