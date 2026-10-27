@@ -10,7 +10,9 @@ import (
 )
 
 // NewHandler returns the handler of Zotra: the API routes and the web app.
-func NewHandler(static fs.FS, version string) http.Handler {
+// A non-empty feedbackDir mounts the feedback routes of plan.md
+// section 8.
+func NewHandler(static fs.FS, version string, feedbackDir string) http.Handler {
 	mux := http.NewServeMux()
 
 	health := map[string]string{"status": "ok", "version": version}
@@ -27,6 +29,13 @@ func NewHandler(static fs.FS, version string) http.Handler {
 		w.Header().Set("Allow", "GET")
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 	})
+
+	// The feedback routes exist only when the directory is set.
+	// They stay before the /api/ fallback, which answers 404 for
+	// every other /api/ path.
+	if feedbackDir != "" {
+		newFeedbackStore(feedbackDir, version).mount(mux)
+	}
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found",

@@ -37,9 +37,11 @@ func run() error {
 		return fmt.Errorf("web dist: %w", err)
 	}
 
+	feedbackDir := os.Getenv("ZOTRA_FEEDBACK_DIR")
+
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           api.NewHandler(dist, version),
+		Handler:           api.NewHandler(dist, version, feedbackDir),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
