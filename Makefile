@@ -31,10 +31,13 @@ review-server:
 screenshot:
 	URL="$(URL)" OUT="$(OUT)" scripts/screenshot.sh
 
+# Go packages to check. local/ holds work files that are not pushed.
+GO_PKGS = $$(go list -e ./... | grep -v /local/)
+
 check: web
 	cd web && pnpm lint && pnpm typecheck && pnpm test
-	go vet ./...
-	go test -p 1 -count=1 ./...
+	go vet $(GO_PKGS)
+	go test -p 1 -count=1 $(GO_PKGS)
 
 clean:
 	rm -rf zotra web/dist
