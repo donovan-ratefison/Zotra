@@ -105,6 +105,34 @@ func inlineDoc(t *testing.T, mutate func(doc map[string]any)) []byte {
 	return data
 }
 
+// appendEdge appends one edge map to the edges array of the doc.
+func appendEdge(doc map[string]any, edge map[string]any) {
+	doc["edges"] = append(doc["edges"].([]any), edge)
+}
+
+// gatewayBase applies the gateway mutation of the brief to the slim
+// base: node 1 becomes a gateway without role, edge e2 becomes the
+// default edge, and edge e5 carries the gateway condition.
+func gatewayBase(doc map[string]any) {
+	nodes := doc["nodes"].([]any)
+	form := nodes[1].(map[string]any)
+	form["type"] = "gateway"
+	form["role"] = nil
+	edges := doc["edges"].([]any)
+	edges[1].(map[string]any)["is_default"] = true
+	appendEdge(doc, map[string]any{
+		"id": "e5", "from": "form", "to": "refused", "label": nil,
+		"decision": nil, "condition": "amount > 0.0", "is_default": false,
+	})
+}
+
+func TestValidateGatewayBase(t *testing.T) {
+	errs := Validate(inlineDoc(t, gatewayBase))
+	if len(errs) != 0 {
+		t.Fatalf("Validate gave %d errors: %+v", len(errs), errs)
+	}
+}
+
 func TestValidateInvalid(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -149,6 +177,182 @@ func TestValidateInvalid(t *testing.T) {
 				fields[0].(map[string]any)["name"] = "Amount"
 			}),
 			wantPrefix: "/fields/0/name",
+		},
+		{
+			name: "scope unknown field",
+			data: inlineDoc(t, func(doc map[string]any) {
+				doc["scope"] = append(doc["scope"].([]any), map[string]any{
+					"field": "ghost", "role": "advisor", "access": "read",
+				})
+			}),
+			wantPrefix: "/scope/4/field",
+			wantInMsg:  "unknown field ghost",
+		},
+		{
+			name: "scope unknown role",
+			data: inlineDoc(t, func(doc map[string]any) {
+				doc["scope"] = append(doc["scope"].([]any), map[string]any{
+					"field": "client_name", "role": "nobody", "access": "read",
+				})
+			}),
+			wantPrefix: "/scope/4/role",
+			wantInMsg:  "unknown role nobody",
+		},
+		{
+			name: "scope override unknown field",
+			data: inlineDoc(t, func(doc map[string]any) {
+				nodes := doc["nodes"].([]any)
+				nodes[1].(map[string]any)["scope_overrides"] = []any{
+					map[string]any{"field": "ghost", "role": "advisor", "access": "write"},
+				}
+			}),
+			wantPrefix: "/nodes/1/scope_overrides/0/field",
+			wantInMsg:  "unknown field ghost",
+		},
+		{
+			name: "scope override unknown role",
+			data: inlineDoc(t, func(doc map[string]any) {
+				nodes := doc["nodes"].([]any)
+				nodes[1].(map[string]any)["scope_overrides"] = []any{
+					map[string]any{"field": "amount", "role": "nobody", "access": "write"},
+				}
+			}),
+			wantPrefix: "/nodes/1/scope_overrides/0/role",
+			wantInMsg:  "unknown role nobody",
+		},
+		{
+			name: "decision not declared",
+			data: inlineDoc(t, func(doc map[string]any) {
+				appendEdge(doc, map[string]any{
+					"id": "e5", "from": "review", "to": "refused", "label": nil,
+					"decision": "maybe", "condition": nil, "is_default": false,
+				})
+			}),
+			wantPrefix: "/edges/4/decision",
+			wantInMsg:  "maybe is not a decision of node review",
+		},
+		{
+			name: "decision out of start",
+			data: inlineDoc(t, func(doc map[string]any) {
+				edges := doc["edges"].([]any)
+				edges[0].(map[string]any)["decision"] = "ok"
+			}),
+			wantPrefix: "/edges/0/decision",
+			wantInMsg:  "only allowed on an edge out of a task",
+		},
+		{
+			name: "decision not in task decisions",
+			data: inlineDoc(t, func(doc map[string]any) {
+				edges := doc["edges"].([]any)
+				edges[1].(map[string]any)["decision"] = "ok"
+			}),
+			wantPrefix: "/edges/1/decision",
+			wantInMsg:  "ok is not a decision of node form",
+		},
+		{
+			name: "condition out of task",
+			data: inlineDoc(t, func(doc map[string]any) {
+				edges := doc["edges"].([]any)
+				edges[1].(map[string]any)["condition"] = "amount > 0.0"
+			}),
+			wantPrefix: "/edges/1/condition",
+			wantInMsg:  "only allowed on an edge out of a gateway",
+		},
+		{
+			name: "is_default out of task",
+			data: inlineDoc(t, func(doc map[string]any) {
+				edges := doc["edges"].([]any)
+				edges[1].(map[string]any)["is_default"] = true
+			}),
+			wantPrefix: "/edges/1/is_default",
+			wantInMsg:  "only allowed on an edge out of a gateway",
+		},
+		{
+			name: "gateway edge without condition",
+			data: inlineDoc(t, func(doc map[string]any) {
+				gatewayBase(doc)
+				edges := doc["edges"].([]any)
+				edges[4].(map[string]any)["condition"] = nil
+			}),
+			wantPrefix: "/edges/4/condition",
+			wantInMsg:  "needs a condition",
+		},
+		{
+			name: "default edge with condition",
+			data: inlineDoc(t, func(doc map[string]any) {
+				gatewayBase(doc)
+				edges := doc["edges"].([]any)
+				edges[1].(map[string]any)["condition"] = "amount > 0.0"
+			}),
+			wantPrefix: "/edges/1/condition",
+			wantInMsg:  "must have a null condition",
+		},
+		{
+			name: "start two outgoing edges",
+			data: inlineDoc(t, func(doc map[string]any) {
+				appendEdge(doc, map[string]any{
+					"id": "e5", "from": "start", "to": "review", "label": nil,
+					"decision": nil, "condition": nil, "is_default": false,
+				})
+			}),
+			wantPrefix: "/nodes/0",
+			wantInMsg:  "exactly one outgoing edge, found 2",
+		},
+		{
+			name: "start incoming edge",
+			data: inlineDoc(t, func(doc map[string]any) {
+				nodes := doc["nodes"].([]any)
+				nodes[3].(map[string]any)["decisions"] = []any{"ok", "ko", "back"}
+				appendEdge(doc, map[string]any{
+					"id": "e5", "from": "review", "to": "start", "label": nil,
+					"decision": "back", "condition": nil, "is_default": false,
+				})
+			}),
+			wantPrefix: "/nodes/0",
+			wantInMsg:  "no incoming edge, found 1",
+		},
+		{
+			name: "end outgoing edge",
+			data: inlineDoc(t, func(doc map[string]any) {
+				appendEdge(doc, map[string]any{
+					"id": "e5", "from": "approved", "to": "form", "label": nil,
+					"decision": nil, "condition": nil, "is_default": false,
+				})
+			}),
+			wantPrefix: "/nodes/2",
+			wantInMsg:  "no outgoing edge, found 1",
+		},
+		{
+			name: "enum without options",
+			data: inlineDoc(t, func(doc map[string]any) {
+				fields := doc["fields"].([]any)
+				fields[0].(map[string]any)["type"] = "enum"
+			}),
+			wantPrefix: "/fields/0/options",
+			wantInMsg:  "at least one option",
+		},
+		{
+			name: "non-enum with options",
+			data: inlineDoc(t, func(doc map[string]any) {
+				fields := doc["fields"].([]any)
+				fields[1].(map[string]any)["options"] = []any{"x"}
+			}),
+			wantPrefix: "/fields/1/options",
+			wantInMsg:  "only an enum field",
+		},
+		{
+			name: "duplicate check id",
+			data: inlineDoc(t, func(doc map[string]any) {
+				check := map[string]any{
+					"id": "c1", "expression": "amount > 0.0", "message": "m",
+					"plain_text": nil, "citations": []any{},
+				}
+				nodes := doc["nodes"].([]any)
+				nodes[1].(map[string]any)["checks"] = []any{check}
+				nodes[3].(map[string]any)["checks"] = []any{check}
+			}),
+			wantPrefix: "/nodes/3/checks/0/id",
+			wantInMsg:  "duplicate check id c1",
 		},
 	}
 

@@ -102,6 +102,7 @@ func Validate(data []byte) []Error {
 	errors = append(errors, checkGateways(&def)...)
 	errors = append(errors, checkReachability(&def)...)
 	errors = append(errors, checkIdentifiers(&def)...)
+	errors = append(errors, checkReferences(&def)...)
 	return errors
 }
 
@@ -397,4 +398,170 @@ func seenNode(def *Definition, id string) bool {
 		}
 	}
 	return false
+}
+
+// checkReferences is semantic rule 7 of local/plan.md section 2:
+// scope references, the kind of edge that can carry a decision, a
+// condition or the default flag, the edges of start and end nodes,
+// enum options, and unique check ids.
+func checkReferences(def *Definition) []Error {
+	var errors []Error
+
+	byID := make(map[string]*Node, len(def.Nodes))
+	for i := range def.Nodes {
+		byID[def.Nodes[i].ID] = &def.Nodes[i]
+	}
+	fieldNames := make(map[string]bool, len(def.Fields))
+	for _, field := range def.Fields {
+		fieldNames[field.Name] = true
+	}
+	roleIDs := make(map[string]bool, len(def.Roles))
+	for _, role := range def.Roles {
+		roleIDs[role.ID] = true
+	}
+	outCount := make(map[string]int)
+	inCount := make(map[string]int)
+	for _, edge := range def.Edges {
+		outCount[edge.From]++
+		inCount[edge.To]++
+	}
+
+	for i, field := range def.Fields {
+		if field.Type == "enum" && len(field.Options) == 0 {
+			errors = append(errors, Error{
+				Path:    fmt.Sprintf("/fields/%d/options", i),
+				Message: "enum field needs at least one option",
+			})
+		}
+		if field.Type != "enum" && len(field.Options) > 0 {
+			errors = append(errors, Error{
+				Path:    fmt.Sprintf("/fields/%d/options", i),
+				Message: "only an enum field can have options",
+			})
+		}
+	}
+
+	for i, row := range def.Scope {
+		if !fieldNames[row.Field] {
+			errors = append(errors, Error{
+				Path:    fmt.Sprintf("/scope/%d/field", i),
+				Message: fmt.Sprintf("scope row references unknown field %s", row.Field),
+			})
+		}
+		if !roleIDs[row.Role] {
+			errors = append(errors, Error{
+				Path:    fmt.Sprintf("/scope/%d/role", i),
+				Message: fmt.Sprintf("scope row references unknown role %s", row.Role),
+			})
+		}
+	}
+
+	for i, node := range def.Nodes {
+		for j, row := range node.ScopeOverrides {
+			if !fieldNames[row.Field] {
+				errors = append(errors, Error{
+					Path:    fmt.Sprintf("/nodes/%d/scope_overrides/%d/field", i, j),
+					Message: fmt.Sprintf("scope override references unknown field %s", row.Field),
+				})
+			}
+			if !roleIDs[row.Role] {
+				errors = append(errors, Error{
+					Path:    fmt.Sprintf("/nodes/%d/scope_overrides/%d/role", i, j),
+					Message: fmt.Sprintf("scope override references unknown role %s", row.Role),
+				})
+			}
+		}
+	}
+
+	for i, node := range def.Nodes {
+		switch node.Type {
+		case "start":
+			if outCount[node.ID] != 1 {
+				errors = append(errors, Error{
+					Path:    nodePath(def, i),
+					Message: fmt.Sprintf("start node must have exactly one outgoing edge, found %d", outCount[node.ID]),
+				})
+			}
+			if inCount[node.ID] > 0 {
+				errors = append(errors, Error{
+					Path:    nodePath(def, i),
+					Message: fmt.Sprintf("start node must have no incoming edge, found %d", inCount[node.ID]),
+				})
+			}
+		case "end":
+			if outCount[node.ID] > 0 {
+				errors = append(errors, Error{
+					Path:    nodePath(def, i),
+					Message: fmt.Sprintf("end node must have no outgoing edge, found %d", outCount[node.ID]),
+				})
+			}
+		}
+	}
+
+	seenChecks := make(map[string]bool)
+	for i, node := range def.Nodes {
+		for j, check := range node.Checks {
+			if seenChecks[check.ID] {
+				errors = append(errors, Error{
+					Path:    fmt.Sprintf("/nodes/%d/checks/%d/id", i, j),
+					Message: fmt.Sprintf("duplicate check id %s", check.ID),
+				})
+			}
+			seenChecks[check.ID] = true
+		}
+	}
+
+	for k, edge := range def.Edges {
+		from, ok := byID[edge.From]
+		if !ok {
+			continue
+		}
+		if edge.Decision != nil && from.Type != "task" {
+			errors = append(errors, Error{
+				Path:    fmt.Sprintf("/edges/%d/decision", k),
+				Message: "edge decision is only allowed on an edge out of a task",
+			})
+		}
+		if edge.Decision != nil && from.Type == "task" {
+			declared := false
+			for _, decision := range from.Decisions {
+				if decision == *edge.Decision {
+					declared = true
+					break
+				}
+			}
+			if !declared {
+				errors = append(errors, Error{
+					Path:    fmt.Sprintf("/edges/%d/decision", k),
+					Message: fmt.Sprintf("edge decision %s is not a decision of node %s", *edge.Decision, edge.From),
+				})
+			}
+		}
+		if edge.Condition != nil && from.Type != "gateway" {
+			errors = append(errors, Error{
+				Path:    fmt.Sprintf("/edges/%d/condition", k),
+				Message: "edge condition is only allowed on an edge out of a gateway",
+			})
+		}
+		if edge.IsDefault && from.Type != "gateway" {
+			errors = append(errors, Error{
+				Path:    fmt.Sprintf("/edges/%d/is_default", k),
+				Message: "is_default is only allowed on an edge out of a gateway",
+			})
+		}
+		if from.Type == "gateway" && !edge.IsDefault && edge.Condition == nil {
+			errors = append(errors, Error{
+				Path:    fmt.Sprintf("/edges/%d/condition", k),
+				Message: "gateway edge needs a condition, or is_default true",
+			})
+		}
+		if from.Type == "gateway" && edge.IsDefault && edge.Condition != nil {
+			errors = append(errors, Error{
+				Path:    fmt.Sprintf("/edges/%d/condition", k),
+				Message: "default edge must have a null condition",
+			})
+		}
+	}
+
+	return errors
 }
