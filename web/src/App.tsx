@@ -1,15 +1,17 @@
-import { Button } from "@/ui/button";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ReactFlowProvider } from "@xyflow/react";
+import { StudioShell } from "@/studio/StudioShell";
+
+const client = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+});
 
 export default function App() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-2 text-center">
-      <h1 className="text-2xl font-semibold">Zotra</h1>
-      <p className="text-muted-foreground">
-        From credit policy to a tested approval app.
-      </p>
-      <Button disabled className="mt-4">
-        Open the studio
-      </Button>
-    </main>
+    <QueryClientProvider client={client}>
+      <ReactFlowProvider>
+        <StudioShell />
+      </ReactFlowProvider>
+    </QueryClientProvider>
   );
 }
