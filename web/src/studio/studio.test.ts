@@ -9,6 +9,7 @@ import { getVersion, listProcesses, listVersions, ApiError } from "./api";
 import {
   edgePillText,
   estimatePillWidth,
+  labelBox,
   layoutProcess,
   PILL_HEIGHT,
   PILL_MARGIN,
@@ -248,6 +249,34 @@ describe("layout helpers", () => {
     await expect(layoutProcess(badFrom)).rejects.toThrow(
       "unknown node id: nowhere (edge e1)",
     );
+  });
+
+  test("43: toElkGraph sets the DEPTH_FIRST cycle breaking strategy", () => {
+    expect(toElkGraph(miniDefinition).layoutOptions).toMatchObject({
+      "elk.layered.cycleBreaking.strategy": "DEPTH_FIRST",
+    });
+  });
+
+  test("44: labelBox of the mini gateway wraps at 120 px and sits below", () => {
+    const box = labelBox(
+      miniDefinition.nodes.find((node) => node.id === "complete")!,
+      { x: 10, y: 20, w: 52, h: 52 },
+    );
+    expect(box.x).toBeCloseTo(-17.2, 9);
+    expect(box.y).toBe(76);
+    expect(box.w).toBeCloseTo(106.4, 9);
+    expect(box.h).toBe(15);
+  });
+
+  test("45: labelBox of the mini start caps at 120 px on two lines", () => {
+    expect(
+      labelBox(miniDefinition.nodes.find((node) => node.id === "start")!, {
+        x: 0,
+        y: 0,
+        w: 40,
+        h: 40,
+      }),
+    ).toEqual({ x: -40, y: 44, w: 120, h: 30 });
   });
 });
 

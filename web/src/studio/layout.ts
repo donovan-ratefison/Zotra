@@ -225,6 +225,27 @@ export interface Box {
   h: number;
 }
 
+// The obstacle box of the node label text that the diagram renders
+// below every start, gateway and end shape. It mirrors
+// NODE_LABEL_CLASS of diagram.tsx: the label sits below the shape
+// (top-full), mt-1 is 4 px, centered, w-max with max-w-[120px], text
+// 11.5 px, so one line is 15 px and the text wraps at 120 px. The
+// estimatePillWidth padding of 14 px is pill padding that the label
+// has not, so the box overestimates: safe. Task cards carry the name
+// inside the card, so they add no label box.
+export function labelBox(node: ProcessNode, nodeBox: Box): Box {
+  const est = estimatePillWidth(node.name);
+  const w = Math.min(120, est);
+  const lines = Math.max(1, Math.ceil(est / 120));
+  const h = lines * 15;
+  return {
+    x: nodeBox.x + nodeBox.w / 2 - w / 2,
+    y: nodeBox.y + nodeBox.h + 4,
+    w,
+    h,
+  };
+}
+
 export interface DiagramNodeData {
   node: ProcessNode;
   color: string | null;
@@ -269,6 +290,10 @@ export function toElkGraph(def: ProcessDefinition): ElkNode {
       "elk.edgeRouting": "ORTHOGONAL",
       "elk.spacing.nodeNode": "40",
       "elk.layered.spacing.nodeNodeBetweenLayers": "60",
+      // DEPTH_FIRST breaks the seed process feedback loops by their
+      // reverse edge, so every other node stays in one left-to-right
+      // band (scratch sweep.mjs, feedback item 0001).
+      "elk.layered.cycleBreaking.strategy": "DEPTH_FIRST",
     },
     children: def.nodes.map((node) => ({
       id: node.id,
@@ -306,6 +331,16 @@ export async function layoutProcess(def: ProcessDefinition): Promise<{
     w: child.width ?? 0,
     h: child.height ?? 0,
   }));
+  // The pill obstacles are the node boxes, then the label boxes of
+  // every start, gateway and end node, so no pill renders on a node
+  // label (feedback item 0001).
+  const obstacles: Box[] = [...boxes];
+  (laidOut.children ?? []).forEach((child, index) => {
+    const node = byId.get(child.id) as ProcessNode;
+    if (node.type !== "task") {
+      obstacles.push(labelBox(node, boxes[index]!));
+    }
+  });
   const nodes: FlowNode[] = (laidOut.children ?? []).map((child) => {
     const node = byId.get(child.id) as ProcessNode;
     return {
@@ -334,7 +369,7 @@ export async function layoutProcess(def: ProcessDefinition): Promise<{
       section.endPoint,
     ];
     const pill = edgePillText(edge);
-    const anchor = pill === null ? null : pillPlacement(points, boxes, pill);
+    const anchor = pill === null ? null : pillPlacement(points, obstacles, pill);
     return {
       id: elkEdge.id,
       source: edge.from,
