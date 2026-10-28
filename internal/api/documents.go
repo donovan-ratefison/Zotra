@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -70,7 +71,16 @@ func (d apiDeps) uploadDocument(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	// The cap stops a large body before it reaches the disk. One MiB
+	// above the scan limit leaves room for the form envelope.
+	r.Body = http.MaxBytesReader(w, r.Body, maxScanBytes+1<<20)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			writeError(w, http.StatusBadRequest, "invalid_upload",
+				"the scan must stay under 10 MiB")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid_upload",
 			"the body must be a multipart form")
 		return

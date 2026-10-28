@@ -233,7 +233,14 @@ func TestUploadRefusals(t *testing.T) {
 	checkError(t, rec, http.StatusBadRequest, "invalid_upload",
 		"only PNG and JPEG scans are accepted")
 
-	// An 11 MiB PNG part: the size check sits before the magic check.
+	// A PNG part just over 10 MiB: the body is under the cap, the
+	// size check of the scan refuses it.
+	over := append(append([]byte{}, png...), make([]byte, 10<<20)...)
+	rec = uploadScan(t, h, caseID, "over.png", "image/png", over)
+	checkError(t, rec, http.StatusBadRequest, "invalid_upload",
+		"the scan must stay under 10 MiB")
+
+	// An 11 MiB PNG part: the body cap refuses it before the parse.
 	big := append(append([]byte{}, png...), make([]byte, 11<<20)...)
 	rec = uploadScan(t, h, caseID, "big.png", "image/png", big)
 	checkError(t, rec, http.StatusBadRequest, "invalid_upload",
