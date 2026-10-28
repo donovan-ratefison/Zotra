@@ -4,6 +4,7 @@ import App from "./App";
 import { FeedbackBoard } from "./feedback/FeedbackBoard";
 import { ReportButton } from "./feedback/ReportButton";
 import { Toaster } from "@/ui/sonner";
+import "@fontsource-variable/inter/index.css";
 import "./styles.css";
 
 // No router yet: main.tsx chooses the page from the path.
