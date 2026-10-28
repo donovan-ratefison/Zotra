@@ -37,6 +37,7 @@ import {
   type DiagramEdgeData,
   type DiagramNodeData,
   type DiagramPoint,
+  type FlowNode,
   type LabelPos,
 } from "./layout";
 import { initials, type CaseView } from "./case-view";
@@ -436,9 +437,10 @@ export function edgeAnchor(
 
 // Informative only: the pill ignores pointer events, so a click on
 // what it covers (a node card, a chip) goes to that element.
-export function EdgePill({ text, anchor }: {
+export function EdgePill({ text, anchor, dimmed = false }: {
   text: string;
   anchor: DiagramPoint;
+  dimmed?: boolean;
 }) {
   return (
     <div
@@ -447,6 +449,8 @@ export function EdgePill({ text, anchor }: {
         transform: `translate(-50%, -50%) translate(${anchor.x}px, ${anchor.y}px)`,
         pointerEvents: "none",
         backgroundColor: "var(--canvas)",
+        opacity: dimmed ? 0.25 : 1,
+        transition: "opacity 150ms",
       }}
     >
       {text}
@@ -455,10 +459,12 @@ export function EdgePill({ text, anchor }: {
 }
 
 export function ElkEdge({ markerEnd, data }: EdgeProps) {
-  const { points, pill, anchor, ghost, traversed, coverage } = data as DiagramEdgeData & {
+  const { points, pill, anchor, ghost, traversed, coverage, lit, dimmed } = data as DiagramEdgeData & {
     ghost?: boolean;
     traversed?: boolean;
     coverage?: "red" | "green" | null;
+    lit?: boolean;
+    dimmed?: boolean;
   };
   const path = roundedPath(points);
   const resolved = edgeAnchor({ anchor }, points);
@@ -469,8 +475,10 @@ export function ElkEdge({ markerEnd, data }: EdgeProps) {
         stroke="#a1a1aa"
         strokeWidth={1.5}
         className="zcov"
-        style={
-          ghost
+        style={{
+          transition: "opacity 150ms, stroke 150ms",
+          opacity: dimmed ? 0.2 : 1,
+          ...(ghost
             ? { stroke: "#7c3aed", strokeWidth: 1.5, strokeDasharray: "5 4" }
             : coverage
               ? {
@@ -479,13 +487,15 @@ export function ElkEdge({ markerEnd, data }: EdgeProps) {
                 }
               : traversed
                 ? { stroke: "#2563eb", strokeWidth: 2 }
-                : undefined
-        }
+                : lit
+                  ? { stroke: "#52525b", strokeWidth: 2 }
+                  : {}),
+        }}
         markerEnd={markerEnd}
       />
       {pill !== null && resolved !== null && (
         <EdgeLabelRenderer>
-          <EdgePill text={pill} anchor={resolved} />
+          <EdgePill text={pill} anchor={resolved} dimmed={dimmed} />
         </EdgeLabelRenderer>
       )}
     </>
@@ -723,11 +733,61 @@ const ANIMATION_CSS = `
 .zshake { animation: zshake .4s ease-in-out 1; }
 .ztoken { transition: transform 600ms ease; }
 .zcov { transition: stroke .6s ease; }
+.react-flow .react-flow__node:focus { outline: none; }
+.react-flow .react-flow__node.selectable:focus-visible { outline: 2px solid #2563eb; outline-offset: 5px; border-radius: 10px; }
 @media (prefers-reduced-motion: reduce) {
   .zpulse, .zshake { animation: none; }
   .ztoken, .zcov { transition: none; }
 }
 `;
+
+// The step id of a focused React Flow node element, or null.
+function stepIdOf(target: EventTarget): string | null {
+  if (!(target instanceof HTMLElement) || !target.classList.contains("react-flow__node")) {
+    return null;
+  }
+  const id = target.dataset.id ?? null;
+  return id === "zotra-token" ? null : id;
+}
+
+// The nearest step in the direction of an arrow key, from the centers
+// of the laid-out steps. A step off the axis counts double, so the
+// move follows the row or the column first.
+export function neighborIn(nodes: FlowNode[], fromId: string, key: string): string | null {
+  const center = (n: FlowNode) => ({
+    x: n.position.x + (n.width ?? 0) / 2,
+    y: n.position.y + (n.height ?? 0) / 2,
+  });
+  const from = nodes.find((n) => n.id === fromId);
+  if (from === undefined) {
+    return null;
+  }
+  const a = center(from);
+  let best: string | null = null;
+  let bestScore = Infinity;
+  for (const n of nodes) {
+    if (n.id === fromId) {
+      continue;
+    }
+    const b = center(n);
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const [along, across] =
+      key === "ArrowRight" ? [dx, dy] :
+      key === "ArrowLeft" ? [-dx, dy] :
+      key === "ArrowDown" ? [dy, dx] :
+      key === "ArrowUp" ? [-dy, dx] : [0, 0];
+    if (along <= 1) {
+      continue;
+    }
+    const score = along + 2 * Math.abs(across);
+    if (score < bestScore) {
+      bestScore = score;
+      best = n.id;
+    }
+  }
+  return best;
+}
 
 // The state of one node in the case view: failed on the current node
 // after a failed check, else current on the current node, else done
@@ -761,6 +821,7 @@ export function ProcessDiagram({
   minimap = true,
   caseView = null,
   coverage = null,
+  highlightNodeIds = null,
 }: {
   def: ProcessDefinition;
   selectedNodeId: string | null;
@@ -770,8 +831,29 @@ export function ProcessDiagram({
   minimap?: boolean;
   caseView?: CaseView | null;
   coverage?: CoverageReport | null;
+  // Steps to light from outside (a role row of the process panel);
+  // every other step dims.
+  highlightNodeIds?: string[] | null;
 }) {
   const [layout, setLayout] = useState<Awaited<ReturnType<typeof layoutProcess>> | null>(null);
+  // The step under the pointer, else the step with keyboard focus:
+  // its links light up and the steps it does not touch dim.
+  const [hoverId, setHoverId] = useState<string | null>(null);
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const active = hoverId ?? focusId;
+  const lightSet = useMemo(() => {
+    if (active !== null) {
+      const ids = new Set([active]);
+      for (const e of def.edges) {
+        if (e.from === active) ids.add(e.to);
+        if (e.to === active) ids.add(e.from);
+      }
+      return ids;
+    }
+    return highlightNodeIds !== null && highlightNodeIds.length > 0
+      ? new Set(highlightNodeIds)
+      : null;
+  }, [active, def, highlightNodeIds]);
   useEffect(() => {
     let ignore = false;
     layoutProcess(def).then((result) => {
@@ -790,6 +872,10 @@ export function ProcessDiagram({
     }
     const flowNodes: Node[] = layout.nodes.map((n) => ({
       ...n,
+      style: {
+        opacity: lightSet !== null && !lightSet.has(n.id) ? 0.3 : 1,
+        transition: "opacity 150ms",
+      },
       data: {
         ...n.data,
         selected: n.id === selectedNodeId,
@@ -826,7 +912,7 @@ export function ProcessDiagram({
         data: { label: initials(caseView.actorName), name: caseView.actorName },
       },
     ];
-  }, [layout, selectedNodeId, ghost, onCitationClick, caseView]);
+  }, [layout, selectedNodeId, ghost, onCitationClick, caseView, lightSet]);
 
   const edges = useMemo(() => {
     if (layout === null) {
@@ -843,12 +929,19 @@ export function ProcessDiagram({
         caseView !== null && caseView.traversedEdgeIds.includes(e.id);
       const cov =
         coverage === null ? null : (counts.get(e.id) ?? 0) > 0 ? "green" : "red";
+      const touches = (id: string | null) => id !== null && (e.source === id || e.target === id);
+      const lit = touches(active) || (active === null && touches(selectedNodeId));
+      const dimmed =
+        lightSet !== null &&
+        (active !== null ? !touches(active) : !(lightSet.has(e.source) && lightSet.has(e.target)));
       return {
         ...e,
         data: {
           ...e.data,
           ghost,
           coverage: cov,
+          lit,
+          dimmed,
           ...(caseView !== null ? { traversed } : {}),
         },
         markerEnd:
@@ -864,7 +957,7 @@ export function ProcessDiagram({
                 : e.markerEnd,
       };
     });
-  }, [layout, ghost, caseView, coverage]);
+  }, [layout, ghost, caseView, coverage, active, lightSet, selectedNodeId]);
 
   if (layout === null) {
     return (
@@ -878,9 +971,31 @@ export function ProcessDiagram({
   return (
     <div
       role="region"
-      aria-label="Process diagram"
+      aria-label="Process diagram. Tab to reach a step, arrow keys to move to the next step, Enter to select it, Escape to clear the selection."
       className="h-full w-full"
       style={{ backgroundColor: "var(--canvas)" }}
+      onFocus={(e) => setFocusId(stepIdOf(e.target))}
+      onBlur={() => setFocusId(null)}
+      onKeyDown={(e) => {
+        const id = stepIdOf(e.target);
+        if (id === null) {
+          return;
+        }
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onNodeSelect(id);
+        } else if (e.key === "Escape") {
+          onNodeSelect(null);
+        } else if (e.key.startsWith("Arrow")) {
+          e.preventDefault();
+          const next = neighborIn(layout.nodes, id, e.key);
+          if (next !== null) {
+            document
+              .querySelector<HTMLElement>(`.react-flow__node[data-id="${CSS.escape(next)}"]`)
+              ?.focus();
+          }
+        }
+      }}
     >
       <style>{ANIMATION_CSS}</style>
       <ReactFlow
@@ -896,6 +1011,8 @@ export function ProcessDiagram({
         minZoom={0.2}
         maxZoom={2}
         onNodeClick={(_, n) => onNodeSelect(n.id)}
+        onNodeMouseEnter={(_, n) => n.type !== "token" && setHoverId(n.id)}
+        onNodeMouseLeave={() => setHoverId(null)}
         onPaneClick={() => onNodeSelect(null)}
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="#d4d4d8" />
@@ -914,11 +1031,6 @@ export function ProcessDiagram({
         )}
         <ZoomControls />
         <Legend coverage={coverage} />
-        <Panel position="top-right">
-          <div className="text-[12px] text-zinc-500">
-            {`${layout.nodes.length} steps, ${layout.edges.length} links`}
-          </div>
-        </Panel>
       </ReactFlow>
     </div>
   );

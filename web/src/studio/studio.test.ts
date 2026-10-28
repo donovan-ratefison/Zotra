@@ -19,7 +19,8 @@ import {
   roleColor,
   toElkGraph,
 } from "./layout";
-import { EdgePill, edgeAnchor, EventShape, TaskCard } from "./diagram";
+import { EdgePill, edgeAnchor, EventShape, neighborIn, TaskCard } from "./diagram";
+import { structureProblems } from "./ProcessPanel";
 import { StudioShell, TopBar } from "./StudioShell";
 import seedJson from "../../../internal/store/seed/example-process.json";
 import type {
@@ -512,6 +513,35 @@ describe("diagram layout guard", () => {
     expect(gridLayout(lonely)).toBeNull();
     const { nodes } = await layoutProcess(lonely);
     expect(nodes).toHaveLength(7);
+  });
+});
+
+describe("process overview and keyboard", () => {
+  test("52: the seed process has no structure problem", () => {
+    expect(structureProblems(seedDefinition)).toEqual([]);
+  });
+
+  test("53: structureProblems names an unreached step, a dead end and a missing default", () => {
+    const broken: ProcessDefinition = {
+      ...miniDefinition,
+      nodes: [...miniDefinition.nodes, nodeCopy("entry", "lonely")],
+      edges: miniDefinition.edges
+        .filter((e) => e.id !== "e3")
+        .map((e) => (e.id === "e6" ? { ...e, is_default: false } : e)),
+    };
+    const texts = structureProblems(broken).map((p) => p.text);
+    expect(texts).toContain("Application entry is not reached from the start.");
+    expect(texts).toContain("Review has no outgoing link.");
+    expect(texts).toContain("File complete? has no default link.");
+    expect(texts).toContain("File complete? is not reached from the start.");
+  });
+
+  test("54: neighborIn follows the row, then the branch below", async () => {
+    const { nodes } = await layoutProcess(seedDefinition);
+    expect(neighborIn(nodes, "analysis", "ArrowRight")).toBe("threshold");
+    expect(neighborIn(nodes, "threshold", "ArrowDown")).toBe("decision");
+    expect(neighborIn(nodes, "decision", "ArrowUp")).toBe("threshold");
+    expect(neighborIn(nodes, "start", "ArrowLeft")).toBeNull();
   });
 });
 

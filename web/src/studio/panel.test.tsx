@@ -380,7 +380,7 @@ describe("shell empty state", () => {
     );
   }
 
-  test("27: no selection shows the empty aside", () => {
+  test("27: no selection shows the process overview", () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -398,7 +398,9 @@ describe("shell empty state", () => {
       tab: "general",
     });
     const html = renderShell(client);
-    expect(html).toContain("No step selected");
-    expect(html).toContain("Select a step on the diagram to edit it.");
+    // With no step selected, the panel shows the process overview.
+    expect(html).toContain("Select a step to edit it.");
+    expect(html).toContain("Structure");
+    expect(html).toContain("Roles");
   });
 });

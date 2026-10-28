@@ -476,14 +476,14 @@ function RoleChip({ def, node }: { def: ProcessDefinition; node: ProcessNode }) 
   }
   return (
     <span
-      className="flex max-w-[80px] items-center gap-1 truncate rounded-full px-1.5 py-0.5 text-[10.5px] font-medium"
+      className="flex min-w-0 max-w-[220px] items-center gap-1 rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold"
       style={{ color, backgroundColor: `${color}1a` }}
     >
       <span
-        className="size-2 shrink-0 rounded-full"
+        className="size-[5px] shrink-0 rounded-full"
         style={{ backgroundColor: color }}
       />
-      {role.name}
+      <span className="truncate">{role.name}</span>
     </span>
   );
 }

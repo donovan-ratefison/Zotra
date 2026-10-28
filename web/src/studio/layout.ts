@@ -284,8 +284,9 @@ export interface GridLayout {
   labelPos: Map<string, LabelPos>;
 }
 
-// The main path: breadth-first from the start, so the fewest steps.
-function mainPath(def: ProcessDefinition): string[] | null {
+// The main path: breadth-first from the start, so the fewest steps,
+// to the first approved end (else the first end).
+export function mainPath(def: ProcessDefinition): string[] | null {
   const start = def.nodes.find((n) => n.type === "start");
   if (start === undefined) {
     return null;

@@ -20,6 +20,7 @@ import { PolicyPanel } from "./PolicyPanel";
 import { ProcessDiagram } from "./diagram";
 import { ImportDialog } from "./ImportDialog";
 import { NodePanel } from "./NodePanel";
+import { ProcessPanel } from "./ProcessPanel";
 import { ProposalBar } from "./ProposalBar";
 import type { Paragraph } from "./policy";
 import { useStudioStore, type PanelTab } from "./store";
@@ -136,6 +137,8 @@ export function StudioShell() {
     file: File;
   } | null>(null);
   const [busy, setBusy] = useState(false);
+  // The steps that the process panel lights on the diagram.
+  const [canvasFocus, setCanvasFocus] = useState<string[] | null>(null);
   const [policyOpen, setPolicyOpen] = useState(() => {
     // policy=1 opens the drawer once, at mount. The render tests
     // have no window: closed there.
@@ -416,6 +419,7 @@ export function StudioShell() {
                     onNodeSelect={select}
                     ghost={false}
                     onCitationClick={onCitationClick}
+                    highlightNodeIds={selectedNodeId === null ? canvasFocus : null}
                   />
                 </div>
                 {policyOpen && (
@@ -429,14 +433,14 @@ export function StudioShell() {
                 className="flex w-[380px] shrink-0 flex-col border-l"
               >
                 {selectedNodeId === null ? (
-                  <div className="flex flex-col gap-1.5 px-4 pt-3.5">
-                    <h2 className="text-[17px] font-semibold leading-tight">
-                      No step selected
-                    </h2>
-                    <p className="text-xs text-muted-foreground">
-                      Select a step on the diagram to edit it.
-                    </p>
-                  </div>
+                  <ProcessPanel
+                    def={loaded.definition}
+                    onSelectNode={(id) => {
+                      setCanvasFocus(null);
+                      select(id);
+                    }}
+                    onHighlight={setCanvasFocus}
+                  />
                 ) : (
                   <NodePanel
                     def={loaded.definition}
