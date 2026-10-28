@@ -76,6 +76,7 @@ func NewHandler(static fs.FS, version string, st *store.Store, feedbackDir strin
 		mux.HandleFunc("GET /api/users", d.listUsers)
 		mux.HandleFunc("POST /api/ai/generate-tests", d.generateTests)
 		mux.HandleFunc("POST /api/ai/policy-to-process", d.policyToProcess)
+		mux.HandleFunc("POST /api/ai/explain-check", d.explainCheck)
 		mux.HandleFunc("POST /api/cases/{id}/documents", d.uploadDocument)
 		mux.HandleFunc("GET /api/cases/{id}/documents", d.listCaseDocuments)
 		mux.HandleFunc("GET /api/documents/{id}", d.readDocument)

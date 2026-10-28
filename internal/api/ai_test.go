@@ -15,6 +15,11 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"cel.dev/cel-go/cel"
+
+	"github.com/donovan-ratefison/zotra/internal/process"
+	"github.com/donovan-ratefison/zotra/internal/rules"
 )
 
 // aiLive sets the AI environment of the stub rows: mode live, base
@@ -387,5 +392,285 @@ func TestPolicyRefusals(t *testing.T) {
 			rec := postPolicy(t, row.body)
 			checkError(t, rec, http.StatusBadRequest, row.code, row.msg)
 		})
+	}
+}
+
+// The tests of the check explanation. The rows run in the order of
+// the brief. Rows 1 to 4 and 11 to 12 run in mode live against one
+// stub server, with the env rules of the 2.4 rows: mode, base URL and
+// cache dir set before NewHandler, so no stub answer reaches the
+// repository cache and the request counts stay exact. Rows 5 to 10
+// are the refusals: no AI call happens on their paths. The fixture
+// chains run the real fork, case, start and submit on the seed.
+
+// explainValidExpr is the proposal expression of the answer fixture.
+const explainValidExpr = "duration_months <= 360"
+
+// explainFixtureExplanation and its two companions are the answer
+// fixture values of the brief.
+const explainFixtureExplanation = "The duration of 400 months passes the ceiling of 300 months."
+const explainFixtureMessage = "The duration must stay at or under 360 months."
+const explainFixturePlainText = "The loan duration stays at or under 360 months."
+
+// explainContent builds the Chat Completions content of one answer:
+// the fixture of the brief, the expression as parameter. The broken
+// variants change the expression only.
+func explainContent(expression string) string {
+	return fmt.Sprintf(`{"explanation":%q,"proposal":{"expression":%q,`+
+		`"message":%q,"plain_text":%q}}`, explainFixtureExplanation,
+		expression, explainFixtureMessage, explainFixturePlainText)
+}
+
+// explainBodyJSON builds one explain request body.
+func explainBodyJSON(caseID, nodeID, checkID string) string {
+	return fmt.Sprintf(`{"case_id":%q,"node_id":%q,"check_id":%q}`,
+		caseID, nodeID, checkID)
+}
+
+// postExplain posts one explain request to the handler under test.
+func postExplain(t *testing.T, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	return do(t, "POST", "/api/ai/explain-check", body, "")
+}
+
+// explainFixture forks the seed version (the fork of the 2.3
+// criterion 7), creates a test case on the fork, starts it with
+// startData and submits the step. It checks each status and returns
+// the case id. The base start data leaves the case on entry with one
+// false check_evaluated for entry-amount; the passing start data
+// stores a true event and the default edge returns the case to entry.
+func explainFixture(t *testing.T, startData string) string {
+	t.Helper()
+	rec := do(t, "POST",
+		"/api/versions/00000000-0000-0000-0000-000000000002/fork",
+		`{"label":"Fix demo"}`, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("fork status = %d: %s", rec.Code, rec.Body.String())
+	}
+	version, ok := decode(t, rec)["version"].(map[string]any)
+	if !ok {
+		t.Fatalf("fork body holds no version: %s", rec.Body.String())
+	}
+	forkID, ok := version["id"].(string)
+	if !ok {
+		t.Fatalf("fork body holds no version id: %s", rec.Body.String())
+	}
+	rec = do(t, "POST", "/api/cases",
+		fmt.Sprintf(`{"version_id":%q,"is_test":true}`, forkID), "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("case status = %d: %s", rec.Code, rec.Body.String())
+	}
+	caseRow, ok := decode(t, rec)["case"].(map[string]any)
+	if !ok {
+		t.Fatalf("case body holds no case: %s", rec.Body.String())
+	}
+	caseID, ok := caseRow["id"].(string)
+	if !ok {
+		t.Fatalf("case body holds no case id: %s", rec.Body.String())
+	}
+	rec = do(t, "POST", "/api/cases/"+caseID+"/commands",
+		fmt.Sprintf(`{"type":"start","data":%s}`, startData), "u-advisor")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("start status = %d: %s", rec.Code, rec.Body.String())
+	}
+	rec = do(t, "POST", "/api/cases/"+caseID+"/commands",
+		`{"type":"submit","values":{}}`, "u-advisor")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("submit status = %d: %s", rec.Code, rec.Body.String())
+	}
+	return caseID
+}
+
+// explainCompileError returns the exact compile error text of the
+// expression over the seed fields. The scratch run of the lot
+// verified the texts: "amount > " gives a syntax error, "" gives the
+// same shape at 1:0, "amount" gives "result is double, want bool".
+func explainCompileError(t *testing.T, expression string) string {
+	t.Helper()
+	def, err := process.Decode(seedBytes(t))
+	if err != nil {
+		t.Fatalf("decode seed: %v", err)
+	}
+	env, err := rules.NewEnv(def.Fields)
+	if err != nil {
+		t.Fatalf("new env: %v", err)
+	}
+	if _, err := env.Compile(expression, cel.BoolType); err == nil {
+		t.Fatalf("expression %q compiles, want an error", expression)
+	} else {
+		return err.Error()
+	}
+	return ""
+}
+
+// explainAnswerOf decodes one 200 answer.
+func explainAnswerOf(t *testing.T, rec *httptest.ResponseRecorder) explainAnswer {
+	t.Helper()
+	var got explainAnswer
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("body is not an explain answer: %v: %q", err, rec.Body.String())
+	}
+	return got
+}
+
+// 1.
+func TestExplainOK(t *testing.T) {
+	srv, count := aiLiveStub(t, []string{chatEnvelope(explainContent(explainValidExpr))})
+	aiLive(t, srv.URL)
+	newTestAPI(t)
+
+	caseID := explainFixture(t, `{"amount":1,"duration_months":400}`)
+	rec := postExplain(t, explainBodyJSON(caseID, "entry", "entry-amount"))
+	checkOK(t, rec)
+	got := explainAnswerOf(t, rec)
+	want := explainAnswer{
+		Explanation: explainFixtureExplanation,
+		Proposal: explainProposal{
+			Expression: explainValidExpr,
+			Message:    explainFixtureMessage,
+			PlainText:  explainFixturePlainText,
+		},
+	}
+	if got != want {
+		t.Errorf("answer = %+v, want %+v", got, want)
+	}
+	if *count != 1 {
+		t.Errorf("requests = %d, want 1", *count)
+	}
+}
+
+// 2.
+func TestExplainRepairsOnce(t *testing.T) {
+	srv, count := aiLiveStub(t, []string{
+		chatEnvelope(explainContent("amount > ")),
+		chatEnvelope(explainContent(explainValidExpr)),
+	})
+	aiLive(t, srv.URL)
+	newTestAPI(t)
+
+	caseID := explainFixture(t, `{"amount":1,"duration_months":400}`)
+	rec := postExplain(t, explainBodyJSON(caseID, "entry", "entry-amount"))
+	checkOK(t, rec)
+	explainAnswerOf(t, rec)
+	if *count != 2 {
+		t.Errorf("requests = %d, want 2", *count)
+	}
+}
+
+// 3.
+func TestExplainThreeFailures(t *testing.T) {
+	srv, count := aiLiveStub(t, []string{chatEnvelope(explainContent("amount > "))})
+	aiLive(t, srv.URL)
+	newTestAPI(t)
+
+	caseID := explainFixture(t, `{"amount":1,"duration_months":400}`)
+	rec := postExplain(t, explainBodyJSON(caseID, "entry", "entry-amount"))
+	checkError(t, rec, http.StatusUnprocessableEntity, "invalid_output", msgExplainFailed)
+	details := checkDetails(t, rec)
+	if len(details) != 1 {
+		t.Fatalf("details = %d, want 1: %v", len(details), details)
+	}
+	if details[0]["path"] != "" {
+		t.Errorf("path = %q, want empty", details[0]["path"])
+	}
+	if details[0]["message"] != explainCompileError(t, "amount > ") {
+		t.Errorf("message = %q, want the compile error text", details[0]["message"])
+	}
+	if *count != 3 {
+		t.Errorf("requests = %d, want 3", *count)
+	}
+}
+
+// 4.
+func TestExplainAIOff(t *testing.T) {
+	t.Setenv("ZOTRA_AI_MODE", "off")
+	t.Setenv("ZOTRA_AI_CACHE_DIR", t.TempDir())
+	newTestAPI(t)
+
+	caseID := explainFixture(t, `{"amount":1,"duration_months":400}`)
+	rec := postExplain(t, explainBodyJSON(caseID, "entry", "entry-amount"))
+	checkError(t, rec, http.StatusServiceUnavailable, "ai_unavailable",
+		"The AI layer is off.")
+}
+
+// 5 to 10.
+func TestExplainRefusals(t *testing.T) {
+	baseStart := `{"amount":1,"duration_months":400}`
+	passStart := `{"amount":1,"duration_months":100,"documents":[]}`
+	rows := []struct {
+		name    string
+		chain   bool
+		start   string
+		body    func(caseID string) string
+		status  int
+		errCode string
+		msg     string
+	}{
+		{"5: empty body", false, "",
+			func(string) string { return "{}" },
+			http.StatusBadRequest, "invalid_request", msgMissingFields},
+		{"6: body without }", false, "",
+			func(string) string { return `{"case_id":"c1","node_id":"entry"` },
+			http.StatusBadRequest, "invalid_json", msgInvalidJSON},
+		{"7: unknown case", false, "",
+			func(string) string { return explainBodyJSON("nope", "entry", "entry-amount") },
+			http.StatusNotFound, "not_found", "no case nope"},
+		{"8: the case is not on this step", true, baseStart,
+			func(caseID string) string { return explainBodyJSON(caseID, "analysis", "entry-amount") },
+			http.StatusConflict, "conflict", "the case is not on this step"},
+		{"9: the step has no check", true, baseStart,
+			func(caseID string) string { return explainBodyJSON(caseID, "entry", "release-date") },
+			http.StatusConflict, "conflict", "the step has no check release-date"},
+		{"10: the check did not fail", true, passStart,
+			func(caseID string) string { return explainBodyJSON(caseID, "entry", "entry-amount") },
+			http.StatusConflict, "conflict", "the check did not fail"},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			aiRefusalEnv(t)
+			newTestAPI(t)
+			caseID := "c1"
+			if row.chain {
+				caseID = explainFixture(t, row.start)
+			}
+			rec := postExplain(t, row.body(caseID))
+			checkError(t, rec, row.status, row.errCode, row.msg)
+		})
+	}
+}
+
+// 11.
+func TestExplainEmptyExpression(t *testing.T) {
+	srv, count := aiLiveStub(t, []string{
+		chatEnvelope(explainContent("")),
+		chatEnvelope(explainContent(explainValidExpr)),
+	})
+	aiLive(t, srv.URL)
+	newTestAPI(t)
+
+	caseID := explainFixture(t, `{"amount":1,"duration_months":400}`)
+	rec := postExplain(t, explainBodyJSON(caseID, "entry", "entry-amount"))
+	checkOK(t, rec)
+	explainAnswerOf(t, rec)
+	if *count != 2 {
+		t.Errorf("requests = %d, want 2", *count)
+	}
+}
+
+// 12.
+func TestExplainNonBoolExpression(t *testing.T) {
+	srv, count := aiLiveStub(t, []string{
+		chatEnvelope(explainContent("amount")),
+		chatEnvelope(explainContent(explainValidExpr)),
+	})
+	aiLive(t, srv.URL)
+	newTestAPI(t)
+
+	caseID := explainFixture(t, `{"amount":1,"duration_months":400}`)
+	rec := postExplain(t, explainBodyJSON(caseID, "entry", "entry-amount"))
+	checkOK(t, rec)
+	explainAnswerOf(t, rec)
+	if *count != 2 {
+		t.Errorf("requests = %d, want 2", *count)
 	}
 }

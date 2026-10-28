@@ -3,6 +3,7 @@
 package ai
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -43,6 +44,35 @@ const SamZonesPrompt = `Find the zones of this document scan. Answer
 with one JSON object: {"zones":[{"label":"signature|stamp|id","box":
 {"x":0,"y":0,"width":0,"height":0},"mask":[]}]} in image pixels. Use
 one zone per area you find. The mask field can stay empty.`
+
+// ExplainCheckSystem is the system prompt of the check explanation.
+const ExplainCheckSystem = `You explain a failed check of a bank credit process.
+You receive the check (its CEL expression and its message), the data of the case, and the plain values the expression used.
+Answer with one JSON object: an "explanation" field with two to four short sentences in plain English for a banker,
+and a "proposal" object with a new "expression" (CEL, boolean), "message" (the failure message in English) and "plain_text" (the rule in one plain English sentence).
+Change the rule only when the policy behind the check justifies it. Else keep the expression as it is.`
+
+// ExplainCheckUser formats the context of one failed check as the
+// user message: the step line, the check line, the expression line,
+// the message line, then the case data as one JSON object. The keys
+// sort, so one case gives one message.
+func ExplainCheckUser(nodeName, checkID, expression, message string,
+	data map[string]any,
+) string {
+	encoded, err := json.Marshal(data)
+	if err != nil {
+		// Not reachable for the folded state data: every value came
+		// from JSON events. Kept for safety.
+		encoded = []byte("{}")
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Step: %s\n", nodeName)
+	fmt.Fprintf(&b, "Check: %s\n", checkID)
+	fmt.Fprintf(&b, "Expression: %s\n", expression)
+	fmt.Fprintf(&b, "Message: %s\n", message)
+	fmt.Fprintf(&b, "Data: %s", encoded)
+	return b.String()
+}
 
 // PolicyParagraph is one numbered paragraph of a policy: the id has
 // the form p<page>-<index>, the text is the paragraph text.

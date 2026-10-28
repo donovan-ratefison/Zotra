@@ -13,7 +13,8 @@ import {
   ChevronsRight,
   Rewind,
 } from "lucide-react";
-import { ApiError } from "./api";
+import { ApiError, updateDraft } from "./api";
+import type { ExplainProposal } from "./ai-api";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import {
@@ -31,6 +32,12 @@ import { caseViewOf } from "./case-view";
 import { ChecksTab } from "./ChecksTab";
 import { Inspector } from "./Inspector";
 import { NewCaseDialog } from "./NewCaseDialog";
+import {
+  saveErrorText,
+  withCheckExpression,
+  withCheckMessage,
+  withCheckPlainText,
+} from "./node-edit";
 import { ProcessDiagram } from "./diagram";
 import { StepScreen } from "./StepScreen";
 import { Timeline } from "./Timeline";
@@ -200,6 +207,41 @@ export function TestScreen({ def, version }: {
       setCreateError(err instanceof ApiError ? err.message : String(err));
     } finally {
       setBusy(false);
+    }
+  }
+
+  // onApplyFix applies one proposal to the draft of the opened
+  // version (the version prop, never null in the shell): the
+  // expression, the message and the plain text of the check change
+  // together. The promise rejects on a save error, so the proposal
+  // card stays; the case query and the version query refetch, so the
+  // check card, the step form and the diagram read the new def.
+  async function onApplyFix(checkId: string, p: ExplainProposal): Promise<void> {
+    const st = caseQuery.data?.state;
+    if (st === undefined) {
+      return;
+    }
+    const next = withCheckPlainText(
+      withCheckMessage(
+        withCheckExpression(def, st.node_id, checkId, p.expression),
+        st.node_id,
+        checkId,
+        p.message,
+      ),
+      st.node_id,
+      checkId,
+      p.plain_text,
+    );
+    try {
+      await updateDraft(version.id, next);
+      toast.success("Rule updated in the draft.");
+      await queryClient.invalidateQueries({ queryKey: ["case", testCaseId] });
+      await queryClient.invalidateQueries({
+        queryKey: ["version", version.id],
+      });
+    } catch (err) {
+      toast.error(saveErrorText(err));
+      throw err;
     }
   }
 
@@ -417,6 +459,10 @@ export function TestScreen({ def, version }: {
                   state={loaded.state}
                   events={events}
                   nodeId={loaded.state.node_id}
+                  caseId={testCaseId}
+                  versionStatus={version.status}
+                  replaying={at !== null}
+                  onApplyFix={(checkId, p) => onApplyFix(checkId, p)}
                 />
               </div>
             )}

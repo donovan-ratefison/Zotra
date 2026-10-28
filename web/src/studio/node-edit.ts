@@ -110,6 +110,23 @@ export function withCheckMessage(
   });
 }
 
+export function withCheckPlainText(
+  def: ProcessDefinition,
+  nodeId: string,
+  checkId: string,
+  plainText: string,
+): ProcessDefinition {
+  return withNodes(def, nodeId, (n) => {
+    requireCheck(n, checkId);
+    return {
+      ...n,
+      checks: n.checks.map((c) =>
+        c.id === checkId ? { ...c, plain_text: plainText } : c,
+      ),
+    };
+  });
+}
+
 // "c<N>", N the smallest positive integer that no check id of the
 // definition uses.
 export function newCheckId(def: ProcessDefinition): string {
