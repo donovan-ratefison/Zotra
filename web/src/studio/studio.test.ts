@@ -1,4 +1,4 @@
-// The 27 test rows of the studio brief, in order.
+// The studio test rows, in order.
 
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
@@ -6,13 +6,23 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactFlowProvider } from "@xyflow/react";
 import { getVersion, listProcesses, listVersions, ApiError } from "./api";
-import { edgePillText, layoutProcess, roleColor, toElkGraph } from "./layout";
-import { EventShape, TaskCard } from "./diagram";
+import {
+  edgePillText,
+  estimatePillWidth,
+  layoutProcess,
+  PILL_HEIGHT,
+  PILL_MARGIN,
+  pillPlacement,
+  roleColor,
+  toElkGraph,
+} from "./layout";
+import { EdgePill, edgeAnchor, EventShape, TaskCard } from "./diagram";
 import { StudioShell, TopBar } from "./StudioShell";
 import type {
   NodeType,
   ProcessDefinition,
   ProcessEdge,
+  ProcessNode,
   VersionStatus,
   VersionSummary,
 } from "./types";
@@ -79,6 +89,38 @@ const miniDefinition: ProcessDefinition = {
 
 const edgeById = (id: string): ProcessEdge =>
   miniDefinition.edges.find((e) => e.id === id)!;
+
+// One copy of a mini definition node, with a new id: every field
+// value comes from the model node.
+function nodeCopy(model: string, id: string): ProcessNode {
+  return { ...miniDefinition.nodes.find((node) => node.id === model)!, id };
+}
+
+// A six-node definition for the pill placement rows: the gateway
+// holds one long condition edge and one default edge, and the gap to
+// the first task is 60 px, so the condition pill drops and the
+// default pill stays free. It satisfies the process contract: one
+// start with one outgoing edge, tasks with one outgoing edge each,
+// one gateway default edge, every path reaches an end.
+const craftedDefinition: ProcessDefinition = {
+  ...miniDefinition,
+  name: "Pill placement",
+  nodes: [
+    nodeCopy("start", "start"),
+    nodeCopy("complete", "gt"),
+    nodeCopy("entry", "t1"),
+    nodeCopy("entry", "t2"),
+    nodeCopy("released", "end1"),
+    nodeCopy("refused", "end2"),
+  ],
+  edges: [
+    { id: "a", from: "start", to: "gt", label: null, decision: null, condition: null, is_default: false },
+    { id: "b", from: "gt", to: "t1", label: null, decision: null, condition: "amount > 100000.0", is_default: false },
+    { id: "c", from: "gt", to: "t2", label: null, decision: null, condition: null, is_default: true },
+    { id: "d", from: "t1", to: "end1", label: null, decision: null, condition: null, is_default: false },
+    { id: "e", from: "t2", to: "end2", label: null, decision: null, condition: null, is_default: false },
+  ],
+};
 
 // The error-path stubs need only ok, status and json, the surface
 // that getJson reads.
@@ -206,6 +248,144 @@ describe("layout helpers", () => {
     await expect(layoutProcess(badFrom)).rejects.toThrow(
       "unknown node id: nowhere (edge e1)",
     );
+  });
+});
+
+describe("pill placement", () => {
+  test("27: estimatePillWidth of a 7 character pill", () => {
+    expect(estimatePillWidth("Default")).toBeCloseTo(60.2);
+  });
+
+  test("28: estimatePillWidth of the long condition", () => {
+    expect(estimatePillWidth("amount > 100000.0")).toBeCloseTo(126.2);
+  });
+
+  test("29: pillPlacement keeps the midpoint of a free short edge", () => {
+    expect(
+      pillPlacement([{ x: 0, y: 0 }, { x: 40, y: 0 }], [], "abcd"),
+    ).toEqual({ x: 20, y: 0 });
+  });
+
+  test("30: pillPlacement keeps the midpoint when the box is off the band", () => {
+    expect(
+      pillPlacement(
+        [{ x: 0, y: 0 }, { x: 200, y: 0 }],
+        [{ x: 0, y: 40, w: 10, h: 10 }],
+        "abcd",
+      ),
+    ).toEqual({ x: 100, y: 0 });
+  });
+
+  test("31: pillPlacement moves to the nearest free stretch", () => {
+    expect(
+      pillPlacement(
+        [{ x: 0, y: 0 }, { x: 300, y: 0 }],
+        [{ x: 80, y: -20, w: 80, h: 40 }],
+        "abcd",
+      ),
+    ).toEqual({ x: 241.1, y: 0 });
+  });
+
+  test("32: a box below the pill band does not block the stretch", () => {
+    expect(
+      pillPlacement(
+        [{ x: 0, y: 0 }, { x: 300, y: 0 }],
+        [{ x: 80, y: -20, w: 80, h: 40 }, { x: 230, y: 15, w: 20, h: 10 }],
+        "abcd",
+      ),
+    ).toEqual({ x: 241.1, y: 0 });
+  });
+
+  test("33: pillPlacement moves on a blocked vertical edge", () => {
+    expect(
+      pillPlacement(
+        [{ x: 50, y: 0 }, { x: 50, y: 300 }],
+        [{ x: 30, y: 60, w: 40, h: 200 }],
+        "abcd",
+      ),
+    ).toEqual({ x: 50, y: 25.25 });
+  });
+
+  test("34: a thin cover keeps the midpoint (10 percent hidden)", () => {
+    expect(
+      pillPlacement(
+        [{ x: 0, y: 0 }, { x: 200, y: 0 }],
+        [{ x: 0, y: 6, w: 200, h: 10 }],
+        "abcd",
+      ),
+    ).toEqual({ x: 100, y: 0 });
+  });
+
+  test("35: a mostly hidden pill does not render (36.7 percent)", () => {
+    expect(
+      pillPlacement(
+        [{ x: 0, y: 0 }, { x: 200, y: 0 }],
+        [{ x: 0, y: 2, w: 200, h: 14 }],
+        "abcd",
+      ),
+    ).toBeNull();
+  });
+
+  test("36: a diagonal edge has no stretch and keeps its free midpoint", () => {
+    expect(
+      pillPlacement(
+        [{ x: 0, y: 0 }, { x: 100, y: 100 }],
+        [{ x: 0, y: 110, w: 10, h: 10 }],
+        "abcd",
+      ),
+    ).toEqual({ x: 50, y: 50 });
+  });
+
+  test("37: edgeAnchor of data that carries an anchor", () => {
+    expect(edgeAnchor({ anchor: { x: 5, y: 6 } }, [{ x: 0, y: 0 }, { x: 40, y: 0 }]))
+      .toEqual({ x: 5, y: 6 });
+  });
+
+  test("38: edgeAnchor of a dropped pill", () => {
+    expect(edgeAnchor({ anchor: null }, [{ x: 0, y: 0 }, { x: 40, y: 0 }]))
+      .toBeNull();
+  });
+
+  test("39: edgeAnchor of legacy data without an anchor key", () => {
+    expect(edgeAnchor({}, [{ x: 0, y: 0 }, { x: 40, y: 0 }]))
+      .toEqual({ x: 20, y: 0 });
+  });
+
+  test("40: EdgePill renders the transform and the text", () => {
+    const html = renderToString(
+      createElement(EdgePill, { text: "X", anchor: { x: 5, y: 6 } }),
+    );
+    expect(html).toContain("translate(5px, 6px)");
+    expect(html).toContain(">X<");
+  });
+
+  test("41: the long condition pill of the crafted gateway drops", async () => {
+    const { edges } = await layoutProcess(craftedDefinition);
+    expect(edges.find((edge) => edge.id === "b")!.data!.anchor).toBeNull();
+  });
+
+  test("42: the default pill of the crafted gateway stays clear", async () => {
+    const { nodes, edges } = await layoutProcess(craftedDefinition);
+    const anchor = edges.find((edge) => edge.id === "c")!.data!.anchor;
+    expect(anchor).not.toBeNull();
+    const nodeBoxes = nodes.map((n) => ({
+      x: n.position.x,
+      y: n.position.y,
+      w: n.width ?? 0,
+      h: n.height ?? 0,
+    }));
+    const w = estimatePillWidth("Default");
+    const x = anchor!.x - w / 2 - PILL_MARGIN;
+    const y = anchor!.y - PILL_HEIGHT / 2 - PILL_MARGIN;
+    // The same positive-area overlap rule as the layout module.
+    const overlaps = (b: { x: number; y: number; w: number; h: number }) => {
+      const ox = Math.min(x + w + 2 * PILL_MARGIN, b.x + b.w) - Math.max(x, b.x);
+      const oy = Math.min(y + PILL_HEIGHT + 2 * PILL_MARGIN, b.y + b.h) - Math.max(y, b.y);
+      return ox > 0 && oy > 0;
+    };
+    for (const b of nodeBoxes) {
+      expect(overlaps(b)).toBe(false);
+    }
   });
 });
 

@@ -23,6 +23,7 @@ import {
 import { FileText, ListChecks, Maximize, PenLine, ZoomIn, ZoomOut } from "lucide-react";
 import {
   layoutProcess,
+  pathMidpoint,
   type DiagramEdgeData,
   type DiagramNodeData,
   type DiagramPoint,
@@ -74,27 +75,6 @@ function roundedPath(points: DiagramPoint[]): string {
   }
   const last = points[points.length - 1]!;
   return `${d} L${last.x} ${last.y}`;
-}
-
-// The point at half of the total path length, interpolated inside the
-// segment that crosses it. One rule for every point count.
-function pillAnchor(points: DiagramPoint[]): DiagramPoint {
-  let total = 0;
-  for (let i = 1; i < points.length; i++) {
-    total += Math.hypot(points[i]!.x - points[i - 1]!.x, points[i]!.y - points[i - 1]!.y);
-  }
-  let walked = 0;
-  for (let i = 1; i < points.length; i++) {
-    const prev = points[i - 1]!;
-    const p = points[i]!;
-    const length = Math.hypot(p.x - prev.x, p.y - prev.y);
-    if (walked + length >= total / 2 || i === points.length - 1) {
-      const t = length === 0 ? 0 : (total / 2 - walked) / length;
-      return { x: prev.x + (p.x - prev.x) * t, y: prev.y + (p.y - prev.y) * t };
-    }
-    walked += length;
-  }
-  return points[0]!;
 }
 
 type GhostNodeData = DiagramNodeData & {
@@ -351,12 +331,43 @@ export function GatewayNode({ node, selected, ghost = false, onCitationClick }: 
   );
 }
 
+// The anchor of one edge: data.anchor when the producer set it,
+// null when the producer dropped the pill, the path midpoint for
+// legacy data that carries no anchor key. A `??` chain is wrong
+// here: `data.anchor ?? pathMidpoint(points)` also falls back on
+// null, and null must mean "no pill".
+export function edgeAnchor(
+  data: { anchor?: DiagramPoint | null },
+  points: DiagramPoint[],
+): DiagramPoint | null {
+  return data.anchor === undefined ? pathMidpoint(points) : data.anchor;
+}
+
+// Informative only: the pill ignores pointer events, so a click on
+// what it covers (a node card, a chip) goes to that element.
+export function EdgePill({ text, anchor }: {
+  text: string;
+  anchor: DiagramPoint;
+}) {
+  return (
+    <div
+      className="nodrag nopan absolute rounded-md border border-[#e4e4e7] bg-white px-1.5 text-[11px] font-medium text-zinc-700 max-w-[160px] truncate"
+      style={{
+        transform: `translate(-50%, -50%) translate(${anchor.x}px, ${anchor.y}px)`,
+        pointerEvents: "none",
+      }}
+    >
+      {text}
+    </div>
+  );
+}
+
 export function ElkEdge({ markerEnd, data }: EdgeProps) {
-  const { points, pill, ghost } = data as DiagramEdgeData & {
+  const { points, pill, anchor, ghost } = data as DiagramEdgeData & {
     ghost?: boolean;
   };
   const path = roundedPath(points);
-  const anchor = pillAnchor(points);
+  const resolved = edgeAnchor({ anchor }, points);
   return (
     <>
       <BaseEdge
@@ -370,20 +381,9 @@ export function ElkEdge({ markerEnd, data }: EdgeProps) {
         }
         markerEnd={markerEnd}
       />
-      {pill !== null && (
+      {pill !== null && resolved !== null && (
         <EdgeLabelRenderer>
-          <div
-            className="nodrag nopan absolute rounded-md border border-[#e4e4e7] bg-white px-1.5 text-[11px] font-medium text-zinc-700 max-w-[160px] truncate"
-            style={{
-              transform: `translate(-50%, -50%) translate(${anchor.x}px, ${anchor.y}px)`,
-              // Informative only: the pill ignores pointer events, so
-              // a click on what it covers (a node card, a chip) goes
-              // to that element.
-              pointerEvents: "none",
-            }}
-          >
-            {pill}
-          </div>
+          <EdgePill text={pill} anchor={resolved} />
         </EdgeLabelRenderer>
       )}
     </>
