@@ -1,19 +1,15 @@
-// The import dialog: drop a policy PDF, read it with pdf.js, send the
-// paragraphs to the AI, and create the process with its first draft.
-// The body is a plain component, so the tests render it with no
-// Dialog context: the title and the description are plain elements.
+// The import dialog: drop a policy PDF, read it with pdf.js, send
+// the paragraphs to the AI, and hand the proposal to the shell for
+// review. Nothing is saved here: the shell creates the process and
+// the draft when the designer accepts. The body is a plain
+// component, so the tests render it with no Dialog context: the
+// title and the description are plain elements.
 
 import { useRef, useState } from "react";
-import { toast } from "sonner";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent } from "@/ui/dialog";
 import { Input } from "@/ui/input";
-import {
-  ApiError,
-  createProcess,
-  createVersion,
-  policyToProcess,
-} from "./api";
+import { ApiError, policyToProcess } from "./api";
 import { extractParagraphs, policyErrorText, type Paragraph } from "./policy";
 import type { ProcessDefinition } from "./types";
 
@@ -24,12 +20,12 @@ interface Detail {
 }
 
 export function ImportDialogBody({
-  onImported,
+  onProposed,
   onClose,
 }: {
-  onImported: (
-    processId: string,
-    versionId: string,
+  onProposed: (
+    name: string,
+    definition: ProcessDefinition,
     paragraphs: Paragraph[],
     file: File,
   ) => void;
@@ -85,8 +81,8 @@ export function ImportDialogBody({
     }
   }
 
-  // analyze sends the paragraphs and, on success, creates the
-  // process and its first draft.
+  // analyze sends the paragraphs and, on success, hands the proposal
+  // to the shell.
   async function analyze() {
     const current = file;
     if (!current || analyzing) {
@@ -117,17 +113,9 @@ export function ImportDialogBody({
       setAnalyzing(false);
       return;
     }
-    try {
-      const process = await createProcess(useName);
-      const version = await createVersion(process.id, "From policy", definition);
-      toast.success("Draft created. Review the proposal.");
-      onImported(process.id, version.id, paragraphs, current);
-      reset();
-      onClose();
-    } catch {
-      setAnalysisError("The draft did not save.");
-      setAnalyzing(false);
-    }
+    onProposed(useName, definition, paragraphs, current);
+    reset();
+    onClose();
   }
 
   return (
@@ -242,13 +230,13 @@ export function ImportDialogBody({
 export function ImportDialog({
   open,
   onOpenChange,
-  onImported,
+  onProposed,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onImported: (
-    processId: string,
-    versionId: string,
+  onProposed: (
+    name: string,
+    definition: ProcessDefinition,
     paragraphs: Paragraph[],
     file: File,
   ) => void;
@@ -257,7 +245,7 @@ export function ImportDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent aria-label="New from policy" className="max-h-[85vh] overflow-y-auto">
         <ImportDialogBody
-          onImported={onImported}
+          onProposed={onProposed}
           onClose={() => onOpenChange(false)}
         />
       </DialogContent>

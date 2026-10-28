@@ -97,45 +97,137 @@ function pillAnchor(points: DiagramPoint[]): DiagramPoint {
   return points[0]!;
 }
 
-export function TaskCard({ node, color, roleName, selected }: {
+type GhostNodeData = DiagramNodeData & {
+  ghost?: boolean;
+  onCitationClick?: (id: string) => void;
+};
+
+// The citation ids of a node, in order: the node citations, then the
+// citations of each check.
+function citationIdsOf(node: ProcessNode): string[] {
+  return [
+    ...node.citations,
+    ...node.checks.flatMap((check) => check.citations),
+  ];
+}
+
+// The chip row of one node: one button per citation, at most four,
+// then a span with the count of the rest. The row keeps one visible
+// line: the chips wrap inside a fixed 14 px clip, so no chip paints
+// over a card, an edge label or other text. The span sits outside
+// the clip and stays visible. The focus path runs the click path, so
+// a keyboard user gets the same highlight.
+function CitationChips({ ids, onCitationClick, className }: {
+  ids: string[];
+  onCitationClick?: (id: string) => void;
+  className: string;
+}) {
+  if (ids.length === 0) {
+    return null;
+  }
+  const shown = ids.slice(0, 4);
+  const rest = ids.length - shown.length;
+  return (
+    <div className={`flex max-w-full items-center gap-1 ${className}`}>
+      <div className="flex h-[14px] min-w-0 flex-1 flex-wrap items-start overflow-hidden gap-1">
+        {shown.map((id, i) => (
+          <button
+            key={`${id}-${i}`}
+            type="button"
+            className="nodrag nopan shrink-0 rounded-full bg-white px-1 text-[10px] leading-[12px]"
+            style={{ border: "1px solid #7c3aed" }}
+            aria-label={`Show ${id} in the policy`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onCitationClick?.(id);
+            }}
+            onFocus={() => onCitationClick?.(id)}
+          >
+            {id}
+          </button>
+        ))}
+      </div>
+      {rest > 0 && (
+        <span className="shrink-0 text-[10px] leading-[12px] text-zinc-500">
+          {`+${rest}`}
+        </span>
+      )}
+    </div>
+  );
+}
+
+export function TaskCard({ node, color, roleName, selected, ghost = false, onCitationClick }: {
   node: ProcessNode;
   color: string | null;
   roleName: string | null;
   selected: boolean;
+  ghost?: boolean;
+  onCitationClick?: (id: string) => void;
 }) {
+  const cited =
+    node.citations.length > 0 ||
+    node.checks.some((check) => check.citations.length > 0);
   return (
     <div
-      className="relative h-[72px] w-[128px] rounded-lg bg-white shadow-sm"
+      className={`relative h-[72px] w-[128px] rounded-lg bg-white shadow-sm${
+        ghost ? " opacity-70" : ""
+      }`}
+      data-ghost={ghost ? "true" : "false"}
       style={{
-        border: selected ? "2px solid #2563eb" : "1px solid #d4d4d8",
-        boxShadow: selected ? "0 0 0 3px rgba(37, 99, 235, 0.12)" : undefined,
+        border: ghost
+          ? selected
+            ? "2px dashed #7c3aed"
+            : "1px dashed #7c3aed"
+          : selected
+            ? "2px solid #2563eb"
+            : "1px solid #d4d4d8",
+        boxShadow:
+          !ghost && selected ? "0 0 0 3px rgba(37, 99, 235, 0.12)" : undefined,
       }}
     >
-      {/* One top band: the name reserves the indicator width, so the
-          two never paint over each other. The padding sits on the
-          wrapper and the clamp on the inner div, so a clamped line
-          never paints into the padding band. */}
-      <div className="absolute inset-x-0 top-0 flex items-start gap-1 p-[10px]">
-        <div className="min-w-0 flex-1 break-words text-[11.5px] leading-tight font-semibold text-zinc-800 line-clamp-2">
-          {node.name}
+      {/* One top band, a column when the node carries citations: the
+          name row, then the chip row. A cited name clamps to one
+          line, so the chips paint over the card's own empty second
+          line only, never over the role pill, the deadline or
+          anything outside the card. The chips wrap inside a fixed
+          14 px clip: one visible line of whole chips, the span with
+          the rest always visible. */}
+      <div className="absolute inset-x-0 top-0 flex flex-col gap-0.5 p-[10px]">
+        <div className="flex items-start gap-1">
+          <div
+            className={`min-w-0 flex-1 break-words text-[11.5px] leading-tight font-semibold text-zinc-800 ${
+              cited ? "line-clamp-1" : "line-clamp-2"
+            }`}
+          >
+            {node.name}
+          </div>
+          <div className="flex shrink-0 items-center gap-1 text-[10px] text-zinc-500">
+            {node.documents.length > 0 && (
+              <span className="flex items-center gap-0.5">
+                <FileText size={12} />
+                {node.documents.length}
+              </span>
+            )}
+            {node.signature && <PenLine size={12} />}
+            {node.checks.length > 0 && (
+              <span className="flex items-center gap-0.5">
+                <ListChecks size={12} />
+                {node.checks.length}
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1 text-[10px] text-zinc-500">
-          {node.documents.length > 0 && (
-            <span className="flex items-center gap-0.5">
-              <FileText size={12} />
-              {node.documents.length}
-            </span>
-          )}
-          {node.signature && <PenLine size={12} />}
-          {node.checks.length > 0 && (
-            <span className="flex items-center gap-0.5">
-              <ListChecks size={12} />
-              {node.checks.length}
-            </span>
-          )}
-        </div>
+        <CitationChips
+          ids={citationIdsOf(node)}
+          onCitationClick={onCitationClick}
+          className=""
+        />
       </div>
-      <div className="absolute bottom-0 left-0 p-[10px]">
+      {/* The role and deadline bands are informative only: they
+          ignore pointer events, so a click on a chip row that
+          overlaps them reaches the chip, and a click on them bubbles
+          to the node selection. */}
+      <div className="pointer-events-none absolute bottom-0 left-0 p-[10px]">
         {roleName === null ? (
           <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10.5px] font-medium text-zinc-500">
             Automatic
@@ -154,7 +246,7 @@ export function TaskCard({ node, color, roleName, selected }: {
         )}
       </div>
       {node.deadline_hours !== null && (
-        <div className="absolute right-0 bottom-0 p-[10px] text-[10.5px] text-zinc-500">
+        <div className="pointer-events-none absolute right-0 bottom-0 p-[10px] text-[10.5px] text-zinc-500">
           {`${node.deadline_hours} h`}
         </div>
       )}
@@ -165,7 +257,12 @@ export function TaskCard({ node, color, roleName, selected }: {
 const NODE_LABEL_CLASS =
   "absolute top-full left-1/2 -translate-x-1/2 mt-1 w-max max-w-[120px] text-center text-[11.5px] text-zinc-600";
 
-export function EventShape({ node, selected }: { node: ProcessNode; selected: boolean }) {
+export function EventShape({ node, selected, ghost = false, onCitationClick }: {
+  node: ProcessNode;
+  selected: boolean;
+  ghost?: boolean;
+  onCitationClick?: (id: string) => void;
+}) {
   const isStart = node.type === "start";
   const endStroke =
     node.end_result === "approved"
@@ -174,29 +271,66 @@ export function EventShape({ node, selected }: { node: ProcessNode; selected: bo
         ? "#dc2626"
         : "#71717a";
   const baseStroke = isStart ? "#71717a" : endStroke;
-  const stroke = selected ? "#2563eb" : baseStroke;
+  const stroke = ghost ? "#7c3aed" : selected ? "#2563eb" : baseStroke;
   const width = (isStart ? 1.5 : 3.5) + (selected ? 0.5 : 0);
   const radius = isStart ? 18 : 17;
+  const cited =
+    node.citations.length > 0 ||
+    node.checks.some((check) => check.citations.length > 0);
   return (
-    <div className="relative flex h-[40px] w-[40px] items-center justify-center">
+    <div
+      className={`relative flex h-[40px] w-[40px] items-center justify-center${
+        ghost ? " opacity-70" : ""
+      }`}
+      data-ghost={ghost ? "true" : "false"}
+    >
       <svg width="40" height="40">
-        <circle cx="20" cy="20" r={radius} fill="#ffffff" stroke={stroke} strokeWidth={width} />
+        <circle
+          cx="20"
+          cy="20"
+          r={radius}
+          fill="#ffffff"
+          stroke={stroke}
+          strokeWidth={width}
+          strokeDasharray={ghost ? "5 4" : undefined}
+        />
       </svg>
-      <div className={NODE_LABEL_CLASS}>{node.name}</div>
+      <div className={NODE_LABEL_CLASS}>
+        <div className={cited ? "truncate" : undefined}>{node.name}</div>
+        <CitationChips
+          ids={citationIdsOf(node)}
+          onCitationClick={onCitationClick}
+          className="mt-1 justify-center"
+        />
+      </div>
     </div>
   );
 }
 
-export function GatewayNode({ node, selected }: { node: ProcessNode; selected: boolean }) {
-  const stroke = selected ? "#2563eb" : "#a1a1aa";
+export function GatewayNode({ node, selected, ghost = false, onCitationClick }: {
+  node: ProcessNode;
+  selected: boolean;
+  ghost?: boolean;
+  onCitationClick?: (id: string) => void;
+}) {
+  const stroke = ghost ? "#7c3aed" : selected ? "#2563eb" : "#a1a1aa";
+  const cited =
+    node.citations.length > 0 ||
+    node.checks.some((check) => check.citations.length > 0);
   return (
-    <div className="relative flex h-[52px] w-[52px] items-center justify-center">
+    <div
+      className={`relative flex h-[52px] w-[52px] items-center justify-center${
+        ghost ? " opacity-70" : ""
+      }`}
+      data-ghost={ghost ? "true" : "false"}
+    >
       <svg width="52" height="52">
         <polygon
           points="26,0 52,26 26,52 0,26"
           fill="#ffffff"
           stroke={stroke}
           strokeWidth={selected ? 2 : 1.5}
+          strokeDasharray={ghost ? "5 4" : undefined}
         />
         <path
           d="M20 20 L32 32 M32 20 L20 32"
@@ -205,25 +339,47 @@ export function GatewayNode({ node, selected }: { node: ProcessNode; selected: b
           fill="none"
         />
       </svg>
-      <div className={NODE_LABEL_CLASS}>{node.name}</div>
+      <div className={NODE_LABEL_CLASS}>
+        <div className={cited ? "truncate" : undefined}>{node.name}</div>
+        <CitationChips
+          ids={citationIdsOf(node)}
+          onCitationClick={onCitationClick}
+          className="mt-1 justify-center"
+        />
+      </div>
     </div>
   );
 }
 
-function ElkEdge({ markerEnd, data }: EdgeProps) {
-  const { points, pill } = data as DiagramEdgeData;
+export function ElkEdge({ markerEnd, data }: EdgeProps) {
+  const { points, pill, ghost } = data as DiagramEdgeData & {
+    ghost?: boolean;
+  };
   const path = roundedPath(points);
   const anchor = pillAnchor(points);
   return (
     <>
-      <BaseEdge path={path} stroke="#a1a1aa" strokeWidth={1.5} markerEnd={markerEnd} />
+      <BaseEdge
+        path={path}
+        stroke="#a1a1aa"
+        strokeWidth={1.5}
+        style={
+          ghost
+            ? { stroke: "#7c3aed", strokeWidth: 1.5, strokeDasharray: "5 4" }
+            : undefined
+        }
+        markerEnd={markerEnd}
+      />
       {pill !== null && (
         <EdgeLabelRenderer>
           <div
             className="nodrag nopan absolute rounded-md border border-[#e4e4e7] bg-white px-1.5 text-[11px] font-medium text-zinc-700 max-w-[160px] truncate"
             style={{
               transform: `translate(-50%, -50%) translate(${anchor.x}px, ${anchor.y}px)`,
-              pointerEvents: "all",
+              // Informative only: the pill ignores pointer events, so
+              // a click on what it covers (a node card, a chip) goes
+              // to that element.
+              pointerEvents: "none",
             }}
           >
             {pill}
@@ -236,38 +392,60 @@ function ElkEdge({ markerEnd, data }: EdgeProps) {
 
 const nodeTypes: NodeTypes = {
   task: ({ data }: NodeProps) => {
-    const d = data as DiagramNodeData;
+    const d = data as GhostNodeData;
     return (
       <>
         <NodeHandles />
-        <TaskCard node={d.node} color={d.color} roleName={d.roleName} selected={d.selected} />
+        <TaskCard
+          node={d.node}
+          color={d.color}
+          roleName={d.roleName}
+          selected={d.selected}
+          ghost={d.ghost}
+          onCitationClick={d.onCitationClick}
+        />
       </>
     );
   },
   gateway: ({ data }: NodeProps) => {
-    const d = data as DiagramNodeData;
+    const d = data as GhostNodeData;
     return (
       <>
         <NodeHandles />
-        <GatewayNode node={d.node} selected={d.selected} />
+        <GatewayNode
+          node={d.node}
+          selected={d.selected}
+          ghost={d.ghost}
+          onCitationClick={d.onCitationClick}
+        />
       </>
     );
   },
   start: ({ data }: NodeProps) => {
-    const d = data as DiagramNodeData;
+    const d = data as GhostNodeData;
     return (
       <>
         <NodeHandles />
-        <EventShape node={d.node} selected={d.selected} />
+        <EventShape
+          node={d.node}
+          selected={d.selected}
+          ghost={d.ghost}
+          onCitationClick={d.onCitationClick}
+        />
       </>
     );
   },
   end: ({ data }: NodeProps) => {
-    const d = data as DiagramNodeData;
+    const d = data as GhostNodeData;
     return (
       <>
         <NodeHandles />
-        <EventShape node={d.node} selected={d.selected} />
+        <EventShape
+          node={d.node}
+          selected={d.selected}
+          ghost={d.ghost}
+          onCitationClick={d.onCitationClick}
+        />
       </>
     );
   },
@@ -377,10 +555,14 @@ export function ProcessDiagram({
   def,
   selectedNodeId,
   onNodeSelect,
+  ghost,
+  onCitationClick,
 }: {
   def: ProcessDefinition;
   selectedNodeId: string | null;
   onNodeSelect: (nodeId: string | null) => void;
+  ghost: boolean;
+  onCitationClick: (id: string) => void;
 }) {
   const [layout, setLayout] = useState<Awaited<ReturnType<typeof layoutProcess>> | null>(null);
   useEffect(() => {
@@ -401,9 +583,28 @@ export function ProcessDiagram({
     }
     return layout.nodes.map((n) => ({
       ...n,
-      data: { ...n.data, selected: n.id === selectedNodeId },
+      data: {
+        ...n.data,
+        selected: n.id === selectedNodeId,
+        ghost,
+        onCitationClick,
+      },
     }));
-  }, [layout, selectedNodeId]);
+  }, [layout, selectedNodeId, ghost, onCitationClick]);
+
+  const edges = useMemo(() => {
+    if (layout === null) {
+      return [];
+    }
+    return layout.edges.map((e) => ({
+      ...e,
+      data: { ...e.data, ghost },
+      markerEnd:
+        ghost && typeof e.markerEnd === "object"
+          ? { ...e.markerEnd, color: "#7c3aed" }
+          : e.markerEnd,
+    }));
+  }, [layout, ghost]);
 
   if (layout === null) {
     return (
@@ -422,7 +623,7 @@ export function ProcessDiagram({
     >
       <ReactFlow
         nodes={nodes}
-        edges={layout.edges}
+        edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView

@@ -233,7 +233,7 @@ describe("dialog body", () => {
   test("28: the fresh body holds title, drop zone and the two buttons", () => {
     const html = renderToString(
       createElement(ImportDialogBody, {
-        onImported: () => {},
+        onProposed: () => {},
         onClose: () => {},
       }),
     );

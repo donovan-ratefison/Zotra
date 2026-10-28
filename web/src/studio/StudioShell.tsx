@@ -4,27 +4,74 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Upload } from "lucide-react";
-import { getVersion, listProcesses, listVersions, ApiError } from "./api";
+import { ChevronRight, FileText, Upload } from "lucide-react";
+import { toast } from "sonner";
+import {
+  ApiError,
+  createProcess,
+  createVersion,
+  getVersion,
+  listProcesses,
+  listVersions,
+} from "./api";
 import { Button } from "@/ui/button";
+import { diffDefinitions } from "./diff";
+import { PolicyPanel } from "./PolicyPanel";
 import { ProcessDiagram } from "./diagram";
 import { ImportDialog } from "./ImportDialog";
 import { NodePanel } from "./NodePanel";
+import { ProposalBar } from "./ProposalBar";
 import type { Paragraph } from "./policy";
 import { useStudioStore, type PanelTab } from "./store";
 import type {
   ProcessDefinition,
+  ProcessNode,
   ProcessSummary,
   VersionSummary,
 } from "./types";
 
-// lastImport carries the import result for lot 2.5: the PDF panel
-// and the citation highlight read it.
+// lastImport carries the last import; the PDF panel and the citation
+// highlight read it.
 interface LastImport {
   processId: string;
   versionId: string;
   paragraphs: Paragraph[];
   file: File;
+}
+
+// The diff base of a proposal with no opened version: every element
+// of the proposal is then an addition.
+const EMPTY_DEFINITION: ProcessDefinition = {
+  schema_version: "1",
+  name: "",
+  currency: "EUR",
+  policy_document_id: null,
+  theme: { brand_name: "", primary_color: "#0f4c45", logo_url: null },
+  roles: [],
+  fields: [],
+  scope: [],
+  nodes: [],
+  edges: [],
+  sources: [],
+};
+
+// The default highlight: the citations of the selected node, in
+// order (node citations, then check citations), resolved to
+// paragraphs. Ids without a paragraph are skipped.
+function resolveCitations(
+  node: ProcessNode | null,
+  paragraphs: Paragraph[],
+): Paragraph[] {
+  if (node === null) {
+    return [];
+  }
+  const ids = [
+    ...node.citations,
+    ...node.checks.flatMap((check) => check.citations),
+  ];
+  return ids
+    .map((id) => paragraphs.find((p) => p.id === id))
+    .filter((p): p is Paragraph => p !== undefined);
 }
 
 function pickProcess(rows: ProcessSummary[] | undefined): ProcessSummary | null {
@@ -78,8 +125,26 @@ export function StudioShell() {
     );
   });
   const [lastImport, setLastImport] = useState<LastImport | null>(null);
-  // Lot 2.5 reads lastImport for the PDF panel and the highlight.
-  void lastImport;
+  const [proposal, setProposal] = useState<{
+    name: string;
+    definition: ProcessDefinition;
+    paragraphs: Paragraph[];
+    file: File;
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [policyOpen, setPolicyOpen] = useState(() => {
+    // policy=1 opens the drawer once, at mount. The render tests
+    // have no window: closed there.
+    return (
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("policy") === "1"
+    );
+  });
+  // The highlight override. null means: derive the highlight from
+  // the selected node (the state before any chip click).
+  const [policyHighlight, setPolicyHighlight] = useState<
+    Paragraph[] | null
+  >(null);
 
   // URL parameters, read once at mount. The tab parameter applies
   // only when it names a known tab; anything else is ignored.
@@ -144,9 +209,9 @@ export function StudioShell() {
     }
   }, [def, select]);
 
-  // onImported keeps the import for lot 2.5, writes the new URL, and
-  // refetches the queries. The picks then read the new ids and the
-  // shell opens the new draft.
+  // onImported stores the import, writes the new URL, and refetches
+  // the three queries. The picks then read the new ids and the shell
+  // opens the new draft.
   function onImported(
     processId: string,
     versionId: string,
@@ -164,12 +229,120 @@ export function StudioShell() {
     void queryClient.invalidateQueries({ queryKey: ["version", versionId] });
   }
 
+  // The proposal, the highlight source and the drawer values.
+  const paragraphs =
+    proposal !== null ? proposal.paragraphs : lastImport?.paragraphs ?? [];
+  const panelFile = proposal !== null ? proposal.file : lastImport?.file ?? null;
+  const loadedDef = q3.data?.definition;
+  // The diagram and the top bar show the proposal while it is open.
+  const shownDef = proposal !== null ? proposal.definition : loadedDef;
+  const selectedNode =
+    selectedNodeId === null
+      ? null
+      : shownDef?.nodes.find((n) => n.id === selectedNodeId) ?? null;
+  const highlight = policyHighlight ?? resolveCitations(selectedNode, paragraphs);
+
+  // onProposed receives the reviewed proposal. Nothing is saved yet:
+  // the accept handler creates the process and the draft.
+  function onProposed(
+    name: string,
+    definition: ProcessDefinition,
+    paragraphs: Paragraph[],
+    file: File,
+  ) {
+    setProposal({ name, definition, paragraphs, file });
+  }
+
+  // onCitationClick is the chip click and chip focus path: the
+  // highlight becomes the one paragraph of the id, and the drawer
+  // opens. An id without a paragraph gives an empty highlight.
+  function onCitationClick(id: string) {
+    const p = paragraphs.find((x) => x.id === id);
+    setPolicyHighlight(p !== undefined ? [p] : []);
+    setPolicyOpen(true);
+  }
+
+  function onTogglePolicy() {
+    setPolicyOpen((v) => !v);
+  }
+
+  // onAccept creates the process and its first draft from the
+  // proposal. A failure keeps the proposal, so the designer can
+  // retry.
+  async function onAccept() {
+    if (proposal === null || busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const process = await createProcess(proposal.name);
+      const version = await createVersion(
+        process.id,
+        "From policy",
+        proposal.definition,
+      );
+      onImported(process.id, version.id, proposal.paragraphs, proposal.file);
+      setProposal(null);
+      toast.success("Draft created.");
+    } catch {
+      toast.error("The draft did not save.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // onReject drops the proposal: nothing was created.
+  function onReject() {
+    setProposal(null);
+    setPolicyHighlight(null);
+    toast("Proposal rejected.");
+  }
+
   // Every state renders inside one layout, with the import dialog
   // mounted once above the branches. The dialog stays mounted while
   // the queries fetch, and new=1 opens it in every state.
   let content: ReactNode;
-  // Stage 1: processes.
-  if (q1.isError) {
+  // A proposal wins over every stage: it can be set in stage 1 (the
+  // empty studio), in stage 2 (no version yet) and over stage 3.
+  // Nothing is saved, so the stage queries stay as they are.
+  if (proposal !== null) {
+    const diffBase = loadedDef ?? EMPTY_DEFINITION;
+    content = (
+      <div className="flex h-screen flex-col">
+        <TopBar
+          def={loadedDef ?? proposal.definition}
+          version={version ?? undefined}
+          onNewFromPolicy={() => setImportOpen(true)}
+          policyOpen={policyOpen}
+          onTogglePolicy={onTogglePolicy}
+        />
+        <ProposalBar
+          diff={diffDefinitions(diffBase, proposal.definition)}
+          busy={busy}
+          onAccept={() => void onAccept()}
+          onReject={onReject}
+        />
+        <main className="flex min-h-0 flex-1">
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1">
+              <ProcessDiagram
+                def={proposal.definition}
+                selectedNodeId={selectedNodeId}
+                onNodeSelect={select}
+                ghost
+                onCitationClick={onCitationClick}
+              />
+            </div>
+            {policyOpen && (
+              <div className="h-[40%] shrink-0 overflow-hidden border-t">
+                <PolicyPanel file={panelFile} highlight={highlight} />
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
+    );
+  } else if (q1.isError) {
     content = <ErrorScreen error={q1.error} />;
   } else if (q1.isPending) {
     content = <Loading />;
@@ -210,14 +383,25 @@ export function StudioShell() {
           def={loaded.definition}
           version={version}
           onNewFromPolicy={() => setImportOpen(true)}
+          policyOpen={policyOpen}
+          onTogglePolicy={onTogglePolicy}
         />
         <main className="flex min-h-0 flex-1">
-          <div className="min-w-0 flex-1">
-            <ProcessDiagram
-              def={loaded.definition}
-              selectedNodeId={selectedNodeId}
-              onNodeSelect={select}
-            />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1">
+              <ProcessDiagram
+                def={loaded.definition}
+                selectedNodeId={selectedNodeId}
+                onNodeSelect={select}
+                ghost={false}
+                onCitationClick={onCitationClick}
+              />
+            </div>
+            {policyOpen && (
+              <div className="h-[40%] shrink-0 overflow-hidden border-t">
+                <PolicyPanel file={panelFile} highlight={highlight} />
+              </div>
+            )}
           </div>
           <aside
             aria-label="Step detail"
@@ -255,7 +439,7 @@ export function StudioShell() {
       <ImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}
-        onImported={onImported}
+        onProposed={onProposed}
       />
     </>
   );
@@ -276,13 +460,17 @@ export function TopBar({
   def,
   version,
   onNewFromPolicy,
+  policyOpen = false,
+  onTogglePolicy,
 }: {
   def: ProcessDefinition;
-  version: VersionSummary;
+  version?: VersionSummary;
   onNewFromPolicy?: () => void;
+  policyOpen?: boolean;
+  onTogglePolicy?: () => void;
 }) {
-  const statusText = STATUS_TEXT[version.status] ?? version.status;
-  const dotColor = STATUS_DOT[version.status] ?? "#71717a";
+  const statusText = version === undefined ? undefined : STATUS_TEXT[version.status] ?? version.status;
+  const dotColor = version === undefined ? undefined : STATUS_DOT[version.status] ?? "#71717a";
   return (
     <header
       className="flex h-12 w-full shrink-0 items-center gap-3 border-b px-4"
@@ -307,15 +495,27 @@ export function TopBar({
         <ChevronRight size={14} className="shrink-0" />
         <span className="truncate font-semibold">{def.name}</span>
       </nav>
-      <span className="flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[12px]">
-        <span
-          className="size-2 rounded-full"
-          style={{ backgroundColor: dotColor }}
-          aria-hidden="true"
-        />
-        {`v${version.number} · ${statusText}`}
-      </span>
+      {version !== undefined && (
+        <span className="flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[12px]">
+          <span
+            className="size-2 rounded-full"
+            style={{ backgroundColor: dotColor }}
+            aria-hidden="true"
+          />
+          {`v${version.number} · ${statusText}`}
+        </span>
+      )}
       <span className="flex-1" />
+      <Button
+        variant="outline"
+        size="sm"
+        className="shrink-0"
+        aria-pressed={policyOpen}
+        onClick={() => onTogglePolicy?.()}
+      >
+        <FileText aria-hidden="true" />
+        Policy
+      </Button>
       <Button
         variant="outline"
         size="sm"
