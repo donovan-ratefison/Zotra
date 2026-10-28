@@ -1,18 +1,31 @@
 // The studio shell: it loads the process, the versions and the
-// version, in this order, then renders the top bar and the diagram.
+// version, in this order, then renders the top bar, the diagram and
+// the node panel, plus the import dialog.
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Upload } from "lucide-react";
 import { getVersion, listProcesses, listVersions, ApiError } from "./api";
+import { Button } from "@/ui/button";
 import { ProcessDiagram } from "./diagram";
+import { ImportDialog } from "./ImportDialog";
 import { NodePanel } from "./NodePanel";
+import type { Paragraph } from "./policy";
 import { useStudioStore, type PanelTab } from "./store";
 import type {
   ProcessDefinition,
   ProcessSummary,
   VersionSummary,
 } from "./types";
+
+// lastImport carries the import result for lot 2.5: the PDF panel
+// and the citation highlight read it.
+interface LastImport {
+  processId: string;
+  versionId: string;
+  paragraphs: Paragraph[];
+  file: File;
+}
 
 function pickProcess(rows: ProcessSummary[] | undefined): ProcessSummary | null {
   if (!rows || rows.length === 0) {
@@ -56,6 +69,17 @@ export function StudioShell() {
   const select = useStudioStore((s) => s.select);
   const setTab = useStudioStore((s) => s.setTab);
   const queryClient = useQueryClient();
+  const [importOpen, setImportOpen] = useState(() => {
+    // new=1 in the URL opens the dialog once, at mount. The render
+    // tests have no window: no dialog there.
+    return (
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("new") === "1"
+    );
+  });
+  const [lastImport, setLastImport] = useState<LastImport | null>(null);
+  // Lot 2.5 reads lastImport for the PDF panel and the highlight.
+  void lastImport;
 
   // URL parameters, read once at mount. The tab parameter applies
   // only when it names a known tab; anything else is ignored.
@@ -68,14 +92,37 @@ export function StudioShell() {
   }, [setTab]);
 
   const q1 = useQuery({ queryKey: ["processes"], queryFn: listProcesses });
-  const process = useMemo(() => pickProcess(q1.data), [q1.data]);
+  // A process or version id in the URL overrides the automatic pick.
+  // A value that matches no row falls back to the automatic rule. The
+  // render tests have no window: the automatic rule applies there.
+  const process = useMemo(() => {
+    const rows = q1.data;
+    if (rows && rows.length > 0 && typeof window !== "undefined") {
+      const id = new URLSearchParams(window.location.search).get("process");
+      const match = id ? rows.find((row) => row.id === id) : undefined;
+      if (match) {
+        return match;
+      }
+    }
+    return pickProcess(rows);
+  }, [q1.data]);
   const processId = process ? process.id : null;
   const q2 = useQuery({
     queryKey: ["versions", processId],
     queryFn: () => listVersions(processId!),
     enabled: processId !== null,
   });
-  const version = useMemo(() => pickVersion(q2.data), [q2.data]);
+  const version = useMemo(() => {
+    const rows = q2.data;
+    if (rows && rows.length > 0 && typeof window !== "undefined") {
+      const id = new URLSearchParams(window.location.search).get("version");
+      const match = id ? rows.find((row) => row.id === id) : undefined;
+      if (match) {
+        return match;
+      }
+    }
+    return pickVersion(rows);
+  }, [q2.data]);
   const versionId = version ? version.id : null;
   const q3 = useQuery({
     queryKey: ["version", versionId],
@@ -97,88 +144,120 @@ export function StudioShell() {
     }
   }, [def, select]);
 
+  // onImported keeps the import for lot 2.5, writes the new URL, and
+  // refetches the queries. The picks then read the new ids and the
+  // shell opens the new draft.
+  function onImported(
+    processId: string,
+    versionId: string,
+    paragraphs: Paragraph[],
+    file: File,
+  ) {
+    setLastImport({ processId, versionId, paragraphs, file });
+    window.history.replaceState(
+      null,
+      "",
+      `/?process=${encodeURIComponent(processId)}&version=${encodeURIComponent(versionId)}`,
+    );
+    void queryClient.invalidateQueries({ queryKey: ["processes"] });
+    void queryClient.invalidateQueries({ queryKey: ["versions", processId] });
+    void queryClient.invalidateQueries({ queryKey: ["version", versionId] });
+  }
+
+  // Every state renders inside one layout, with the import dialog
+  // mounted once above the branches. The dialog stays mounted while
+  // the queries fetch, and new=1 opens it in every state.
+  let content: ReactNode;
   // Stage 1: processes.
   if (q1.isError) {
-    return <ErrorScreen error={q1.error} />;
-  }
-  if (q1.isPending) {
-    return <Loading />;
-  }
-  if (process === null) {
-    return (
+    content = <ErrorScreen error={q1.error} />;
+  } else if (q1.isPending) {
+    content = <Loading />;
+  } else if (process === null) {
+    content = (
       <div className="flex h-screen flex-col items-center justify-center gap-2 text-center">
         <h1 className="text-lg font-semibold">No process yet.</h1>
-        <p className="text-muted-foreground">
+        <Button variant="outline" onClick={() => setImportOpen(true)}>
           Import a credit policy to create one.
-        </p>
+        </Button>
       </div>
     );
   }
-
   // Stage 2: versions of the picked process. A disabled query is not
   // pending, so the empty states below are reachable.
-  if (q2.isError) {
-    return <ErrorScreen error={q2.error} />;
-  }
-  if (q2.isPending) {
-    return <Loading />;
-  }
-  if (version === null) {
-    return (
+  else if (q2.isError) {
+    content = <ErrorScreen error={q2.error} />;
+  } else if (q2.isPending) {
+    content = <Loading />;
+  } else if (version === null) {
+    content = (
       <div className="flex h-screen flex-col items-center justify-center gap-2 text-center">
         <h1 className="text-lg font-semibold">No version yet.</h1>
         <p className="text-muted-foreground">Create a draft to start.</p>
       </div>
     );
   }
-
   // Stage 3: the picked version.
-  if (q3.isError) {
-    return <ErrorScreen error={q3.error} />;
-  }
-  if (q3.isPending) {
-    return <Loading />;
+  else if (q3.isError) {
+    content = <ErrorScreen error={q3.error} />;
+  } else if (q3.isPending) {
+    content = <Loading />;
+  } else {
+    const loaded = q3.data;
+    content = (
+      <div className="flex h-screen flex-col">
+        <TopBar
+          def={loaded.definition}
+          version={version}
+          onNewFromPolicy={() => setImportOpen(true)}
+        />
+        <main className="flex min-h-0 flex-1">
+          <div className="min-w-0 flex-1">
+            <ProcessDiagram
+              def={loaded.definition}
+              selectedNodeId={selectedNodeId}
+              onNodeSelect={select}
+            />
+          </div>
+          <aside
+            aria-label="Step detail"
+            className="flex w-[380px] shrink-0 flex-col border-l"
+          >
+            {selectedNodeId === null ? (
+              <div className="flex flex-col gap-1.5 px-4 pt-3.5">
+                <h2 className="text-[17px] font-semibold leading-tight">
+                  No step selected
+                </h2>
+                <p className="text-xs text-muted-foreground">
+                  Select a step on the diagram to edit it.
+                </p>
+              </div>
+            ) : (
+              <NodePanel
+                def={loaded.definition}
+                version={version}
+                onSaved={() =>
+                  queryClient.invalidateQueries({
+                    queryKey: ["version", versionId],
+                  })
+                }
+              />
+            )}
+          </aside>
+        </main>
+      </div>
+    );
   }
 
-  const loaded = q3.data;
   return (
-    <div className="flex h-screen flex-col">
-      <TopBar def={loaded.definition} version={version} />
-      <main className="flex min-h-0 flex-1">
-        <div className="min-w-0 flex-1">
-          <ProcessDiagram
-            def={loaded.definition}
-            selectedNodeId={selectedNodeId}
-            onNodeSelect={select}
-          />
-        </div>
-        <aside
-          aria-label="Step detail"
-          className="flex w-[380px] shrink-0 flex-col border-l"
-        >
-          {selectedNodeId === null ? (
-            <div className="flex flex-col gap-1.5 px-4 pt-3.5">
-              <h2 className="text-[17px] font-semibold leading-tight">
-                No step selected
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Select a step on the diagram to edit it.
-              </p>
-            </div>
-          ) : (
-            <NodePanel
-              def={loaded.definition}
-              version={version}
-              onSaved={() =>
-                queryClient.invalidateQueries({
-                  queryKey: ["version", versionId],
-                })
-              }
-            />
-          )}
-        </aside>
-      </main>
-    </div>
+    <>
+      {content}
+      <ImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={onImported}
+      />
+    </>
   );
 }
 
@@ -196,9 +275,11 @@ const STATUS_DOT: Record<string, string> = {
 export function TopBar({
   def,
   version,
+  onNewFromPolicy,
 }: {
   def: ProcessDefinition;
   version: VersionSummary;
+  onNewFromPolicy?: () => void;
 }) {
   const statusText = STATUS_TEXT[version.status] ?? version.status;
   const dotColor = STATUS_DOT[version.status] ?? "#71717a";
@@ -235,6 +316,15 @@ export function TopBar({
         {`v${version.number} · ${statusText}`}
       </span>
       <span className="flex-1" />
+      <Button
+        variant="outline"
+        size="sm"
+        className="shrink-0"
+        onClick={() => onNewFromPolicy?.()}
+      >
+        <Upload aria-hidden="true" />
+        New from policy
+      </Button>
       <div
         role="group"
         aria-label="Mode"

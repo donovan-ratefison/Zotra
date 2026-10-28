@@ -106,6 +106,22 @@ func Validate(data []byte) []Error {
 	return errors
 }
 
+// schemaObject decodes the embedded schema once, for callers that
+// send it to the AI provider as a response format.
+var schemaObject = sync.OnceValue(func() map[string]any {
+	var raw map[string]any
+	if err := json.Unmarshal(schemaJSON, &raw); err != nil {
+		panic(fmt.Sprintf("process: embedded schema: %v", err))
+	}
+	return raw
+})
+
+// JSONSchema returns the embedded process JSON Schema as a decoded
+// object, for callers that send it to the AI provider.
+func JSONSchema() map[string]any {
+	return schemaObject()
+}
+
 // Decode parses a document that Validate accepted. It returns an
 // error only for a document that Validate refuses.
 func Decode(data []byte) (Definition, error) {

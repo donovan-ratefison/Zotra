@@ -10,7 +10,7 @@ Work in progress for the Meta Global AI Developer Hackathon (October 26 to Novem
 
 ## What it does
 
-1. **Design.** You import a credit policy, and the AI drafts the steps, the roles, the data scope and the CEL rules, each with a link to its source paragraph. The studio draws the process, and the side panel edits each step: name, role, deadline, checks and data scope, saved into the draft.
+1. **Design.** You import a credit policy as a PDF, and the AI drafts the steps, the roles, the data scope and the CEL rules, each with a link to its source paragraph. Every draft passes the JSON Schema, the CEL type check and the citation check before you see it; the studio draws it, and the side panel edits each step.
 2. **Test.** Test cases run through the process on an animated diagram, and each untested branch turns from red to green.
 3. **Version.** You freeze a version, compare two versions, and start a new draft from an old one.
 4. **Ship.** Each role gets a branded app with an inbox, a step screen, supervision, and a tamper-evident audit log.

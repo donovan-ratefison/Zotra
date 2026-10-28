@@ -1,5 +1,5 @@
-// Client of the three GET routes the studio shell needs, plus the
-// PUT route of the node panel.
+// Client of the GET routes the studio shell needs, the PUT route of
+// the node panel, and the create and AI routes of the policy import.
 
 import type {
   ProcessDefinition,
@@ -10,17 +10,44 @@ import type {
   VersionSummary,
   VersionsBody,
 } from "./types";
+import type { Paragraph } from "./policy";
 
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly details: unknown[];
 
-  constructor(status: number, code: string, message: string) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    details: unknown[] = [],
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.details = details;
   }
+}
+
+// apiError builds the ApiError of one failed response, from the error
+// body of the API: {"error":{"code":...,"message":...,"details":...}}.
+// A body that does not parse, or has another shape, falls back to code
+// "http" with the status as message.
+async function apiError(res: Response): Promise<ApiError> {
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+  const err = (body as { error?: Record<string, unknown> } | null)?.error;
+  const code = typeof err?.code === "string" ? err.code : "http";
+  const message =
+    typeof err?.message === "string" ? err.message : `HTTP ${res.status}`;
+  const details = Array.isArray(err?.details) ? err.details : [];
+  return new ApiError(res.status, code, message, details);
 }
 
 async function getJson<T>(path: string): Promise<T> {
@@ -28,21 +55,26 @@ async function getJson<T>(path: string): Promise<T> {
   if (res.ok) {
     return (await res.json()) as T;
   }
-  // Error body of the API: {"error":{"code":...,"message":...}}. A
-  // body that does not parse, or has another shape, falls back to
-  // code "http" with the status as message.
-  let body: unknown;
-  try {
-    body = await res.json();
-  } catch {
-    body = null;
+  throw await apiError(res);
+}
+
+// requestJson sends one JSON request and returns the parsed answer
+// of a success status. A failure throws the ApiError of the error
+// body.
+async function requestJson<T>(
+  path: string,
+  method: string,
+  body: unknown,
+): Promise<T> {
+  const res = await fetch(path, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (res.ok) {
+    return (await res.json()) as T;
   }
-  const err = (body as { error?: { code?: unknown; message?: unknown } } | null)
-    ?.error;
-  const code = typeof err?.code === "string" ? err.code : "http";
-  const message =
-    typeof err?.message === "string" ? err.message : `HTTP ${res.status}`;
-  throw new ApiError(res.status, code, message);
+  throw await apiError(res);
 }
 
 export async function listProcesses(): Promise<ProcessSummary[]> {
@@ -71,25 +103,42 @@ export async function updateDraft(
   versionId: string,
   definition: ProcessDefinition,
 ): Promise<Version> {
-  const res = await fetch(`/api/versions/${encodeURIComponent(versionId)}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ definition }),
-  });
-  if (res.ok) {
-    return ((await res.json()) as VersionBody).version;
-  }
-  // Same error body rules as getJson above.
-  let body: unknown;
-  try {
-    body = await res.json();
-  } catch {
-    body = null;
-  }
-  const err = (body as { error?: { code?: unknown; message?: unknown } } | null)
-    ?.error;
-  const code = typeof err?.code === "string" ? err.code : "http";
-  const message =
-    typeof err?.message === "string" ? err.message : `HTTP ${res.status}`;
-  throw new ApiError(res.status, code, message);
+  return requestJson<VersionBody>(
+    `/api/versions/${encodeURIComponent(versionId)}`,
+    "PUT",
+    { definition },
+  ).then((body) => body.version);
+}
+
+// policyToProcess sends the numbered paragraphs of one policy to the
+// AI and returns the proposed document with the attempt count.
+export async function policyToProcess(
+  name: string,
+  paragraphs: Paragraph[],
+): Promise<{ definition: ProcessDefinition; attempts: number }> {
+  return requestJson<{ definition: ProcessDefinition; attempts: number }>(
+    "/api/ai/policy-to-process",
+    "POST",
+    { name, paragraphs },
+  );
+}
+
+// createProcess creates one process and returns its summary.
+export async function createProcess(name: string): Promise<ProcessSummary> {
+  return requestJson<{ process: ProcessSummary }>("/api/processes", "POST", {
+    name,
+  }).then((body) => body.process);
+}
+
+// createVersion creates one draft version of a process.
+export async function createVersion(
+  processId: string,
+  label: string,
+  definition: ProcessDefinition,
+): Promise<Version> {
+  return requestJson<{ version: Version }>(
+    `/api/processes/${encodeURIComponent(processId)}/versions`,
+    "POST",
+    { label, definition },
+  ).then((body) => body.version);
 }

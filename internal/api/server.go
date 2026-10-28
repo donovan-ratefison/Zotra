@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/donovan-ratefison/zotra/internal/ai"
+	"github.com/donovan-ratefison/zotra/internal/process"
 	"github.com/donovan-ratefison/zotra/internal/store"
 )
 
@@ -18,6 +20,7 @@ const msgInvalidJSON = "the request body is not valid JSON"
 type apiDeps struct {
 	st      *store.Store
 	version string
+	ai      *ai.Client
 }
 
 // NewHandler returns the handler of Zotra: the API routes and the web app.
@@ -53,7 +56,7 @@ func NewHandler(static fs.FS, version string, st *store.Store, feedbackDir strin
 	// pattern carries one method: a wrong method falls to the /api/
 	// fallback below and answers 404 not_found.
 	if st != nil {
-		d := apiDeps{st: st, version: version}
+		d := apiDeps{st: st, version: version, ai: ai.New(ai.LoadConfig())}
 		mux.HandleFunc("GET /api/processes", d.listProcesses)
 		mux.HandleFunc("POST /api/processes", d.createProcess)
 		mux.HandleFunc("GET /api/processes/{id}/versions", d.listVersions)
@@ -71,6 +74,7 @@ func NewHandler(static fs.FS, version string, st *store.Store, feedbackDir strin
 		mux.HandleFunc("GET /api/cases/{id}/verify", d.verifyCase)
 		mux.HandleFunc("GET /api/inbox", d.listInbox)
 		mux.HandleFunc("POST /api/ai/generate-tests", d.generateTests)
+		mux.HandleFunc("POST /api/ai/policy-to-process", d.policyToProcess)
 		mux.HandleFunc("POST /api/cases/{id}/documents", d.uploadDocument)
 		mux.HandleFunc("GET /api/cases/{id}/documents", d.listCaseDocuments)
 		mux.HandleFunc("GET /api/documents/{id}", d.readDocument)
@@ -152,6 +156,29 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 	body.Error.Code = code
 	body.Error.Message = message
 	body.Error.Details = []string{}
+	b, _ := json.Marshal(body)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write(b)
+}
+
+// writeErrorDetails writes the JSON error body with one object per
+// detail: {"path": ..., "message": ...}. A nil or empty slice gives
+// []. It serves the AI answers that failed validation.
+func writeErrorDetails(w http.ResponseWriter, status int, code,
+	message string, errs []process.Error) {
+	details := make([]process.Error, 0, len(errs))
+	details = append(details, errs...)
+	var body struct {
+		Error struct {
+			Code    string          `json:"code"`
+			Message string          `json:"message"`
+			Details []process.Error `json:"details"`
+		} `json:"error"`
+	}
+	body.Error.Code = code
+	body.Error.Message = message
+	body.Error.Details = details
 	b, _ := json.Marshal(body)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
