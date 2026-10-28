@@ -1,11 +1,13 @@
 // The studio shell: it loads the process, the versions and the
 // version, in this order, then renders the top bar and the diagram.
 
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
 import { getVersion, listProcesses, listVersions, ApiError } from "./api";
 import { ProcessDiagram } from "./diagram";
+import { NodePanel } from "./NodePanel";
+import { useStudioStore, type PanelTab } from "./store";
 import type {
   ProcessDefinition,
   ProcessSummary,
@@ -47,8 +49,24 @@ function ErrorScreen({ error }: { error: unknown }) {
   );
 }
 
+const TAB_VALUES: PanelTab[] = ["general", "requirements", "scope"];
+
 export function StudioShell() {
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const selectedNodeId = useStudioStore((s) => s.selectedNodeId);
+  const select = useStudioStore((s) => s.select);
+  const setTab = useStudioStore((s) => s.setTab);
+  const queryClient = useQueryClient();
+
+  // URL parameters, read once at mount. The tab parameter applies
+  // only when it names a known tab; anything else is ignored.
+  useEffect(() => {
+    const value = new URLSearchParams(window.location.search).get("tab");
+    if (TAB_VALUES.includes(value as PanelTab)) {
+      setTab(value as PanelTab);
+    }
+    // setTab is a stable zustand setter, so this runs once, at mount.
+  }, [setTab]);
+
   const q1 = useQuery({ queryKey: ["processes"], queryFn: listProcesses });
   const process = useMemo(() => pickProcess(q1.data), [q1.data]);
   const processId = process ? process.id : null;
@@ -64,6 +82,20 @@ export function StudioShell() {
     queryFn: () => getVersion(versionId!),
     enabled: versionId !== null,
   });
+  const def = q3.data?.definition;
+
+  // The node URL parameter applies only when the definition holds it
+  // and no node is selected yet. The guard keeps a refetch after a
+  // save from pulling the selection back to the stale parameter.
+  useEffect(() => {
+    if (!def || useStudioStore.getState().selectedNodeId !== null) {
+      return;
+    }
+    const nodeId = new URLSearchParams(window.location.search).get("node");
+    if (nodeId !== null && def.nodes.some((n) => n.id === nodeId)) {
+      select(nodeId);
+    }
+  }, [def, select]);
 
   // Stage 1: processes.
   if (q1.isError) {
@@ -112,12 +144,39 @@ export function StudioShell() {
   return (
     <div className="flex h-screen flex-col">
       <TopBar def={loaded.definition} version={version} />
-      <main className="min-h-0 flex-1">
-        <ProcessDiagram
-          def={loaded.definition}
-          selectedNodeId={selectedNodeId}
-          onNodeSelect={setSelectedNodeId}
-        />
+      <main className="flex min-h-0 flex-1">
+        <div className="min-w-0 flex-1">
+          <ProcessDiagram
+            def={loaded.definition}
+            selectedNodeId={selectedNodeId}
+            onNodeSelect={select}
+          />
+        </div>
+        <aside
+          aria-label="Step detail"
+          className="flex w-[380px] shrink-0 flex-col border-l"
+        >
+          {selectedNodeId === null ? (
+            <div className="flex flex-col gap-1.5 px-4 pt-3.5">
+              <h2 className="text-[17px] font-semibold leading-tight">
+                No step selected
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                Select a step on the diagram to edit it.
+              </p>
+            </div>
+          ) : (
+            <NodePanel
+              def={loaded.definition}
+              version={version}
+              onSaved={() =>
+                queryClient.invalidateQueries({
+                  queryKey: ["version", versionId],
+                })
+              }
+            />
+          )}
+        </aside>
       </main>
     </div>
   );

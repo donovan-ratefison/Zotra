@@ -1,6 +1,8 @@
-// Client of the three GET routes the studio shell needs.
+// Client of the three GET routes the studio shell needs, plus the
+// PUT route of the node panel.
 
 import type {
+  ProcessDefinition,
   ProcessSummary,
   ProcessesBody,
   Version,
@@ -60,4 +62,34 @@ export async function getVersion(versionId: string): Promise<Version> {
     `/api/versions/${encodeURIComponent(versionId)}`,
   );
   return body.version;
+}
+
+// PUT /api/versions/<versionId>: replaces the definition of a draft.
+// A non-draft gives 409 "conflict". The answer carries the stored
+// version, so the bytes come back from the database.
+export async function updateDraft(
+  versionId: string,
+  definition: ProcessDefinition,
+): Promise<Version> {
+  const res = await fetch(`/api/versions/${encodeURIComponent(versionId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ definition }),
+  });
+  if (res.ok) {
+    return ((await res.json()) as VersionBody).version;
+  }
+  // Same error body rules as getJson above.
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+  const err = (body as { error?: { code?: unknown; message?: unknown } } | null)
+    ?.error;
+  const code = typeof err?.code === "string" ? err.code : "http";
+  const message =
+    typeof err?.message === "string" ? err.message : `HTTP ${res.status}`;
+  throw new ApiError(res.status, code, message);
 }
