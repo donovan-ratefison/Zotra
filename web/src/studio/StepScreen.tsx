@@ -7,11 +7,14 @@ import { useEffect, useState } from "react";
 import { Button } from "@/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { FieldInput, fieldInput } from "./field-inputs";
+import { documentProvides, StepDocuments } from "./StepDocuments";
 import type {
+  CaseEvent,
   CaseState,
   CommandInput,
   UserDTO,
 } from "./case-api";
+import type { DocumentDTO } from "./doc-api";
 import type { Field, ProcessDefinition, ProcessNode, ScopeAccess } from "./types";
 
 const TYPE_TEXT: Record<string, string> = {
@@ -42,7 +45,7 @@ export function accessOf(field: Field, node: ProcessNode, def: ProcessDefinition
   return row === undefined ? "hidden" : row.access;
 }
 
-export function StepScreen({ def, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly = false }: {
+export function StepScreen({ def, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly = false, documents, documentsError, events, uploading, onUpload }: {
   def: ProcessDefinition;
   state: CaseState;
   users: UserDTO[];
@@ -53,6 +56,11 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
   decisionEnabled: boolean;
   onValueChange: () => void;
   readOnly?: boolean;
+  documents: DocumentDTO[] | null;
+  documentsError: string | null;
+  events: CaseEvent[];
+  uploading: boolean;
+  onUpload: (file: File, targetName: string) => void;
 }) {
   if (state.status === "closed") {
     return (
@@ -110,6 +118,11 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
           decisionEnabled={decisionEnabled}
           onValueChange={onValueChange}
           readOnly={readOnly}
+          documents={documents}
+          documentsError={documentsError}
+          events={events}
+          uploading={uploading}
+          onUpload={onUpload}
         />
       )}
     </div>
@@ -119,7 +132,7 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
 // TaskBody is the task-only part: the Act as pick, then the take
 // button or the form with the actions. A replay disables the pick and
 // hides the commands.
-function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly }: {
+function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly, documents, documentsError, events, uploading, onUpload }: {
   def: ProcessDefinition;
   node: ProcessNode;
   state: CaseState;
@@ -131,6 +144,11 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, fa
   decisionEnabled: boolean;
   onValueChange: () => void;
   readOnly: boolean;
+  documents: DocumentDTO[] | null;
+  documentsError: string | null;
+  events: CaseEvent[];
+  uploading: boolean;
+  onUpload: (file: File, targetName: string) => void;
 }) {
   // The users whose roles contain the node role (all users on a
   // node without a role).
@@ -207,6 +225,11 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, fa
           decisionEnabled={decisionEnabled}
           onValueChange={onValueChange}
           readOnly={readOnly}
+          documents={documents}
+          documentsError={documentsError}
+          events={events}
+          uploading={uploading}
+          onUpload={onUpload}
         />
       )}
     </div>
@@ -217,7 +240,7 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, fa
 // the local values, and the actions. The key on the parent render
 // resets the values at each step change. A replay disables the
 // inputs and hides the actions.
-function StepForm({ def, node, state, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly }: {
+function StepForm({ def, node, state, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly, documents, documentsError, events, uploading, onUpload }: {
   def: ProcessDefinition;
   node: ProcessNode;
   state: CaseState;
@@ -226,8 +249,29 @@ function StepForm({ def, node, state, onCommand, failedChecks, decisionEnabled, 
   decisionEnabled: boolean;
   onValueChange: () => void;
   readOnly: boolean;
+  documents: DocumentDTO[] | null;
+  documentsError: string | null;
+  events: CaseEvent[];
+  uploading: boolean;
+  onUpload: (file: File, targetName: string) => void;
 }) {
   const [values, setValues] = useState<Record<string, unknown>>({});
+
+  // The document gate: each required name is provided by one scan,
+  // and a node with a signature needs a signature_added event for
+  // this step. While the documents list loads, every required name
+  // counts as missing.
+  const list = documents ?? [];
+  const missing = node.documents.filter(
+    (name) => !list.some((d) => documentProvides(d.name, name)),
+  );
+  const documentsReady = documents !== null && missing.length === 0;
+  const signed = events.some(
+    (e) =>
+      e.type === "signature_added" &&
+      (e.payload as { node_id?: string }).node_id === state.node_id,
+  );
+  const blocked = !documentsReady || (node.signature && !signed);
 
   return (
     <div className="flex flex-col gap-4">
@@ -260,15 +304,29 @@ function StepForm({ def, node, state, onCommand, failedChecks, decisionEnabled, 
                   onValueChange();
                 }}
                 disabled={readOnly}
+                scans={list.map((d) => ({ id: d.id, name: d.name }))}
               />
             </label>
           );
         })}
       </div>
+      {(node.documents.length > 0 || node.signature) && (
+        <StepDocuments
+          node={node}
+          documents={documents}
+          documentsError={documentsError}
+          uploading={uploading}
+          onUpload={onUpload}
+          onCommand={onCommand}
+          signed={signed}
+          readOnly={readOnly}
+        />
+      )}
       {!readOnly && (
         <div className="flex flex-wrap items-center gap-2">
           <Button
             variant={node.decisions.length > 0 ? "outline" : "default"}
+            disabled={blocked}
             onClick={() => onCommand({ type: "submit", values })}
           >
             Submit
@@ -276,12 +334,26 @@ function StepForm({ def, node, state, onCommand, failedChecks, decisionEnabled, 
           {node.decisions.map((decision) => (
             <Button
               key={decision}
-              disabled={!decisionEnabled}
+              disabled={!decisionEnabled || blocked}
               onClick={() => onCommand({ type: "decide", decision })}
             >
               {decision}
             </Button>
           ))}
+        </div>
+      )}
+      {!readOnly && blocked && (
+        <div className="flex flex-col gap-1">
+          {missing.map((name) => (
+            <p key={name} className="text-destructive text-sm">
+              {`Missing document: ${name}.`}
+            </p>
+          ))}
+          {node.signature && !signed && (
+            <p className="text-destructive text-sm">
+              The step has no signature yet.
+            </p>
+          )}
         </div>
       )}
       <FailedChecks failedChecks={failedChecks} />

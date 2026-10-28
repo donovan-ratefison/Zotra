@@ -38,10 +38,11 @@ export interface CaseEvent {
   hash: string;
 }
 export interface CommandInput {
-  type: "start" | "take" | "submit" | "decide";
+  type: "start" | "take" | "submit" | "decide" | "sign";
   data?: Record<string, unknown>;
   values?: Record<string, unknown>;
   decision?: string;
+  document_hash?: string;
 }
 
 // apiError builds the ApiError of one failed response, from the error
@@ -132,7 +133,7 @@ export async function listEvents(caseId: string): Promise<CaseEvent[]> {
 
 // runCommand sends POST /api/cases/<id>/commands with the
 // X-Zotra-User header and the five body fields, empty when unused
-// (document_hash stays empty: Sign comes with lot 5.2). The answer
+// (document_hash carries the hash of a sign command). The answer
 // is {"events":...,"state":...}.
 export async function runCommand(
   caseId: string,
@@ -146,7 +147,7 @@ export async function runCommand(
       data: cmd.data ?? {},
       values: cmd.values ?? {},
       decision: cmd.decision ?? "",
-      document_hash: "",
+      document_hash: cmd.document_hash ?? "",
     },
     userId,
   );

@@ -291,6 +291,11 @@ function renderStep(state: CaseState, props?: { readOnly?: boolean }): string {
       decisionEnabled: false,
       onValueChange: () => {},
       readOnly: props?.readOnly,
+      documents: [],
+      documentsError: null,
+      events: [],
+      uploading: false,
+      onUpload: () => {},
     }),
   );
 }

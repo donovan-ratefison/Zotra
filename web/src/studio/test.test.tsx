@@ -137,6 +137,15 @@ const closedState: CaseState = {
   result: "approved",
 };
 
+const scanRow = {
+  id: "d1",
+  case_id: "c1",
+  name: "ID.png",
+  mime: "image/png",
+  sha256: "a".repeat(64),
+  created_at: "2026-10-27T12:00:00Z",
+};
+
 const eventsFixture = [
   {
     case_id: "c1",
@@ -214,6 +223,8 @@ function stubFetch(status: number, body: unknown) {
 }
 
 // renderStep renders StepScreen directly, with every prop named.
+// The scan of the fixture provides the required name ID of entry, so
+// the document gate stays open.
 function renderStep(state: CaseState, props?: {
   actor?: string;
   failedChecks?: { id: string; message: string }[];
@@ -230,6 +241,11 @@ function renderStep(state: CaseState, props?: {
       failedChecks: props?.failedChecks ?? [],
       decisionEnabled: props?.decisionEnabled ?? false,
       onValueChange: () => {},
+      documents: [scanRow],
+      documentsError: null,
+      events: [],
+      uploading: false,
+      onUpload: () => {},
     }),
   );
 }
@@ -420,6 +436,7 @@ describe("new case dialog", () => {
     expect(html).toContain("Kind");
     expect(html).toContain("Signed on");
     expect(html).toContain("Documents");
+    expect(html).toContain("No scans yet.");
     expect(html).toContain("Create and start");
   });
 
@@ -458,6 +475,8 @@ describe("step screen", () => {
     expect(html).toContain("Kind");
     expect(html).toContain("Signed on");
     expect(html).toContain("Documents");
+    expect(html).toContain('aria-label="ID.png"');
+    expect(html).not.toContain("No scans yet.");
     expect(html).not.toContain("Take the step");
   });
 

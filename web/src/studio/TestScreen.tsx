@@ -34,6 +34,7 @@ import {
 import { caseViewOf } from "./case-view";
 import { ChecksTab } from "./ChecksTab";
 import { Inspector } from "./Inspector";
+import { listCaseDocuments, uploadDocument, type DocumentDTO } from "./doc-api";
 import { NewCaseDialog } from "./NewCaseDialog";
 import {
   saveErrorText,
@@ -127,6 +128,13 @@ export function TestScreen({ def, version }: {
     queryFn: () => listEvents(testCaseId!),
     enabled: testCaseId !== null,
   });
+  // The scans of the case. TestScreen owns this cache: the upload
+  // appends into it, and the commands never touch it.
+  const documentsQuery = useQuery({
+    queryKey: ["documents", testCaseId],
+    queryFn: () => listCaseDocuments(testCaseId!),
+    enabled: testCaseId !== null,
+  });
   const count = eventsQuery.data?.length ?? 0;
   const n = at ?? count;
   const earlier = n - 1;
@@ -148,6 +156,7 @@ export function TestScreen({ def, version }: {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [lastAnswer, setLastAnswer] = useState<{
     events: CaseEvent[];
     state: CaseState;
@@ -212,6 +221,32 @@ export function TestScreen({ def, version }: {
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : String(err));
     }
+  }
+
+  // onUpload attaches one scan to the case under the target name of
+  // one required document. The answer appends into the documents
+  // cache; a failure shows a toast. The flag always resets.
+  function onUpload(file: File, targetName: string) {
+    if (testCaseId === null) {
+      return;
+    }
+    const caseId = testCaseId;
+    setUploading(true);
+    const named = new File([file], targetName, { type: file.type });
+    uploadDocument(caseId, named)
+      .then((doc) => {
+        queryClient.setQueryData<DocumentDTO[]>(
+          ["documents", caseId],
+          (old) => (old ? [...old, doc] : [doc]),
+        );
+        toast.success(`Document attached: ${doc.name}.`);
+      })
+      .catch((err) => {
+        toast.error(err instanceof ApiError ? err.message : String(err));
+      })
+      .finally(() => {
+        setUploading(false);
+      });
   }
 
   // onNewCase creates the case and starts it with the form values.
@@ -523,6 +558,15 @@ export function TestScreen({ def, version }: {
                 decisionEnabled={decisionEnabled}
                 onValueChange={() => setValuesChanged(true)}
                 readOnly={at !== null}
+                documents={documentsQuery.data ?? null}
+                documentsError={
+                  documentsQuery.error instanceof ApiError
+                    ? documentsQuery.error.message
+                    : null
+                }
+                events={events}
+                uploading={uploading}
+                onUpload={onUpload}
               />
             )}
             {panelTab === "inspector" && (

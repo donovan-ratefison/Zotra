@@ -2,10 +2,17 @@
 // section 5), plus the string and parse forms of one value. The step
 // form and the new test case dialog share them.
 
+import { Checkbox } from "@/ui/checkbox";
 import { Input } from "@/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Switch } from "@/ui/switch";
 import type { Field } from "./types";
+
+// ScanOption is one scan of the case, for the document field.
+export interface ScanOption {
+  id: string;
+  name: string;
+}
 
 // fieldInput gives the string form of a value for an input. null and
 // undefined (a not-yet-touched field) give "", numbers give their
@@ -58,13 +65,48 @@ export function parseFieldValue(field: Field, raw: string): unknown {
 
 // FieldInput renders one input for the field type, fully controlled:
 // the value comes in, the parsed value goes out through onChange.
-// Every input carries the field label as its accessible name.
-export function FieldInput({ field, value, onChange, disabled }: {
+// Every input carries the field label as its accessible name. A
+// document field renders one checkbox row per scan; the checked ids
+// are the value array.
+export function FieldInput({ field, value, onChange, disabled, scans }: {
   field: Field;
   value: unknown;
   onChange: (v: unknown) => void;
   disabled: boolean;
+  scans?: ScanOption[];
 }) {
+  if (field.type === "document") {
+    if (!scans || scans.length === 0) {
+      return (
+        <p className="text-[12px] text-muted-foreground">No scans yet.</p>
+      );
+    }
+    const checkedIds = Array.isArray(value) ? value : [];
+    return (
+      <div className="flex flex-col gap-1.5">
+        {scans.map((scan) => {
+          const checked = checkedIds.includes(scan.id);
+          return (
+            <label key={scan.id} className="flex items-center gap-2">
+              <Checkbox
+                aria-label={scan.name}
+                checked={checked}
+                onCheckedChange={() =>
+                  onChange(
+                    checked
+                      ? checkedIds.filter((id) => id !== scan.id)
+                      : [...checkedIds, scan.id],
+                  )
+                }
+                disabled={disabled}
+              />
+              <span className="text-[13px]">{scan.name}</span>
+            </label>
+          );
+        })}
+      </div>
+    );
+  }
   if (field.type === "boolean") {
     return (
       <Switch
@@ -108,7 +150,6 @@ export function FieldInput({ field, value, onChange, disabled }: {
       type={type}
       step={step}
       aria-label={field.label}
-      title={field.type === "document" ? "Document ids, comma separated" : undefined}
       value={fieldInput(field, value)}
       onChange={(e) => onChange(parseFieldValue(field, e.target.value))}
       disabled={disabled}
