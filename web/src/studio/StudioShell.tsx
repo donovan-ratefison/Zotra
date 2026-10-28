@@ -22,6 +22,7 @@ import { ImportDialog } from "./ImportDialog";
 import { NodePanel } from "./NodePanel";
 import { ProcessPanel } from "./ProcessPanel";
 import { ProposalBar } from "./ProposalBar";
+import { VersionActions } from "./version-actions";
 import type { Paragraph } from "./policy";
 import { useStudioStore, type PanelTab } from "./store";
 import { TestScreen } from "./TestScreen";
@@ -335,6 +336,11 @@ export function StudioShell() {
           onNewFromPolicy={() => setImportOpen(true)}
           policyOpen={policyOpen}
           onTogglePolicy={onTogglePolicy}
+          versions={q2.data ?? []}
+          versionsPending={q2.isPending}
+          onVersionsChanged={() =>
+            queryClient.invalidateQueries({ queryKey: ["versions", processId] })
+          }
         />
         <ProposalBar
           diff={diffDefinitions(diffBase, proposal.definition)}
@@ -405,6 +411,11 @@ export function StudioShell() {
           onNewFromPolicy={() => setImportOpen(true)}
           policyOpen={policyOpen}
           onTogglePolicy={onTogglePolicy}
+          versions={q2.data ?? []}
+          versionsPending={q2.isPending}
+          onVersionsChanged={() =>
+            queryClient.invalidateQueries({ queryKey: ["versions", processId] })
+          }
         />
         <main className="flex min-h-0 flex-1">
           {mode === "test" ? (
@@ -489,12 +500,18 @@ export function TopBar({
   onNewFromPolicy,
   policyOpen = false,
   onTogglePolicy,
+  versions = [],
+  versionsPending = false,
+  onVersionsChanged = () => {},
 }: {
   def: ProcessDefinition;
   version?: VersionSummary;
   onNewFromPolicy?: () => void;
   policyOpen?: boolean;
   onTogglePolicy?: () => void;
+  versions?: VersionSummary[];
+  versionsPending?: boolean;
+  onVersionsChanged?: () => void;
 }) {
   const statusText = version === undefined ? undefined : STATUS_TEXT[version.status] ?? version.status;
   const dotColor = version === undefined ? undefined : STATUS_DOT[version.status] ?? "#71717a";
@@ -586,6 +603,17 @@ export function TopBar({
           Monitor
         </button>
       </div>
+      {version !== undefined && (
+        <div className="shrink-0">
+          <VersionActions
+            def={def}
+            version={version}
+            versions={versions}
+            versionsPending={versionsPending}
+            onVersionsChanged={onVersionsChanged}
+          />
+        </div>
+      )}
     </header>
   );
 }

@@ -58,6 +58,23 @@ async function getJson<T>(path: string): Promise<T> {
   throw await apiError(res);
 }
 
+// postJson sends one POST request and returns the parsed answer of
+// a success status. The init carries a body only when the caller
+// gives one: the lifecycle routes read no body on freeze and
+// publish. A failure throws the ApiError of the error body.
+async function postJson<T>(path: string, body?: unknown): Promise<T> {
+  const init: RequestInit = { method: "POST" };
+  if (body !== undefined) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify(body);
+  }
+  const res = await fetch(path, init);
+  if (res.ok) {
+    return (await res.json()) as T;
+  }
+  throw await apiError(res);
+}
+
 // requestJson sends one JSON request and returns the parsed answer
 // of a success status. A failure throws the ApiError of the error
 // body.
@@ -140,5 +157,34 @@ export async function createVersion(
     `/api/processes/${encodeURIComponent(processId)}/versions`,
     "POST",
     { label, definition },
+  ).then((body) => body.version);
+}
+
+// freezeVersion moves a draft to frozen. A non-draft gives 409
+// "conflict".
+export async function freezeVersion(versionId: string): Promise<Version> {
+  return postJson<VersionBody>(
+    `/api/versions/${encodeURIComponent(versionId)}/freeze`,
+  ).then((body) => body.version);
+}
+
+// publishVersion moves a frozen version to published. A non-frozen
+// version gives 409 "conflict".
+export async function publishVersion(versionId: string): Promise<Version> {
+  return postJson<VersionBody>(
+    `/api/versions/${encodeURIComponent(versionId)}/publish`,
+  ).then((body) => body.version);
+}
+
+// forkVersion starts a draft from a version of any status, with the
+// label given. The answer carries the new draft, with the next
+// number and the parent set.
+export async function forkVersion(
+  versionId: string,
+  label: string,
+): Promise<Version> {
+  return postJson<VersionBody>(
+    `/api/versions/${encodeURIComponent(versionId)}/fork`,
+    { label },
   ).then((body) => body.version);
 }
