@@ -23,6 +23,7 @@ import { NodePanel } from "./NodePanel";
 import { ProposalBar } from "./ProposalBar";
 import type { Paragraph } from "./policy";
 import { useStudioStore, type PanelTab } from "./store";
+import { TestScreen } from "./TestScreen";
 import type {
   ProcessDefinition,
   ProcessNode,
@@ -115,6 +116,9 @@ export function StudioShell() {
   const selectedNodeId = useStudioStore((s) => s.selectedNodeId);
   const select = useStudioStore((s) => s.select);
   const setTab = useStudioStore((s) => s.setTab);
+  const setMode = useStudioStore((s) => s.setMode);
+  const setTestCaseId = useStudioStore((s) => s.setTestCaseId);
+  const mode = useStudioStore((s) => s.mode);
   const queryClient = useQueryClient();
   const [importOpen, setImportOpen] = useState(() => {
     // new=1 in the URL opens the dialog once, at mount. The render
@@ -147,14 +151,27 @@ export function StudioShell() {
   >(null);
 
   // URL parameters, read once at mount. The tab parameter applies
-  // only when it names a known tab; anything else is ignored.
+  // only when it names a known tab; anything else is ignored. The
+  // mode and case parameters open the test view (mode=test) with the
+  // case of the URL; an unknown case id is kept, the case query then
+  // fails into the error state. The mount is the guard: a re-applied
+  // parameter would pull the mode back after a tab click.
   useEffect(() => {
-    const value = new URLSearchParams(window.location.search).get("tab");
-    if (TAB_VALUES.includes(value as PanelTab)) {
-      setTab(value as PanelTab);
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get("tab");
+    if (TAB_VALUES.includes(tab as PanelTab)) {
+      setTab(tab as PanelTab);
     }
-    // setTab is a stable zustand setter, so this runs once, at mount.
-  }, [setTab]);
+    if (params.get("mode") === "test") {
+      setMode("test");
+    }
+    const caseId = params.get("case");
+    if (caseId !== null) {
+      setTestCaseId(caseId);
+    }
+    // The setters are stable zustand setters, so this runs once, at
+    // mount.
+  }, [setTab, setMode, setTestCaseId]);
 
   const q1 = useQuery({ queryKey: ["processes"], queryFn: listProcesses });
   // A process or version id in the URL overrides the automatic pick.
@@ -387,47 +404,53 @@ export function StudioShell() {
           onTogglePolicy={onTogglePolicy}
         />
         <main className="flex min-h-0 flex-1">
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1">
-              <ProcessDiagram
-                def={loaded.definition}
-                selectedNodeId={selectedNodeId}
-                onNodeSelect={select}
-                ghost={false}
-                onCitationClick={onCitationClick}
-              />
-            </div>
-            {policyOpen && (
-              <div className="h-[40%] shrink-0 overflow-hidden border-t">
-                <PolicyPanel file={panelFile} highlight={highlight} />
+          {mode === "test" ? (
+            <TestScreen def={loaded.definition} version={version} />
+          ) : (
+            <>
+              <div className="flex min-w-0 flex-1 flex-col">
+                <div className="min-h-0 flex-1">
+                  <ProcessDiagram
+                    def={loaded.definition}
+                    selectedNodeId={selectedNodeId}
+                    onNodeSelect={select}
+                    ghost={false}
+                    onCitationClick={onCitationClick}
+                  />
+                </div>
+                {policyOpen && (
+                  <div className="h-[40%] shrink-0 overflow-hidden border-t">
+                    <PolicyPanel file={panelFile} highlight={highlight} />
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          <aside
-            aria-label="Step detail"
-            className="flex w-[380px] shrink-0 flex-col border-l"
-          >
-            {selectedNodeId === null ? (
-              <div className="flex flex-col gap-1.5 px-4 pt-3.5">
-                <h2 className="text-[17px] font-semibold leading-tight">
-                  No step selected
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  Select a step on the diagram to edit it.
-                </p>
-              </div>
-            ) : (
-              <NodePanel
-                def={loaded.definition}
-                version={version}
-                onSaved={() =>
-                  queryClient.invalidateQueries({
-                    queryKey: ["version", versionId],
-                  })
-                }
-              />
-            )}
-          </aside>
+              <aside
+                aria-label="Step detail"
+                className="flex w-[380px] shrink-0 flex-col border-l"
+              >
+                {selectedNodeId === null ? (
+                  <div className="flex flex-col gap-1.5 px-4 pt-3.5">
+                    <h2 className="text-[17px] font-semibold leading-tight">
+                      No step selected
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      Select a step on the diagram to edit it.
+                    </p>
+                  </div>
+                ) : (
+                  <NodePanel
+                    def={loaded.definition}
+                    version={version}
+                    onSaved={() =>
+                      queryClient.invalidateQueries({
+                        queryKey: ["version", versionId],
+                      })
+                    }
+                  />
+                )}
+              </aside>
+            </>
+          )}
         </main>
       </div>
     );
@@ -471,6 +494,8 @@ export function TopBar({
 }) {
   const statusText = version === undefined ? undefined : STATUS_TEXT[version.status] ?? version.status;
   const dotColor = version === undefined ? undefined : STATUS_DOT[version.status] ?? "#71717a";
+  const mode = useStudioStore((s) => s.mode);
+  const setMode = useStudioStore((s) => s.setMode);
   return (
     <header
       className="flex h-12 w-full shrink-0 items-center gap-3 border-b px-4"
@@ -532,17 +557,19 @@ export function TopBar({
       >
         <button
           type="button"
-          aria-pressed="true"
+          aria-pressed={mode === "design"}
           className="rounded px-2.5 py-1 text-[12.5px] font-medium"
-          style={{ background: "var(--secondary)" }}
+          style={mode === "design" ? { background: "var(--secondary)" } : undefined}
+          onClick={() => setMode("design")}
         >
           Design
         </button>
         <button
           type="button"
-          disabled
-          title="The test screen is not built yet"
-          className="px-2.5 py-1 text-[12.5px] text-muted-foreground"
+          aria-pressed={mode === "test"}
+          className="rounded px-2.5 py-1 text-[12.5px] font-medium"
+          style={mode === "test" ? { background: "var(--secondary)" } : undefined}
+          onClick={() => setMode("test")}
         >
           Test
         </button>
