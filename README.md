@@ -11,7 +11,7 @@ Work in progress for the Meta Global AI Developer Hackathon (October 26 to Novem
 ## What it does
 
 1. **Design.** You import a credit policy as a PDF, and the AI drafts the steps, the roles, the data scope and the CEL rules, each with a link to its source paragraph. Every draft passes the JSON Schema, the CEL type check and the citation check before you see it. The proposal then waits for you: added steps draw as dashed ghosts, changed steps show the diff, and a click on a citation chip highlights its paragraph in the PDF. You accept or reject, and the studio edits each step in the side panel.
-2. **Test.** You create a test case, act as any role, and play the circuit step by step: the step screen builds its form from the data scope, you take the step, submit values and decide. The timeline replays any past event: the inspector shows each field before and after, and the checks tab carries each result.
+2. **Test.** You create a test case, act as any role, and play the circuit step by step: the step screen builds its form from the data scope, you take the step, submit values and decide. The diagram comes alive as the case runs: the taken links light up, the current step pulses with the actor token, and a failed check shakes its step. The timeline replays any past event: the inspector shows each field before and after, and the checks tab carries each result.
 3. **Version.** You freeze a version, compare two versions, and start a new draft from an old one.
 4. **Ship.** Each role gets a branded app with an inbox, a step screen, supervision, and a tamper-evident audit log.
 

@@ -17,10 +17,19 @@ import {
   Position,
   type EdgeProps,
   type EdgeTypes,
+  type Node,
   type NodeProps,
   type NodeTypes,
 } from "@xyflow/react";
-import { FileText, ListChecks, Maximize, PenLine, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  FileText,
+  ListChecks,
+  Maximize,
+  PenLine,
+  TriangleAlert,
+  ZoomIn,
+  ZoomOut,
+} from "lucide-react";
 import {
   layoutProcess,
   pathMidpoint,
@@ -29,7 +38,8 @@ import {
   type DiagramPoint,
   type FlowNode,
 } from "./layout";
-import type { ProcessDefinition, ProcessNode } from "./types";
+import { initials, type CaseView } from "./case-view";
+import type { NodeType, ProcessDefinition, ProcessNode } from "./types";
 
 // React Flow renders an edge only when both of its nodes carry
 // handle bounds. ELK gives the exact edge points, so the handles
@@ -77,8 +87,14 @@ function roundedPath(points: DiagramPoint[]): string {
   return `${d} L${last.x} ${last.y}`;
 }
 
+// The case-view state of one node: done is the past, current is the
+// node the case rests on, failed is the current node after a failed
+// check.
+type NodeState = "done" | "current" | "failed";
+
 type GhostNodeData = DiagramNodeData & {
   ghost?: boolean;
+  nodeState?: NodeState | null;
   onCitationClick?: (id: string) => void;
 };
 
@@ -136,12 +152,37 @@ function CitationChips({ ids, onCitationClick, className }: {
   );
 }
 
-export function TaskCard({ node, color, roleName, selected, ghost = false, onCitationClick }: {
+// The ring of the current or failed node: 4 px around the node
+// bounds, a 2 px border, one corner radius for every node kind. The
+// class carries the animation; reduced motion turns it off in CSS.
+function StateRing({ color, className }: {
+  color: string;
+  className: string;
+}) {
+  return (
+    <div
+      className={className}
+      style={{
+        position: "absolute",
+        top: -4,
+        left: -4,
+        right: -4,
+        bottom: -4,
+        border: `2px solid ${color}`,
+        borderRadius: 12,
+        pointerEvents: "none",
+      }}
+    />
+  );
+}
+
+export function TaskCard({ node, color, roleName, selected, ghost = false, nodeState = null, onCitationClick }: {
   node: ProcessNode;
   color: string | null;
   roleName: string | null;
   selected: boolean;
   ghost?: boolean;
+  nodeState?: NodeState | null;
   onCitationClick?: (id: string) => void;
 }) {
   const cited =
@@ -158,13 +199,33 @@ export function TaskCard({ node, color, roleName, selected, ghost = false, onCit
           ? selected
             ? "2px dashed #7c3aed"
             : "1px dashed #7c3aed"
-          : selected
-            ? "2px solid #2563eb"
-            : "1px solid #d4d4d8",
+          : nodeState === "failed"
+            ? "1px solid #dc2626"
+            : selected
+              ? "2px solid #2563eb"
+              : nodeState === "done"
+                ? "1px solid #2563eb"
+                : "1px solid #d4d4d8",
         boxShadow:
           !ghost && selected ? "0 0 0 3px rgba(37, 99, 235, 0.12)" : undefined,
       }}
     >
+      {nodeState === "current" && (
+        <StateRing color="#2563eb" className="zpulse" />
+      )}
+      {nodeState === "failed" && (
+        <>
+          <StateRing color="#dc2626" className="zshake" />
+          <div
+            role="img"
+            aria-label="Check failed"
+            className="absolute -top-2 -right-2 flex size-[18px] items-center justify-center rounded-full"
+            style={{ backgroundColor: "#dc2626" }}
+          >
+            <TriangleAlert size={12} color="#ffffff" />
+          </div>
+        </>
+      )}
       {/* One top band, a column when the node carries citations: the
           name row, then the chip row. A cited name clamps to one
           line, so the chips paint over the card's own empty second
@@ -237,10 +298,11 @@ export function TaskCard({ node, color, roleName, selected, ghost = false, onCit
 const NODE_LABEL_CLASS =
   "absolute top-full left-1/2 -translate-x-1/2 mt-1 w-max max-w-[120px] text-center text-[11.5px] text-zinc-600";
 
-export function EventShape({ node, selected, ghost = false, onCitationClick }: {
+export function EventShape({ node, selected, ghost = false, nodeState = null, onCitationClick }: {
   node: ProcessNode;
   selected: boolean;
   ghost?: boolean;
+  nodeState?: NodeState | null;
   onCitationClick?: (id: string) => void;
 }) {
   const isStart = node.type === "start";
@@ -251,7 +313,12 @@ export function EventShape({ node, selected, ghost = false, onCitationClick }: {
         ? "#dc2626"
         : "#71717a";
   const baseStroke = isStart ? "#71717a" : endStroke;
-  const stroke = ghost ? "#7c3aed" : selected ? "#2563eb" : baseStroke;
+  const stroke =
+    ghost
+      ? "#7c3aed"
+      : selected || nodeState === "done"
+        ? "#2563eb"
+        : baseStroke;
   const width = (isStart ? 1.5 : 3.5) + (selected ? 0.5 : 0);
   const radius = isStart ? 18 : 17;
   const cited =
@@ -264,6 +331,9 @@ export function EventShape({ node, selected, ghost = false, onCitationClick }: {
       }`}
       data-ghost={ghost ? "true" : "false"}
     >
+      {nodeState === "current" && (
+        <StateRing color="#2563eb" className="zpulse" />
+      )}
       <svg width="40" height="40">
         <circle
           cx="20"
@@ -287,13 +357,19 @@ export function EventShape({ node, selected, ghost = false, onCitationClick }: {
   );
 }
 
-export function GatewayNode({ node, selected, ghost = false, onCitationClick }: {
+export function GatewayNode({ node, selected, ghost = false, nodeState = null, onCitationClick }: {
   node: ProcessNode;
   selected: boolean;
   ghost?: boolean;
+  nodeState?: NodeState | null;
   onCitationClick?: (id: string) => void;
 }) {
-  const stroke = ghost ? "#7c3aed" : selected ? "#2563eb" : "#a1a1aa";
+  const stroke =
+    ghost
+      ? "#7c3aed"
+      : selected || nodeState === "done"
+        ? "#2563eb"
+        : "#a1a1aa";
   const cited =
     node.citations.length > 0 ||
     node.checks.some((check) => check.citations.length > 0);
@@ -304,6 +380,9 @@ export function GatewayNode({ node, selected, ghost = false, onCitationClick }: 
       }`}
       data-ghost={ghost ? "true" : "false"}
     >
+      {nodeState === "current" && (
+        <StateRing color="#2563eb" className="zpulse" />
+      )}
       <svg width="52" height="52">
         <polygon
           points="26,0 52,26 26,52 0,26"
@@ -363,8 +442,9 @@ export function EdgePill({ text, anchor }: {
 }
 
 export function ElkEdge({ markerEnd, data }: EdgeProps) {
-  const { points, pill, anchor, ghost } = data as DiagramEdgeData & {
+  const { points, pill, anchor, ghost, traversed } = data as DiagramEdgeData & {
     ghost?: boolean;
+    traversed?: boolean;
   };
   const path = roundedPath(points);
   const resolved = edgeAnchor({ anchor }, points);
@@ -377,7 +457,9 @@ export function ElkEdge({ markerEnd, data }: EdgeProps) {
         style={
           ghost
             ? { stroke: "#7c3aed", strokeWidth: 1.5, strokeDasharray: "5 4" }
-            : undefined
+            : traversed
+              ? { stroke: "#2563eb", strokeWidth: 2 }
+              : undefined
         }
         markerEnd={markerEnd}
       />
@@ -402,6 +484,7 @@ const nodeTypes: NodeTypes = {
           roleName={d.roleName}
           selected={d.selected}
           ghost={d.ghost}
+          nodeState={d.nodeState ?? null}
           onCitationClick={d.onCitationClick}
         />
       </>
@@ -416,6 +499,7 @@ const nodeTypes: NodeTypes = {
           node={d.node}
           selected={d.selected}
           ghost={d.ghost}
+          nodeState={d.nodeState ?? null}
           onCitationClick={d.onCitationClick}
         />
       </>
@@ -430,6 +514,7 @@ const nodeTypes: NodeTypes = {
           node={d.node}
           selected={d.selected}
           ghost={d.ghost}
+          nodeState={d.nodeState ?? null}
           onCitationClick={d.onCitationClick}
         />
       </>
@@ -444,14 +529,40 @@ const nodeTypes: NodeTypes = {
           node={d.node}
           selected={d.selected}
           ghost={d.ghost}
+          nodeState={d.nodeState ?? null}
           onCitationClick={d.onCitationClick}
         />
       </>
     );
   },
+  token: ({ data }: NodeProps) => {
+    return <TokenBadge data={data as { label: string; name: string }} />;
+  },
 };
 
 const edgeTypes: EdgeTypes = { elk: ElkEdge };
+
+// The token of the case view: the actor initials beside the current
+// node. The node carries the ztoken class, so the CSS transform
+// transition animates the move; reduced motion turns it off.
+export function TokenBadge({ data }: {
+  data: { label: string; name: string };
+}) {
+  return (
+    <div
+      role="img"
+      aria-label={`Token ${data.name}`}
+      className="flex size-6 items-center justify-center rounded-full text-[10px] font-bold text-white"
+      style={{
+        backgroundColor: "#2563eb",
+        border: "2px solid #ffffff",
+        pointerEvents: "none",
+      }}
+    >
+      {data.label}
+    </div>
+  );
+}
 
 function minimapColor(node: FlowNode): string {
   const d = node.data as DiagramNodeData;
@@ -551,6 +662,47 @@ function Legend() {
   );
 }
 
+// The animation styles of the case view. The classes go on the ring
+// (zpulse, zshake) and on the token node (ztoken). The media query
+// turns every movement into a plain state change, so no JS branch
+// needs the reduced motion setting.
+const ANIMATION_CSS = `
+@keyframes zpulse { from { opacity: .5; transform: scale(1); }
+                    to { opacity: 0; transform: scale(1.25); } }
+.zpulse { animation: zpulse 2s ease-out infinite; }
+@keyframes zshake { 0%, 100% { translate: 0; }
+                    25% { translate: -3px 0; } 75% { translate: 3px 0; } }
+.zshake { animation: zshake .4s ease-in-out 1; }
+.ztoken { transition: transform 600ms ease; }
+@media (prefers-reduced-motion: reduce) {
+  .zpulse, .zshake { animation: none; }
+  .ztoken { transition: none; }
+}
+`;
+
+// The state of one node in the case view: failed on the current node
+// after a failed check, else current on the current node, else done
+// on a traversed node.
+function nodeStateOf(nodeId: string, caseView: CaseView): NodeState | null {
+  if (nodeId === caseView.currentNodeId) {
+    return caseView.failedCheck ? "failed" : "current";
+  }
+  return caseView.traversedNodeIds.includes(nodeId) ? "done" : null;
+}
+
+// The token rests left of the current node, vertically centered on
+// its shape: the card (72 px), the diamond (52 px), the circle
+// (40 px). The token is 24 px.
+function tokenOffsetY(type: NodeType): number {
+  if (type === "task") {
+    return 24;
+  }
+  if (type === "gateway") {
+    return 14;
+  }
+  return 8;
+}
+
 export function ProcessDiagram({
   def,
   selectedNodeId,
@@ -558,6 +710,7 @@ export function ProcessDiagram({
   ghost,
   onCitationClick,
   minimap = true,
+  caseView = null,
 }: {
   def: ProcessDefinition;
   selectedNodeId: string | null;
@@ -565,6 +718,7 @@ export function ProcessDiagram({
   ghost: boolean;
   onCitationClick: (id: string) => void;
   minimap?: boolean;
+  caseView?: CaseView | null;
 }) {
   const [layout, setLayout] = useState<Awaited<ReturnType<typeof layoutProcess>> | null>(null);
   useEffect(() => {
@@ -583,34 +737,70 @@ export function ProcessDiagram({
     if (layout === null) {
       return [];
     }
-    return layout.nodes.map((n) => ({
+    const flowNodes: Node[] = layout.nodes.map((n) => ({
       ...n,
       data: {
         ...n.data,
         selected: n.id === selectedNodeId,
         ghost,
         onCitationClick,
+        ...(caseView ? { nodeState: nodeStateOf(n.id, caseView) } : {}),
       },
     }));
-  }, [layout, selectedNodeId, ghost, onCitationClick]);
+    if (
+      caseView === null ||
+      caseView.actorName === null ||
+      caseView.currentNodeId === null
+    ) {
+      return flowNodes;
+    }
+    const current = layout.nodes.find((n) => n.id === caseView.currentNodeId);
+    if (!current) {
+      return flowNodes;
+    }
+    // The token is not part of the layout: ELK lays out the
+    // definition nodes only, the token joins after it.
+    return [
+      ...flowNodes,
+      {
+        id: "zotra-token",
+        type: "token",
+        draggable: false,
+        selectable: false,
+        className: "ztoken",
+        position: {
+          x: current.position.x - 30,
+          y: current.position.y + tokenOffsetY(current.data.node.type),
+        },
+        data: { label: initials(caseView.actorName), name: caseView.actorName },
+      },
+    ];
+  }, [layout, selectedNodeId, ghost, onCitationClick, caseView]);
 
   const edges = useMemo(() => {
     if (layout === null) {
       return [];
     }
-    return layout.edges.map((e) => ({
-      ...e,
-      data: { ...e.data, ghost },
-      markerEnd:
-        ghost && typeof e.markerEnd === "object"
-          ? { ...e.markerEnd, color: "#7c3aed" }
-          : e.markerEnd,
-    }));
-  }, [layout, ghost]);
+    return layout.edges.map((e) => {
+      const traversed =
+        caseView !== null && caseView.traversedEdgeIds.includes(e.id);
+      return {
+        ...e,
+        data: { ...e.data, ghost, ...(caseView !== null ? { traversed } : {}) },
+        markerEnd:
+          ghost && typeof e.markerEnd === "object"
+            ? { ...e.markerEnd, color: "#7c3aed" }
+            : !ghost && traversed && typeof e.markerEnd === "object"
+              ? { ...e.markerEnd, color: "#2563eb" }
+              : e.markerEnd,
+      };
+    });
+  }, [layout, ghost, caseView]);
 
   if (layout === null) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
+        <style>{ANIMATION_CSS}</style>
         Laying out the diagram
       </div>
     );
@@ -623,6 +813,7 @@ export function ProcessDiagram({
       className="h-full w-full"
       style={{ backgroundColor: "var(--canvas)" }}
     >
+      <style>{ANIMATION_CSS}</style>
       <ReactFlow
         nodes={nodes}
         edges={edges}

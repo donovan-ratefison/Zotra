@@ -27,6 +27,7 @@ import {
   type CaseState,
   type CommandInput,
 } from "./case-api";
+import { caseViewOf } from "./case-view";
 import { ChecksTab } from "./ChecksTab";
 import { Inspector } from "./Inspector";
 import { NewCaseDialog } from "./NewCaseDialog";
@@ -246,6 +247,11 @@ export function TestScreen({ def, version }: {
         ? caseAtQuery.data
         : caseQuery.data;
     const events = eventsQuery.data ?? [];
+    const caseView = caseViewOf(
+      events,
+      loaded.state,
+      (id) => usersQuery.data?.find((u) => u.id === id)?.name ?? null,
+    );
     const after =
       at !== null
         ? (caseAtQuery.data?.state.data ?? {})
@@ -284,6 +290,7 @@ export function TestScreen({ def, version }: {
                 ghost={false}
                 onCitationClick={ignoreCitation}
                 minimap={false}
+                caseView={caseView}
               />
             </div>
             <div className="flex max-h-56 shrink-0 flex-col overflow-y-auto border-t">
