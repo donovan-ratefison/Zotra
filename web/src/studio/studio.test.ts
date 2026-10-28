@@ -7,8 +7,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactFlowProvider } from "@xyflow/react";
 import { getVersion, listProcesses, listVersions, ApiError } from "./api";
 import {
+  diagramEdgeText,
   edgePillText,
   estimatePillWidth,
+  gridLayout,
   labelBox,
   layoutProcess,
   PILL_HEIGHT,
@@ -19,6 +21,7 @@ import {
 } from "./layout";
 import { EdgePill, edgeAnchor, EventShape, TaskCard } from "./diagram";
 import { StudioShell, TopBar } from "./StudioShell";
+import seedJson from "../../../internal/store/seed/example-process.json";
 import type {
   NodeType,
   ProcessDefinition,
@@ -208,14 +211,17 @@ describe("layout helpers", () => {
         expect(Number.isFinite(point.y)).toBe(true);
       }
     }
+    // The grid layout: entry and review sit on the main row, so the
+    // link between them is one straight segment.
     const e2 = edges.find((edge) => edge.id === "e2")!;
-    expect(e2.data!.points.length).toBe(4);
+    expect(e2.data!.points.length).toBe(2);
+    expect(e2.data!.points[0]!.y).toBe(e2.data!.points[1]!.y);
     // The sizes live on the ELK graph itself, so this check fails
     // when toElkGraph forgets to apply a size.
     const graph = toElkGraph(miniDefinition);
     for (const child of graph.children!) {
       if (child.id === "entry" || child.id === "review") {
-        expect(child.width).toBe(128);
+        expect(child.width).toBe(152);
         expect(child.height).toBe(72);
       }
       if (child.id === "complete") {
@@ -388,9 +394,11 @@ describe("pill placement", () => {
     expect(html).toContain(">X<");
   });
 
-  test("41: the long condition pill of the crafted gateway drops", async () => {
+  test("41: the yes or no gateway of the crafted definition reads Yes and No", async () => {
     const { edges } = await layoutProcess(craftedDefinition);
-    expect(edges.find((edge) => edge.id === "b")!.data!.anchor).toBeNull();
+    expect(edges.find((edge) => edge.id === "b")!.data!.pill).toBe("Yes");
+    expect(edges.find((edge) => edge.id === "c")!.data!.pill).toBe("No");
+    expect(edges.find((edge) => edge.id === "b")!.data!.anchor).not.toBeNull();
   });
 
   test("42: the default pill of the crafted gateway stays clear", async () => {
@@ -415,6 +423,95 @@ describe("pill placement", () => {
     for (const b of nodeBoxes) {
       expect(overlaps(b)).toBe(false);
     }
+  });
+});
+
+// The seed process of the demo: the layout guard rows run on it.
+const seedDefinition = seedJson as ProcessDefinition;
+
+describe("diagram layout guard", () => {
+  test("46: diagramEdgeText reads Yes and No on a yes or no gateway", () => {
+    const text = (id: string) =>
+      diagramEdgeText(seedDefinition.edges.find((e) => e.id === id)!, seedDefinition);
+    expect(text("e07")).toBe("Yes");
+    expect(text("e08")).toBe("No");
+    expect(text("e04")).toBe("Incomplete");
+    expect(text("e05")).toBe("favorable");
+    expect(text("e01")).toBeNull();
+  });
+
+  test("47: diagramEdgeText keeps the condition of a gateway with more branches", () => {
+    expect(diagramEdgeText(edgeById("e4"), miniDefinition)).toBe("size(documents) >= 4");
+    expect(diagramEdgeText(edgeById("e6"), miniDefinition)).toBe("Send back");
+  });
+
+  test("48: the seed process takes the grid layout of the mockup", () => {
+    const grid = gridLayout(seedDefinition)!;
+    expect(grid).not.toBeNull();
+    const row = (id: string) => grid.cells.get(id)!.row;
+    for (const id of ["start", "entry", "complete", "analysis", "threshold", "offer", "signing", "release"]) {
+      expect(row(id)).toBe(0);
+    }
+    expect(row("decision")).toBe(1);
+    expect(row("refused")).toBe(2);
+    expect(grid.cells.get("decision")!.cx).toBe(grid.cells.get("threshold")!.cx);
+    expect(grid.cells.get("released")!.cx).toBe(grid.cells.get("release")!.cx);
+  });
+
+  test("49: no seed link has a diagonal segment or crosses a shape", async () => {
+    const { nodes, edges } = await layoutProcess(seedDefinition);
+    const boxes = nodes.map((n) => ({
+      id: n.id, x: n.position.x, y: n.position.y, w: n.width!, h: n.height!,
+    }));
+    for (const edge of edges) {
+      const pts = edge.data!.points;
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1]!;
+        const b = pts[i]!;
+        expect(a.x === b.x || a.y === b.y).toBe(true);
+        for (const box of boxes) {
+          if (box.id === edge.source || box.id === edge.target) {
+            continue;
+          }
+          const inside =
+            Math.max(a.x, b.x) > box.x + 1 && Math.min(a.x, b.x) < box.x + box.w - 1 &&
+            Math.max(a.y, b.y) > box.y + 1 && Math.min(a.y, b.y) < box.y + box.h - 1;
+          expect(inside, `${edge.id} crosses ${box.id}`).toBe(false);
+        }
+      }
+    }
+  });
+
+  test("50: no two seed shapes or link texts overlap", async () => {
+    const { nodes, edges } = await layoutProcess(seedDefinition);
+    const boxes = nodes.map((n) => ({ x: n.position.x, y: n.position.y, w: n.width!, h: n.height! }));
+    for (const edge of edges) {
+      const a = edge.data!.anchor;
+      if (a) {
+        const w = estimatePillWidth(edge.data!.pill!) - 6;
+        boxes.push({ x: a.x - w / 2, y: a.y - 8, w, h: 16 });
+      }
+    }
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const p = boxes[i]!;
+        const q = boxes[j]!;
+        const overlap =
+          Math.min(p.x + p.w, q.x + q.w) > Math.max(p.x, q.x) &&
+          Math.min(p.y + p.h, q.y + q.h) > Math.max(p.y, q.y);
+        expect(overlap, `boxes ${i} and ${j}`).toBe(false);
+      }
+    }
+  });
+
+  test("51: a definition with a node the start never reaches falls back on ELK", async () => {
+    const lonely: ProcessDefinition = {
+      ...miniDefinition,
+      nodes: [...miniDefinition.nodes, nodeCopy("entry", "lonely")],
+    };
+    expect(gridLayout(lonely)).toBeNull();
+    const { nodes } = await layoutProcess(lonely);
+    expect(nodes).toHaveLength(7);
   });
 });
 

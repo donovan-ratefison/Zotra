@@ -23,6 +23,7 @@ import {
 } from "@xyflow/react";
 import {
   FileText,
+  Info,
   ListChecks,
   Maximize,
   PenLine,
@@ -36,7 +37,7 @@ import {
   type DiagramEdgeData,
   type DiagramNodeData,
   type DiagramPoint,
-  type FlowNode,
+  type LabelPos,
 } from "./layout";
 import { initials, type CaseView } from "./case-view";
 import type { NodeType, ProcessDefinition, ProcessNode } from "./types";
@@ -190,7 +191,7 @@ export function TaskCard({ node, color, roleName, selected, ghost = false, nodeS
     node.checks.some((check) => check.citations.length > 0);
   return (
     <div
-      className={`relative h-[72px] w-[128px] rounded-lg bg-white shadow-sm${
+      className={`relative h-[72px] w-[152px] rounded-lg bg-white shadow-sm${
         ghost ? " opacity-70" : ""
       }`}
       data-ghost={ghost ? "true" : "false"}
@@ -233,16 +234,16 @@ export function TaskCard({ node, color, roleName, selected, ghost = false, nodeS
           anything outside the card. The chips wrap inside a fixed
           14 px clip: one visible line of whole chips, the span with
           the rest always visible. */}
-      <div className="absolute inset-x-0 top-0 flex flex-col gap-0.5 p-[10px]">
-        <div className="flex items-start gap-1">
+      <div className="absolute inset-x-0 top-0 flex flex-col gap-0.5 px-[10px] pt-[9px]">
+        <div className="flex items-start gap-1.5">
           <div
-            className={`min-w-0 flex-1 break-words text-[11.5px] leading-tight font-semibold text-zinc-800 ${
+            className={`min-w-0 flex-1 text-[11.5px] leading-[14px] font-semibold text-zinc-950 ${
               cited ? "line-clamp-1" : "line-clamp-2"
             }`}
           >
             {node.name}
           </div>
-          <div className="flex shrink-0 items-center gap-1 text-[10px] text-zinc-500">
+          <div className="mt-px flex shrink-0 items-center gap-1 text-[10px] text-zinc-400">
             {node.documents.length > 0 && (
               <span className="flex items-center gap-0.5">
                 <FileText size={12} />
@@ -268,38 +269,47 @@ export function TaskCard({ node, color, roleName, selected, ghost = false, nodeS
           ignore pointer events, so a click on a chip row that
           overlaps them reaches the chip, and a click on them bubbles
           to the node selection. */}
-      <div className="pointer-events-none absolute bottom-0 left-0 p-[10px]">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between gap-1.5 px-[10px] pb-[9px]">
         {roleName === null ? (
-          <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10.5px] font-medium text-zinc-500">
+          <span className="rounded-full bg-zinc-100 px-1.5 py-px text-[10.5px] font-semibold text-zinc-500">
             Automatic
           </span>
         ) : (
           <span
-            className="flex max-w-[80px] items-center gap-1 rounded-full px-1.5 py-0.5 text-[10.5px] font-medium truncate"
+            className="flex min-w-0 items-center gap-1 rounded-full px-1.5 py-px text-[10.5px] font-semibold"
             style={{ color: color!, backgroundColor: `${color}1a` }}
           >
             <span
-              className="size-2 shrink-0 rounded-full"
+              className="size-[5px] shrink-0 rounded-full"
               style={{ backgroundColor: color! }}
             />
-            {roleName}
+            <span className="truncate">{roleName}</span>
+          </span>
+        )}
+        {node.deadline_hours !== null && (
+          <span className="shrink-0 text-[10.5px] text-zinc-500">
+            {`${node.deadline_hours} h`}
           </span>
         )}
       </div>
-      {node.deadline_hours !== null && (
-        <div className="pointer-events-none absolute right-0 bottom-0 p-[10px] text-[10.5px] text-zinc-500">
-          {`${node.deadline_hours} h`}
-        </div>
-      )}
     </div>
   );
 }
 
-const NODE_LABEL_CLASS =
-  "absolute top-full left-1/2 -translate-x-1/2 mt-1 w-max max-w-[120px] text-center text-[11.5px] text-zinc-600";
+// The name of a start, gateway or end node: below the shape, above
+// it, or at its left (right aligned) when links use the top and the
+// bottom. layout.ts nodeLabelBox mirrors these boxes.
+const NODE_LABEL_BASE =
+  "absolute w-max max-w-[120px] text-[11.5px] leading-[15px] font-medium text-zinc-700";
+const NODE_LABEL_CLASS: Record<LabelPos, string> = {
+  below: `${NODE_LABEL_BASE} top-full left-1/2 -translate-x-1/2 mt-1 text-center`,
+  above: `${NODE_LABEL_BASE} bottom-full left-1/2 -translate-x-1/2 mb-1 text-center`,
+  left: `${NODE_LABEL_BASE} top-full right-1/2 mt-1 mr-2 text-right`,
+};
 
-export function EventShape({ node, selected, ghost = false, nodeState = null, onCitationClick }: {
+export function EventShape({ node, selected, ghost = false, nodeState = null, onCitationClick, labelPos = "below" }: {
   node: ProcessNode;
+  labelPos?: LabelPos;
   selected: boolean;
   ghost?: boolean;
   nodeState?: NodeState | null;
@@ -345,7 +355,7 @@ export function EventShape({ node, selected, ghost = false, nodeState = null, on
           strokeDasharray={ghost ? "5 4" : undefined}
         />
       </svg>
-      <div className={NODE_LABEL_CLASS}>
+      <div className={NODE_LABEL_CLASS[labelPos]}>
         <div className={cited ? "truncate" : undefined}>{node.name}</div>
         <CitationChips
           ids={citationIdsOf(node)}
@@ -357,8 +367,9 @@ export function EventShape({ node, selected, ghost = false, nodeState = null, on
   );
 }
 
-export function GatewayNode({ node, selected, ghost = false, nodeState = null, onCitationClick }: {
+export function GatewayNode({ node, selected, ghost = false, nodeState = null, onCitationClick, labelPos = "below" }: {
   node: ProcessNode;
+  labelPos?: LabelPos;
   selected: boolean;
   ghost?: boolean;
   nodeState?: NodeState | null;
@@ -398,7 +409,7 @@ export function GatewayNode({ node, selected, ghost = false, nodeState = null, o
           fill="none"
         />
       </svg>
-      <div className={NODE_LABEL_CLASS}>
+      <div className={NODE_LABEL_CLASS[labelPos]}>
         <div className={cited ? "truncate" : undefined}>{node.name}</div>
         <CitationChips
           ids={citationIdsOf(node)}
@@ -430,10 +441,11 @@ export function EdgePill({ text, anchor }: {
 }) {
   return (
     <div
-      className="nodrag nopan absolute rounded-md border border-[#e4e4e7] bg-white px-1.5 text-[11px] font-medium text-zinc-700 max-w-[160px] truncate"
+      className="nodrag nopan absolute rounded px-1 text-[11.5px] leading-[16px] font-medium text-zinc-700 max-w-[160px] truncate"
       style={{
         transform: `translate(-50%, -50%) translate(${anchor.x}px, ${anchor.y}px)`,
         pointerEvents: "none",
+        backgroundColor: "var(--canvas)",
       }}
     >
       {text}
@@ -501,6 +513,7 @@ const nodeTypes: NodeTypes = {
           ghost={d.ghost}
           nodeState={d.nodeState ?? null}
           onCitationClick={d.onCitationClick}
+          labelPos={d.labelPos}
         />
       </>
     );
@@ -516,6 +529,7 @@ const nodeTypes: NodeTypes = {
           ghost={d.ghost}
           nodeState={d.nodeState ?? null}
           onCitationClick={d.onCitationClick}
+          labelPos={d.labelPos}
         />
       </>
     );
@@ -531,6 +545,7 @@ const nodeTypes: NodeTypes = {
           ghost={d.ghost}
           nodeState={d.nodeState ?? null}
           onCitationClick={d.onCitationClick}
+          labelPos={d.labelPos}
         />
       </>
     );
@@ -562,20 +577,6 @@ export function TokenBadge({ data }: {
       {data.label}
     </div>
   );
-}
-
-function minimapColor(node: FlowNode): string {
-  const d = node.data as DiagramNodeData;
-  if (d.node.type === "task" && d.color !== null) {
-    return d.color;
-  }
-  if (d.node.type === "end" && d.node.end_result === "approved") {
-    return "#16a34a";
-  }
-  if (d.node.type === "end" && d.node.end_result === "refused") {
-    return "#dc2626";
-  }
-  return "#d4d4d8";
 }
 
 function ZoomControls() {
@@ -620,12 +621,24 @@ function ZoomControls() {
   );
 }
 
+// The legend stays folded: one small button that opens the list of
+// shapes, so it never covers the diagram.
 function Legend() {
+  const [open, setOpen] = useState(false);
   const rowClass = "flex items-center gap-1.5 text-[11px] text-zinc-600";
   return (
     <Panel position="top-left">
-      <div className="rounded-md border border-[#e4e4e7] bg-white p-2 shadow-sm">
-        <div className="mb-1 text-[11px] font-medium text-zinc-500">Legend</div>
+      <button
+        type="button"
+        aria-expanded={open}
+        className="flex items-center gap-1 rounded-md border border-[#e4e4e7] bg-white px-2 py-1 text-[11px] font-medium text-zinc-600 shadow-sm hover:bg-zinc-50"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Info size={12} />
+        Legend
+      </button>
+      {open && (
+      <div className="mt-1 rounded-md border border-[#e4e4e7] bg-white p-2 shadow-sm">
         <div className={rowClass}>
           <svg width="16" height="16">
             <circle cx="8" cy="8" r="6" fill="#ffffff" stroke="#71717a" strokeWidth="1.5" />
@@ -658,6 +671,7 @@ function Legend() {
         </div>
         <div className={rowClass}>The dot on a task is the role color.</div>
       </div>
+      )}
     </Panel>
   );
 }
@@ -820,6 +834,7 @@ export function ProcessDiagram({
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
+        fitViewOptions={{ padding: 0.1, maxZoom: 1 }}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={true}
@@ -829,7 +844,19 @@ export function ProcessDiagram({
         onPaneClick={() => onNodeSelect(null)}
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="#d4d4d8" />
-        {minimap && <MiniMap position="bottom-right" pannable zoomable nodeColor={minimapColor} />}
+        {minimap && (
+          <MiniMap
+            position="bottom-right"
+            pannable
+            zoomable
+            nodeColor="#ffffff"
+            nodeStrokeColor="#a1a1aa"
+            nodeStrokeWidth={3}
+            nodeBorderRadius={6}
+            maskColor="rgba(244, 244, 245, 0.55)"
+            style={{ width: 168, height: 84, border: "1px solid #e4e4e7", borderRadius: 8 }}
+          />
+        )}
         <ZoomControls />
         <Legend />
         <Panel position="top-right">
