@@ -25,8 +25,8 @@ const TYPE_TEXT: Record<string, string> = {
 // scope_overrides row of the node for (field, role) when present,
 // else the scope row of the definition, else hidden. The contract
 // does not force a scope row for every pair; a field without a row
-// does not show.
-function accessOf(field: Field, node: ProcessNode, def: ProcessDefinition): ScopeAccess {
+// does not show. The inspector reuses the rule for its scope column.
+export function accessOf(field: Field, node: ProcessNode, def: ProcessDefinition): ScopeAccess {
   const role = node.role;
   if (role !== null) {
     const over = node.scope_overrides.find(
@@ -42,7 +42,7 @@ function accessOf(field: Field, node: ProcessNode, def: ProcessDefinition): Scop
   return row === undefined ? "hidden" : row.access;
 }
 
-export function StepScreen({ def, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange }: {
+export function StepScreen({ def, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly = false }: {
   def: ProcessDefinition;
   state: CaseState;
   users: UserDTO[];
@@ -52,6 +52,7 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
   failedChecks: { id: string; message: string }[];
   decisionEnabled: boolean;
   onValueChange: () => void;
+  readOnly?: boolean;
 }) {
   if (state.status === "closed") {
     return (
@@ -86,6 +87,12 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
         </div>
       </div>
 
+      {readOnly && (
+        <p className="text-sm text-muted-foreground">
+          Replay: the commands wait for the present.
+        </p>
+      )}
+
       {node.type !== "task" ? (
         <p className="text-sm text-muted-foreground">
           This step runs on its own.
@@ -102,6 +109,7 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
           failedChecks={failedChecks}
           decisionEnabled={decisionEnabled}
           onValueChange={onValueChange}
+          readOnly={readOnly}
         />
       )}
     </div>
@@ -109,8 +117,9 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
 }
 
 // TaskBody is the task-only part: the Act as pick, then the take
-// button or the form with the actions.
-function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange }: {
+// button or the form with the actions. A replay disables the pick and
+// hides the commands.
+function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly }: {
   def: ProcessDefinition;
   node: ProcessNode;
   state: CaseState;
@@ -121,6 +130,7 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, fa
   failedChecks: { id: string; message: string }[];
   decisionEnabled: boolean;
   onValueChange: () => void;
+  readOnly: boolean;
 }) {
   // The users whose roles contain the node role (all users on a
   // node without a role).
@@ -161,7 +171,7 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, fa
     <div className="flex flex-col gap-4">
       <label className="flex flex-col gap-1.5">
         <span className="text-sm font-medium">Act as</span>
-        <Select value={selectValue} onValueChange={onActorChange}>
+        <Select value={selectValue} onValueChange={onActorChange} disabled={readOnly}>
           <SelectTrigger aria-label="Act as" className="w-full">
             <SelectValue>{selectLabel}</SelectValue>
           </SelectTrigger>
@@ -177,9 +187,11 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, fa
 
       {state.assignee === "" ? (
         <div className="flex flex-col gap-3">
-          <Button onClick={() => onCommand({ type: "take" })}>
-            Take the step
-          </Button>
+          {!readOnly && (
+            <Button onClick={() => onCommand({ type: "take" })}>
+              Take the step
+            </Button>
+          )}
           <FailedChecks failedChecks={failedChecks} />
         </div>
       ) : (
@@ -194,6 +206,7 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, fa
           failedChecks={failedChecks}
           decisionEnabled={decisionEnabled}
           onValueChange={onValueChange}
+          readOnly={readOnly}
         />
       )}
     </div>
@@ -202,8 +215,9 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, fa
 
 // StepForm is the taken-step part: the write and read fields with
 // the local values, and the actions. The key on the parent render
-// resets the values at each step change.
-function StepForm({ def, node, state, onCommand, failedChecks, decisionEnabled, onValueChange }: {
+// resets the values at each step change. A replay disables the
+// inputs and hides the actions.
+function StepForm({ def, node, state, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly }: {
   def: ProcessDefinition;
   node: ProcessNode;
   state: CaseState;
@@ -211,6 +225,7 @@ function StepForm({ def, node, state, onCommand, failedChecks, decisionEnabled, 
   failedChecks: { id: string; message: string }[];
   decisionEnabled: boolean;
   onValueChange: () => void;
+  readOnly: boolean;
 }) {
   const [values, setValues] = useState<Record<string, unknown>>({});
 
@@ -244,29 +259,31 @@ function StepForm({ def, node, state, onCommand, failedChecks, decisionEnabled, 
                   setValues((old) => ({ ...old, [field.name]: v }));
                   onValueChange();
                 }}
-                disabled={false}
+                disabled={readOnly}
               />
             </label>
           );
         })}
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant={node.decisions.length > 0 ? "outline" : "default"}
-          onClick={() => onCommand({ type: "submit", values })}
-        >
-          Submit
-        </Button>
-        {node.decisions.map((decision) => (
+      {!readOnly && (
+        <div className="flex flex-wrap items-center gap-2">
           <Button
-            key={decision}
-            disabled={!decisionEnabled}
-            onClick={() => onCommand({ type: "decide", decision })}
+            variant={node.decisions.length > 0 ? "outline" : "default"}
+            onClick={() => onCommand({ type: "submit", values })}
           >
-            {decision}
+            Submit
           </Button>
-        ))}
-      </div>
+          {node.decisions.map((decision) => (
+            <Button
+              key={decision}
+              disabled={!decisionEnabled}
+              onClick={() => onCommand({ type: "decide", decision })}
+            >
+              {decision}
+            </Button>
+          ))}
+        </div>
+      )}
       <FailedChecks failedChecks={failedChecks} />
     </div>
   );

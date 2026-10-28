@@ -6,11 +6,19 @@
 import { useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Rewind,
+} from "lucide-react";
 import { ApiError } from "./api";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import {
   createCase,
+  listEvents,
   listUsers,
   readCase,
   runCommand,
@@ -19,9 +27,12 @@ import {
   type CaseState,
   type CommandInput,
 } from "./case-api";
+import { ChecksTab } from "./ChecksTab";
+import { Inspector } from "./Inspector";
 import { NewCaseDialog } from "./NewCaseDialog";
 import { ProcessDiagram } from "./diagram";
 import { StepScreen } from "./StepScreen";
+import { Timeline } from "./Timeline";
 import { useStudioStore } from "./store";
 import type { ProcessDefinition, VersionSummary } from "./types";
 
@@ -48,6 +59,16 @@ function ErrorScreen({ heading, error }: { heading: string; error: unknown }) {
 // citation chip click does nothing here.
 function ignoreCitation() {}
 
+// The tabs of the aside, in render order. The tab state is local to
+// the test screen; only the active pane mounts.
+const TABS = [
+  { id: "screen", label: "Screen" },
+  { id: "inspector", label: "Inspector" },
+  { id: "checks", label: "Checks" },
+] as const;
+
+type PanelTab = (typeof TABS)[number]["id"];
+
 export function TestScreen({ def, version }: {
   def: ProcessDefinition;
   version: VersionSummary;
@@ -63,6 +84,32 @@ export function TestScreen({ def, version }: {
     queryKey: ["case", testCaseId],
     queryFn: () => readCase(testCaseId!),
     enabled: testCaseId !== null,
+  });
+
+  // The replay position: null is the present. It changes only through
+  // the controls and the timeline; the create flow resets it. The
+  // events feed the timeline, the checks tab, the counter and the
+  // control bounds. The replay reads the case at the position; the
+  // inspector reads it once more at the earlier position.
+  const [at, setAt] = useState<number | null>(null);
+  const [panelTab, setPanelTab] = useState<PanelTab>("screen");
+  const eventsQuery = useQuery({
+    queryKey: ["events", testCaseId],
+    queryFn: () => listEvents(testCaseId!),
+    enabled: testCaseId !== null,
+  });
+  const count = eventsQuery.data?.length ?? 0;
+  const n = at ?? count;
+  const earlier = n - 1;
+  const caseAtQuery = useQuery({
+    queryKey: ["caseAt", testCaseId, at],
+    queryFn: () => readCase(testCaseId!, at!),
+    enabled: testCaseId !== null && at !== null,
+  });
+  const earlierQuery = useQuery({
+    queryKey: ["caseAt", testCaseId, earlier],
+    queryFn: () => readCase(testCaseId!, earlier),
+    enabled: testCaseId !== null && earlier >= 1,
   });
 
   // The actor: the picked user, else the first of the list.
@@ -111,7 +158,7 @@ export function TestScreen({ def, version }: {
   // runs; the answer merges into the case cache (the state only, the
   // case row stays), and a failure keeps the last state.
   async function onCommand(cmd: CommandInput) {
-    if (testCaseId === null) {
+    if (testCaseId === null || at !== null) {
       return;
     }
     setLastAnswer(null);
@@ -125,6 +172,9 @@ export function TestScreen({ def, version }: {
       }>(["case", testCaseId], (old) =>
         old ? { case: old.case, state: answer.state } : old,
       );
+      // The timeline, the counter and the control bounds read the
+      // event list; the command answer carries the new events only.
+      void queryClient.invalidateQueries({ queryKey: ["events", testCaseId] });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : String(err));
     }
@@ -139,6 +189,7 @@ export function TestScreen({ def, version }: {
       const created = await createCase(version.id, true);
       await runCommand(created.id, effectiveActor, { type: "start", data });
       setTestCaseId(created.id);
+      setAt(null);
       const params = new URLSearchParams(window.location.search);
       params.set("mode", "test");
       params.set("case", created.id);
@@ -174,8 +225,32 @@ export function TestScreen({ def, version }: {
     );
   } else if (caseQuery.isPending || caseQuery.data === undefined) {
     content = <Loading />;
+  } else if (at !== null && caseAtQuery.isError) {
+    content = (
+      <ErrorScreen
+        heading="The replay did not load."
+        error={caseAtQuery.error}
+      />
+    );
+  } else if (at !== null && caseAtQuery.data === undefined) {
+    content = <Loading />;
   } else {
-    const loaded = caseQuery.data;
+    // The effective view is the replay answer during a replay, the
+    // live answer at the present. The inspector reads the data at the
+    // current and the earlier position; below position 1 there is no
+    // before. The events feed the timeline block, the checks tab and
+    // the counter; their load and error states render inside that
+    // block, so the rest of the screen stays usable.
+    const loaded =
+      at !== null && caseAtQuery.data !== undefined
+        ? caseAtQuery.data
+        : caseQuery.data;
+    const events = eventsQuery.data ?? [];
+    const after =
+      at !== null
+        ? (caseAtQuery.data?.state.data ?? {})
+        : loaded.state.data;
+    const before = earlier >= 1 ? (earlierQuery.data?.state.data ?? {}) : {};
     content = (
       <>
         <div className="flex h-11 shrink-0 items-center gap-2 border-b px-4">
@@ -187,30 +262,157 @@ export function TestScreen({ def, version }: {
           </Button>
         </div>
         <main className="flex min-h-0 flex-1">
-          <div className="min-h-0 min-w-0 flex-1">
-            <ProcessDiagram
-              def={def}
-              selectedNodeId={selectedNodeId}
-              onNodeSelect={select}
-              ghost={false}
-              onCitationClick={ignoreCitation}
-            />
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {at !== null && (
+              <div
+                role="status"
+                className="flex shrink-0 items-center gap-2 border-b bg-blue-50 px-4 py-2 text-sm"
+              >
+                <Rewind className="size-4 shrink-0" />
+                <span>{`Replay at event ${at}. The commands wait for the present.`}</span>
+                <span className="flex-1" />
+                <Button variant="outline" size="sm" onClick={() => setAt(null)}>
+                  Back to the present
+                </Button>
+              </div>
+            )}
+            <div className="min-h-0 flex-1">
+              <ProcessDiagram
+                def={def}
+                selectedNodeId={selectedNodeId}
+                onNodeSelect={select}
+                ghost={false}
+                onCitationClick={ignoreCitation}
+                minimap={false}
+              />
+            </div>
+            <div className="flex max-h-56 shrink-0 flex-col overflow-y-auto border-t">
+              {eventsQuery.isError ? (
+                <div className="flex flex-col gap-0.5 px-4 py-2 text-sm">
+                  <span>The events did not load.</span>
+                  <span className="text-muted-foreground">
+                    {eventsQuery.error instanceof ApiError
+                      ? eventsQuery.error.message
+                      : String(eventsQuery.error)}
+                  </span>
+                </div>
+              ) : eventsQuery.data === undefined ? (
+                <div className="px-4 py-2 text-sm text-muted-foreground">
+                  Loading the events
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-1 px-4 py-1.5">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Go to the start"
+                      disabled={count === 0 || at === 1}
+                      onClick={() => setAt(count === 0 ? null : 1)}
+                    >
+                      <ChevronsLeft className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Step back"
+                      disabled={n <= 1}
+                      onClick={() => setAt(n - 1)}
+                    >
+                      <ChevronLeft className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Step forward"
+                      disabled={at === null}
+                      onClick={() => setAt(n === count ? null : n + 1)}
+                    >
+                      <ChevronRight className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Go to the end"
+                      disabled={at === null}
+                      onClick={() => setAt(null)}
+                    >
+                      <ChevronsRight className="size-4" />
+                    </Button>
+                    <span className="ml-2 font-mono text-[12px] text-muted-foreground">
+                      {`${n} of ${count}`}
+                    </span>
+                  </div>
+                  <Timeline
+                    def={def}
+                    events={events}
+                    at={at}
+                    onSelect={setAt}
+                  />
+                </>
+              )}
+            </div>
           </div>
           <aside
             aria-label="Step screen"
             className="flex w-[380px] shrink-0 flex-col overflow-y-auto border-l"
           >
-            <StepScreen
-              def={def}
-              state={loaded.state}
-              users={usersQuery.data}
-              actor={effectiveActor}
-              onActorChange={setActor}
-              onCommand={(cmd) => void onCommand(cmd)}
-              failedChecks={failedChecks}
-              decisionEnabled={decisionEnabled}
-              onValueChange={() => setValuesChanged(true)}
-            />
+            <div
+              role="tablist"
+              aria-label="Case panel"
+              className="grid grid-cols-3 gap-0.5 border-b p-1"
+            >
+              {TABS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={panelTab === t.id}
+                  onClick={() => setPanelTab(t.id)}
+                  className={`rounded-md px-1 py-1.5 text-[12.5px] font-medium whitespace-nowrap ${
+                    panelTab === t.id
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {panelTab === "screen" && (
+              <StepScreen
+                def={def}
+                state={loaded.state}
+                users={usersQuery.data}
+                actor={effectiveActor}
+                onActorChange={setActor}
+                onCommand={(cmd) => void onCommand(cmd)}
+                failedChecks={failedChecks}
+                decisionEnabled={decisionEnabled}
+                onValueChange={() => setValuesChanged(true)}
+                readOnly={at !== null}
+              />
+            )}
+            {panelTab === "inspector" && (
+              <div className="p-4">
+                <Inspector
+                  def={def}
+                  before={before}
+                  after={after}
+                  nodeId={loaded.state.node_id}
+                />
+              </div>
+            )}
+            {panelTab === "checks" && (
+              <div className="p-4">
+                <ChecksTab
+                  def={def}
+                  state={loaded.state}
+                  events={events}
+                  nodeId={loaded.state.node_id}
+                />
+              </div>
+            )}
           </aside>
         </main>
       </>

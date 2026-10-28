@@ -557,12 +557,14 @@ export function ProcessDiagram({
   onNodeSelect,
   ghost,
   onCitationClick,
+  minimap = true,
 }: {
   def: ProcessDefinition;
   selectedNodeId: string | null;
   onNodeSelect: (nodeId: string | null) => void;
   ghost: boolean;
   onCitationClick: (id: string) => void;
+  minimap?: boolean;
 }) {
   const [layout, setLayout] = useState<Awaited<ReturnType<typeof layoutProcess>> | null>(null);
   useEffect(() => {
@@ -636,7 +638,7 @@ export function ProcessDiagram({
         onPaneClick={() => onNodeSelect(null)}
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="#d4d4d8" />
-        <MiniMap position="bottom-right" pannable zoomable nodeColor={minimapColor} />
+        {minimap && <MiniMap position="bottom-right" pannable zoomable nodeColor={minimapColor} />}
         <ZoomControls />
         <Legend />
         <Panel position="top-right">
