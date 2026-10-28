@@ -40,6 +40,7 @@ import {
   type LabelPos,
 } from "./layout";
 import { initials, type CaseView } from "./case-view";
+import type { CoverageReport } from "./case-api";
 import type { NodeType, ProcessDefinition, ProcessNode } from "./types";
 
 // React Flow renders an edge only when both of its nodes carry
@@ -454,9 +455,10 @@ export function EdgePill({ text, anchor }: {
 }
 
 export function ElkEdge({ markerEnd, data }: EdgeProps) {
-  const { points, pill, anchor, ghost, traversed } = data as DiagramEdgeData & {
+  const { points, pill, anchor, ghost, traversed, coverage } = data as DiagramEdgeData & {
     ghost?: boolean;
     traversed?: boolean;
+    coverage?: "red" | "green" | null;
   };
   const path = roundedPath(points);
   const resolved = edgeAnchor({ anchor }, points);
@@ -466,12 +468,18 @@ export function ElkEdge({ markerEnd, data }: EdgeProps) {
         path={path}
         stroke="#a1a1aa"
         strokeWidth={1.5}
+        className="zcov"
         style={
           ghost
             ? { stroke: "#7c3aed", strokeWidth: 1.5, strokeDasharray: "5 4" }
-            : traversed
-              ? { stroke: "#2563eb", strokeWidth: 2 }
-              : undefined
+            : coverage
+              ? {
+                  stroke: coverage === "green" ? "#16a34a" : "#dc2626",
+                  strokeWidth: 2,
+                }
+              : traversed
+                ? { stroke: "#2563eb", strokeWidth: 2 }
+                : undefined
         }
         markerEnd={markerEnd}
       />
@@ -621,9 +629,30 @@ function ZoomControls() {
   );
 }
 
+// The coverage legend row: one plain child of the Legend panel (no
+// Panel, no store access, no props), so the rows render it directly.
+export function CoverageLegendRow() {
+  return (
+    <div className="flex items-center gap-1.5 text-[11px] text-zinc-600">
+      Coverage:
+      <svg width="16" height="8" aria-hidden="true">
+        <line x1="1" y1="4" x2="15" y2="4" stroke="#16a34a" strokeWidth="2" />
+      </svg>
+      green taken,
+      <svg width="16" height="8" aria-hidden="true">
+        <line x1="1" y1="4" x2="15" y2="4" stroke="#dc2626" strokeWidth="2" />
+      </svg>
+      red never taken
+    </div>
+  );
+}
+
 // The legend stays folded: one small button that opens the list of
-// shapes, so it never covers the diagram.
-function Legend() {
+// shapes, so it never covers the diagram. The coverage row sits
+// under the button, always visible while a report is on: the
+// coverage state rests on colors only, so its label must not hide
+// behind a click.
+function Legend({ coverage }: { coverage: CoverageReport | null }) {
   const [open, setOpen] = useState(false);
   const rowClass = "flex items-center gap-1.5 text-[11px] text-zinc-600";
   return (
@@ -637,6 +666,11 @@ function Legend() {
         <Info size={12} />
         Legend
       </button>
+      {coverage !== null && (
+        <div className="mt-1 rounded-md border border-[#e4e4e7] bg-white p-2 shadow-sm">
+          <CoverageLegendRow />
+        </div>
+      )}
       {open && (
       <div className="mt-1 rounded-md border border-[#e4e4e7] bg-white p-2 shadow-sm">
         <div className={rowClass}>
@@ -688,9 +722,10 @@ const ANIMATION_CSS = `
                     25% { translate: -3px 0; } 75% { translate: 3px 0; } }
 .zshake { animation: zshake .4s ease-in-out 1; }
 .ztoken { transition: transform 600ms ease; }
+.zcov { transition: stroke .6s ease; }
 @media (prefers-reduced-motion: reduce) {
   .zpulse, .zshake { animation: none; }
-  .ztoken { transition: none; }
+  .ztoken, .zcov { transition: none; }
 }
 `;
 
@@ -725,6 +760,7 @@ export function ProcessDiagram({
   onCitationClick,
   minimap = true,
   caseView = null,
+  coverage = null,
 }: {
   def: ProcessDefinition;
   selectedNodeId: string | null;
@@ -733,6 +769,7 @@ export function ProcessDiagram({
   onCitationClick: (id: string) => void;
   minimap?: boolean;
   caseView?: CaseView | null;
+  coverage?: CoverageReport | null;
 }) {
   const [layout, setLayout] = useState<Awaited<ReturnType<typeof layoutProcess>> | null>(null);
   useEffect(() => {
@@ -795,21 +832,39 @@ export function ProcessDiagram({
     if (layout === null) {
       return [];
     }
+    // The take count of each edge, from the report. An edge id
+    // outside the report counts as 0, red; OfCases lists every
+    // definition edge, so this is a guard only.
+    const counts = new Map(
+      (coverage?.edges ?? []).map((edge) => [edge.edge_id, edge.count]),
+    );
     return layout.edges.map((e) => {
       const traversed =
         caseView !== null && caseView.traversedEdgeIds.includes(e.id);
+      const cov =
+        coverage === null ? null : (counts.get(e.id) ?? 0) > 0 ? "green" : "red";
       return {
         ...e,
-        data: { ...e.data, ghost, ...(caseView !== null ? { traversed } : {}) },
+        data: {
+          ...e.data,
+          ghost,
+          coverage: cov,
+          ...(caseView !== null ? { traversed } : {}),
+        },
         markerEnd:
           ghost && typeof e.markerEnd === "object"
             ? { ...e.markerEnd, color: "#7c3aed" }
-            : !ghost && traversed && typeof e.markerEnd === "object"
-              ? { ...e.markerEnd, color: "#2563eb" }
-              : e.markerEnd,
+            : coverage !== null && typeof e.markerEnd === "object"
+              ? {
+                  ...e.markerEnd,
+                  color: cov === "green" ? "#16a34a" : "#dc2626",
+                }
+              : !ghost && traversed && typeof e.markerEnd === "object"
+                ? { ...e.markerEnd, color: "#2563eb" }
+                : e.markerEnd,
       };
     });
-  }, [layout, ghost, caseView]);
+  }, [layout, ghost, caseView, coverage]);
 
   if (layout === null) {
     return (
@@ -858,7 +913,7 @@ export function ProcessDiagram({
           />
         )}
         <ZoomControls />
-        <Legend />
+        <Legend coverage={coverage} />
         <Panel position="top-right">
           <div className="text-[12px] text-zinc-500">
             {`${layout.nodes.length} steps, ${layout.edges.length} links`}

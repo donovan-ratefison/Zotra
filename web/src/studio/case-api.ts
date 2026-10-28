@@ -151,3 +151,22 @@ export async function runCommand(
     userId,
   );
 }
+
+// CoverageReport is the answer of GET /api/versions/<id>/coverage:
+// the branch coverage of the test cases of one version.
+export interface CoverageReport {
+  version_id: string;
+  taken: number;
+  total: number;
+  edges: { edge_id: string; count: number }[];
+}
+
+// getCoverage reads GET /api/versions/<id>/coverage. The edges sit
+// in definition order, one count per edge.
+export async function getCoverage(
+  versionId: string,
+): Promise<CoverageReport> {
+  return getJson<CoverageReport>(
+    `/api/versions/${encodeURIComponent(versionId)}/coverage`,
+  );
+}

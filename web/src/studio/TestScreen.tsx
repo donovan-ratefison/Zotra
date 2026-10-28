@@ -7,18 +7,21 @@ import { useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  BarChart3,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
   Rewind,
+  Sparkles,
 } from "lucide-react";
 import { ApiError, updateDraft } from "./api";
-import type { ExplainProposal } from "./ai-api";
+import { generateTests, type ExplainProposal } from "./ai-api";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import {
   createCase,
+  getCoverage,
   listEvents,
   listUsers,
   readCase,
@@ -92,6 +95,24 @@ export function TestScreen({ def, version }: {
     queryKey: ["case", testCaseId],
     queryFn: () => readCase(testCaseId!),
     enabled: testCaseId !== null,
+  });
+
+  // The coverage mode: off by default, on with coverage=1 in the
+  // URL at mount. The render tests have no window: off there (the
+  // new=1 pattern of StudioShell.tsx, lines 123 to 130).
+  const [coverageOn, setCoverageOn] = useState<boolean>(() => {
+    return (
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("coverage") === "1"
+    );
+  });
+  // The coverage report of the version. It reads only while the
+  // mode is on and a case is open; each command invalidates it, so
+  // the counter stays fresh.
+  const coverageQuery = useQuery({
+    queryKey: ["coverage", version.id],
+    queryFn: () => getCoverage(version.id),
+    enabled: coverageOn && testCaseId !== null,
   });
 
   // The replay position: null is the present. It changes only through
@@ -183,6 +204,11 @@ export function TestScreen({ def, version }: {
       // The timeline, the counter and the control bounds read the
       // event list; the command answer carries the new events only.
       void queryClient.invalidateQueries({ queryKey: ["events", testCaseId] });
+      // A take changes the coverage; a disabled query makes this a
+      // no-op while the mode is off.
+      void queryClient.invalidateQueries({
+        queryKey: ["coverage", version.id],
+      });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : String(err));
     }
@@ -207,6 +233,28 @@ export function TestScreen({ def, version }: {
       setCreateError(err instanceof ApiError ? err.message : String(err));
     } finally {
       setBusy(false);
+    }
+  }
+
+  // onGenerateTests asks the AI for test cases for the red edges of
+  // the version. A created case has no cached query, so only the
+  // coverage invalidation runs; the tester opens the new case by
+  // hand.
+  const [generating, setGenerating] = useState(false);
+  async function onGenerateTests() {
+    setGenerating(true);
+    try {
+      const answer = await generateTests(version.id);
+      toast.success(`${answer.created.length} test cases created.`);
+      void queryClient.invalidateQueries({
+        queryKey: ["coverage", version.id],
+      });
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : "The generation did not run.",
+      );
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -305,10 +353,44 @@ export function TestScreen({ def, version }: {
           <span className="font-mono text-sm">{`Test case ${loaded.case.reference}`}</span>
           <Badge variant="secondary">{`v${version.number}`}</Badge>
           <span className="flex-1" />
+          <Button
+            variant="outline"
+            size="sm"
+            aria-pressed={coverageOn}
+            onClick={() => setCoverageOn((v) => !v)}
+          >
+            <BarChart3 className="size-4" />
+            Coverage
+          </Button>
+          {coverageOn && coverageQuery.data !== undefined && (
+            <span className="font-mono text-[12px] text-muted-foreground">
+              {`${coverageQuery.data.taken} / ${coverageQuery.data.total} branches`}
+            </span>
+          )}
+          {coverageOn && (
+            <Button
+              size="sm"
+              disabled={generating}
+              onClick={() => void onGenerateTests()}
+            >
+              <Sparkles className="size-4" />
+              {generating ? "Generating..." : "Generate tests"}
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
             New test case
           </Button>
         </div>
+        {coverageOn && coverageQuery.isError && (
+          <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2 text-sm">
+            <span>The coverage did not load.</span>
+            <span className="text-muted-foreground">
+              {coverageQuery.error instanceof ApiError
+                ? coverageQuery.error.message
+                : String(coverageQuery.error)}
+            </span>
+          </div>
+        )}
         <main className="flex min-h-0 flex-1">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {at !== null && (
@@ -333,6 +415,7 @@ export function TestScreen({ def, version }: {
                 onCitationClick={ignoreCitation}
                 minimap={false}
                 caseView={caseView}
+                coverage={coverageQuery.data ?? null}
               />
             </div>
             <div className="flex max-h-56 shrink-0 flex-col overflow-y-auto border-t">

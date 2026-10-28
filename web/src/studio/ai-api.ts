@@ -55,3 +55,36 @@ export async function explainCheck(
   }
   return (await res.json()) as ExplainAnswer;
 }
+
+// GeneratedCase is one entry of the created list of the
+// generate-tests answer.
+export interface GeneratedCase {
+  case_id: string;
+  reference: string;
+  target_edge: string;
+}
+// GenerateTestsAnswer is the answer of POST /api/ai/generate-tests:
+// the red edges, the cases the engine kept, and the drops.
+export interface GenerateTestsAnswer {
+  version_id: string;
+  red_edges: string[];
+  created: GeneratedCase[];
+  errors: string[];
+}
+
+// generateTests asks the AI for one test case per red edge of one
+// version. The engine runs each proposed case; only the cases that
+// reach their edge come back in created.
+export async function generateTests(
+  versionId: string,
+): Promise<GenerateTestsAnswer> {
+  const res = await fetch("/api/ai/generate-tests", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ version_id: versionId }),
+  });
+  if (!res.ok) {
+    throw await apiError(res);
+  }
+  return (await res.json()) as GenerateTestsAnswer;
+}
