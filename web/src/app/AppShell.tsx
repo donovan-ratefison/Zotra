@@ -6,6 +6,7 @@
 
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   ApiError,
   getVersion,
@@ -14,8 +15,11 @@ import {
 } from "../studio/api";
 import { listUsers } from "../studio/case-api";
 import { fetchInbox } from "./app-api";
+import { fetchAudit, fetchAuditVerify, fetchSupervision, type AuditVerify } from "./sup-api";
+import { AuditScreen } from "./AuditScreen";
 import { CaseScreen } from "./CaseScreen";
 import { InboxScreen } from "./InboxScreen";
+import { SupervisionScreen } from "./SupervisionScreen";
 import {
   Select,
   SelectContent,
@@ -169,6 +173,13 @@ export function AppShell() {
     const q = typeof location === "undefined" ? "" : location.search;
     return new URLSearchParams(q).get("case") ?? "";
   });
+  // The view of the main area: the inbox, or one supervisor screen.
+  // An unknown or absent view parameter gives the inbox.
+  const [view, setView] = useState<"inbox" | "supervision" | "audit">(() => {
+    const q = typeof location === "undefined" ? "" : location.search;
+    const v = new URLSearchParams(q).get("view");
+    return v === "supervision" || v === "audit" ? v : "inbox";
+  });
 
   const processesQuery = useQuery({
     queryKey: ["processes"],
@@ -194,6 +205,20 @@ export function AppShell() {
     queryFn: () => fetchInbox(effectiveUserId),
     enabled: usersQuery.data !== undefined && effectiveUserId !== "",
   });
+  // The two supervisor queries, gated on the view: the inbox rows run
+  // no new fetch. The verify state holds the last chain check.
+  const supervisionQuery = useQuery({
+    queryKey: ["supervision", versionQuery.data?.id],
+    queryFn: () => fetchSupervision(versionQuery.data!.id),
+    enabled: view === "supervision" && versionQuery.data !== undefined,
+  });
+  const auditQuery = useQuery({
+    queryKey: ["audit"],
+    queryFn: () => fetchAudit(50),
+    enabled: view === "audit",
+  });
+  const [verify, setVerify] = useState<AuditVerify | null>(null);
+  const [verifyBusy, setVerifyBusy] = useState(false);
 
   function writeParam(key: string, value: string | null) {
     const params = new URLSearchParams(location.search);
@@ -218,6 +243,46 @@ export function AppShell() {
   function back() {
     writeParam("case", null);
     setCaseId("");
+  }
+
+  // openView switches the main area to one supervisor screen. The
+  // case parameter drops, the user stays.
+  function openView(next: "supervision" | "audit") {
+    const params = new URLSearchParams();
+    params.set("user", effectiveUserId);
+    params.set("view", next);
+    history.replaceState(null, "", `?${params.toString()}`);
+    setCaseId("");
+    setView(next);
+  }
+
+  // onVerify runs the chain check of the whole log. A failure shows a
+  // toast and keeps the last answer.
+  async function onVerify() {
+    setVerifyBusy(true);
+    try {
+      setVerify(await fetchAuditVerify());
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : String(err));
+    } finally {
+      setVerifyBusy(false);
+    }
+  }
+
+  // onExport downloads the fetched events as one JSON file (the
+  // export pattern of the studio version actions).
+  function onExport() {
+    const events = auditQuery.data?.events ?? [];
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(events, null, 2)], {
+        type: "application/json",
+      }),
+    );
+    const a = document.createElement("a");
+    a.download = "audit-log.json";
+    a.href = url;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   // The full-screen stages of the shell, in load order. Each stage
@@ -295,13 +360,66 @@ export function AppShell() {
     );
   } else if (usersQuery.isPending) {
     main = <Loading text="Loading" />;
+  } else if (caseId !== "") {
+    // A case parameter wins over the view.
+    main = (
+      <CaseScreen
+        userId={effectiveUserId}
+        caseId={caseId}
+        users={users}
+        onBack={back}
+      />
+    );
+  } else if (view === "supervision") {
+    if (supervisionQuery.isError) {
+      main = (
+        <ErrorScreen
+          heading="The supervision did not load."
+          error={supervisionQuery.error}
+        />
+      );
+    } else if (supervisionQuery.isPending) {
+      main = <Loading text="Loading" />;
+    } else {
+      main = (
+        <SupervisionScreen
+          def={def}
+          version={versionRow}
+          users={users}
+          supervision={supervisionQuery.data}
+        />
+      );
+    }
+  } else if (view === "audit") {
+    if (auditQuery.isError) {
+      main = (
+        <ErrorScreen
+          heading="The audit did not load."
+          error={auditQuery.error}
+        />
+      );
+    } else if (auditQuery.isPending) {
+      main = <Loading text="Loading" />;
+    } else {
+      main = (
+        <AuditScreen
+          def={def}
+          users={users}
+          audit={auditQuery.data}
+          verify={verify}
+          busy={verifyBusy}
+          onVerify={() => void onVerify()}
+          onExport={onExport}
+        />
+      );
+    }
   } else if (inboxQuery.isError) {
     main = (
       <ErrorScreen heading="The inbox did not load." error={inboxQuery.error} />
     );
   } else if (inboxQuery.data === undefined) {
     main = <Loading text="Loading" />;
-  } else if (caseId === "") {
+  } else {
     main = (
       <InboxScreen
         def={def}
@@ -309,15 +427,6 @@ export function AppShell() {
         cases={inboxQuery.data.cases}
         roleNames={roleNamesOf(inboxQuery.data.user.role_ids, def)}
         onOpenCase={openCase}
-      />
-    );
-  } else {
-    main = (
-      <CaseScreen
-        userId={effectiveUserId}
-        caseId={caseId}
-        users={users}
-        onBack={back}
       />
     );
   }
@@ -364,17 +473,25 @@ export function AppShell() {
           </span>
           <button
             type="button"
-            disabled
-            title="Not built yet"
-            className="rounded-md px-3 py-2 text-left text-sm text-muted-foreground"
+            aria-pressed={view === "supervision"}
+            onClick={() => openView("supervision")}
+            className={`rounded-md px-3 py-2 text-left text-sm ${
+              view === "supervision"
+                ? "bg-accent font-medium"
+                : "text-muted-foreground"
+            }`}
           >
             Supervision
           </button>
           <button
             type="button"
-            disabled
-            title="Not built yet"
-            className="rounded-md px-3 py-2 text-left text-sm text-muted-foreground"
+            aria-pressed={view === "audit"}
+            onClick={() => openView("audit")}
+            className={`rounded-md px-3 py-2 text-left text-sm ${
+              view === "audit"
+                ? "bg-accent font-medium"
+                : "text-muted-foreground"
+            }`}
           >
             Audit log
           </button>

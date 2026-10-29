@@ -449,6 +449,44 @@ func (s *Store) ListEvents(ctx context.Context, caseID string) ([]engine.Event, 
 	return events, rows.Err()
 }
 
+// EventRow is one event with the reference of its case.
+type EventRow struct {
+	engine.Event
+	Reference string `json:"reference"`
+}
+
+// ListRecentEvents returns the newest events of every case, at
+// DESC then seq DESC, at most limit, with the case reference.
+func (s *Store) ListRecentEvents(ctx context.Context, limit int) ([]EventRow, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT e.case_id, e.seq, e.type, e.at, e.actor, e.payload,
+		       e.prev_hash, e.hash, c.reference
+		FROM events e JOIN cases c ON e.case_id = c.id
+		ORDER BY e.at DESC, e.seq DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var recent []EventRow
+	for rows.Next() {
+		var r EventRow
+		if err := rows.Scan(&r.CaseID, &r.Seq, &r.Type, &r.At, &r.Actor,
+			&r.Payload, &r.PrevHash, &r.Hash, &r.Reference); err != nil {
+			return nil, err
+		}
+		r.At = r.At.UTC()
+		recent = append(recent, r)
+	}
+	return recent, rows.Err()
+}
+
+// CountEvents returns the count of all events of all cases.
+func (s *Store) CountEvents(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM events`).Scan(&n)
+	return n, err
+}
+
 // Document is one stored scan: the bytes and the hash they had at
 // the upload.
 type Document struct {
