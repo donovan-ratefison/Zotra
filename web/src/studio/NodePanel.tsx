@@ -39,6 +39,7 @@ import type {
   ProcessNode,
   VersionSummary,
 } from "./types";
+import { RuleBuilder } from "./RuleBuilder";
 import { ScopeMatrix } from "./ScopeMatrix";
 
 const TYPE_TEXT: Record<NodeType, string> = {
@@ -362,17 +363,15 @@ export function NodePanel({
                     {`Plain language: ${check.plain_text}`}
                   </p>
                 )}
-                <Textarea
-                  aria-label={`Expression of check ${check.id}`}
-                  rows={2}
-                  disabled={!editable}
-                  className="font-mono text-xs"
-                  value={check.expression}
-                  onChange={(e) =>
+                <RuleBuilder
+                  def={def}
+                  check={check}
+                  onExpressionChange={(expression) =>
                     apply(
-                      withCheckExpression(working, node.id, check.id, e.target.value),
+                      withCheckExpression(working, node.id, check.id, expression),
                     )
                   }
+                  disabled={!editable}
                 />
                 <Textarea
                   aria-label={`Message of check ${check.id}`}
