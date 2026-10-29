@@ -6,7 +6,7 @@
 // screen, props down).
 
 import { useState } from "react";
-import { Download } from "lucide-react";
+import { Download, GitBranch, History, Lock, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError, freezeVersion, forkVersion, publishVersion } from "./api";
 import { Button } from "@/ui/button";
@@ -148,17 +148,139 @@ export function NewDraftDialogBody({ version, busy, onCreate, onCancel }: {
   );
 }
 
+const STATUS_BADGE: Record<VersionSummary["status"], [text: string, cls: string]> = {
+  draft: ["Draft", "border-amber-300 bg-amber-50 text-amber-800"],
+  frozen: ["Frozen", "border-blue-300 bg-blue-50 text-blue-800"],
+  published: ["Published", "border-emerald-300 bg-emerald-50 text-emerald-800"],
+};
+
+function dateText(iso: string): string {
+  return new Date(iso).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "UTC",
+  });
+}
+
+// HistoryBody is the version history: one card per version, newest
+// first, on a vertical line. Each card carries the actions its status
+// allows. The opened version carries the Shown badge.
+export function HistoryBody({ def, version, versions, onOpen, onAction }: {
+  def: ProcessDefinition;
+  version: VersionSummary;
+  versions: VersionSummary[];
+  onOpen?: (id: string) => void;
+  onAction: (kind: "freeze" | "publish" | "newdraft", target: VersionSummary) => void;
+}) {
+  const rows = [...versions].sort((a, b) => b.number - a.number);
+  const numberOf = (id: string | null) =>
+    id === null ? null : (versions.find((v) => v.id === id)?.number ?? null);
+  const drafts = rows.filter((v) => v.status === "draft").length;
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="border-b px-5 pt-5 pb-3">
+        <h2 className="text-lg font-semibold leading-tight">Version history</h2>
+        <p className="text-[13px] text-muted-foreground">
+          {`${def.name} · ${rows.length - drafts} ${rows.length - drafts === 1 ? "version" : "versions"}${drafts > 0 ? ` and ${drafts} ${drafts === 1 ? "draft" : "drafts"}` : ""}`}
+        </p>
+      </div>
+      <ol className="relative min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        <span aria-hidden className="absolute top-6 bottom-6 left-[27px] w-px bg-border" />
+        {rows.map((row) => {
+          const shown = row.id === version.id;
+          const [badge, badgeCls] = STATUS_BADGE[row.status];
+          const parent = numberOf(row.parent_id);
+          return (
+            <li key={row.id} className="relative mb-3 flex gap-3">
+              <span
+                aria-hidden
+                className={`relative z-10 mt-4 size-3 shrink-0 rounded-full border-2 bg-background ${
+                  row.status === "published"
+                    ? "border-emerald-600"
+                    : row.status === "frozen"
+                      ? "border-blue-600"
+                      : "border-dashed border-amber-500"
+                } ${shown ? "ring-4 ring-blue-100" : ""}`}
+              />
+              <div
+                className={`flex min-w-0 flex-1 flex-col gap-1.5 rounded-lg border p-3 ${
+                  shown ? "border-blue-300 bg-blue-50/40" : row.status === "draft" ? "border-dashed" : ""
+                }`}
+              >
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[14px] font-semibold">{`v${row.number}`}</span>
+                  <span className="min-w-0 truncate text-[14px]">{row.label}</span>
+                  <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${badgeCls}`}>{badge}</span>
+                  {shown && (
+                    <span className="rounded-full border border-blue-300 bg-background px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                      Shown
+                    </span>
+                  )}
+                </div>
+                <p className="text-[12px] text-muted-foreground">
+                  {`${dateText(row.frozen_at ?? row.created_at)}${parent === null ? "" : ` · from v${parent}`}`}
+                </p>
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  {!shown && onOpen !== undefined && (
+                    <Button variant="outline" size="sm" className="h-7" onClick={() => onOpen(row.id)}>
+                      Open
+                    </Button>
+                  )}
+                  {row.status === "draft" && (
+                    <Button variant="outline" size="sm" className="h-7" onClick={() => onAction("freeze", row)}>
+                      <Lock aria-hidden="true" />
+                      Freeze
+                    </Button>
+                  )}
+                  {row.status === "frozen" && (
+                    <Button size="sm" className="h-7" onClick={() => onAction("publish", row)}>
+                      <Upload aria-hidden="true" />
+                      Publish
+                    </Button>
+                  )}
+                  {row.status !== "draft" && (
+                    <Button variant="outline" size="sm" className="h-7" onClick={() => onAction("newdraft", row)}>
+                      <GitBranch aria-hidden="true" />
+                      New draft from this version
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      <p className="border-t px-5 py-3 text-[12px] text-muted-foreground">
+        A case in progress stays on the version where it started. Publish
+        makes a version active for new cases.
+      </p>
+    </div>
+  );
+}
+
 export function VersionActions({ def, version, versions,
-  versionsPending, onVersionsChanged }: {
+  versionsPending, onVersionsChanged, onOpenVersion }: {
   def: ProcessDefinition;
   version: VersionSummary;
   versions: VersionSummary[];
   versionsPending: boolean;
   onVersionsChanged: () => void;
+  onOpenVersion?: (id: string) => void;
 }) {
   const [dialog, setDialog] = useState<
     "freeze" | "publish" | "newdraft" | null
   >(null);
+  // The version the dialogs act on: the opened one from the top bar,
+  // any one from the history.
+  const [target, setTarget] = useState<VersionSummary>(version);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const act = (kind: "freeze" | "publish" | "newdraft", row: VersionSummary) => {
+    setTarget(row);
+    setDialog(kind);
+  };
   const [busy, setBusy] = useState<
     "freeze" | "publish" | "newdraft" | null
   >(null);
@@ -189,9 +311,9 @@ export function VersionActions({ def, version, versions,
     }
     setBusy("freeze");
     try {
-      await freezeVersion(version.id);
+      await freezeVersion(target.id);
       setDialog(null);
-      toast.success(`v${version.number} frozen.`);
+      toast.success(`v${target.number} frozen.`);
       onVersionsChanged();
     } catch (err) {
       toast.error(
@@ -208,9 +330,9 @@ export function VersionActions({ def, version, versions,
     }
     setBusy("publish");
     try {
-      await publishVersion(version.id);
+      await publishVersion(target.id);
       setDialog(null);
-      toast.success(`v${version.number} published. It applies to new cases.`);
+      toast.success(`v${target.number} published. It applies to new cases.`);
       onVersionsChanged();
     } catch (err) {
       toast.error(
@@ -227,10 +349,14 @@ export function VersionActions({ def, version, versions,
     }
     setBusy("newdraft");
     try {
-      const created = await forkVersion(version.id, label);
+      const created = await forkVersion(target.id, label);
       setDialog(null);
       toast.success(`Draft v${created.number} created.`);
       onVersionsChanged();
+      if (historyOpen) {
+        onOpenVersion?.(created.id);
+        setHistoryOpen(false);
+      }
     } catch (err) {
       toast.error(
         err instanceof ApiError ? err.message : "The action did not complete.",
@@ -243,31 +369,61 @@ export function VersionActions({ def, version, versions,
   return (
     <>
       <div className="flex shrink-0 items-center gap-2">
-        <Button variant="outline" size="sm" onClick={onExport}>
+        <Button variant="outline" size="sm" onClick={() => setHistoryOpen(true)}>
+          <History aria-hidden="true" />
+          History
+        </Button>
+        <Button
+          variant="outline"
+          size="icon-sm"
+          aria-label="Export"
+          title="Export the definition as a JSON file"
+          onClick={onExport}
+        >
           <Download aria-hidden="true" />
-          Export
         </Button>
         {version.status === "draft" && (
-          <Button size="sm" onClick={() => setDialog("freeze")}>
+          <Button size="sm" onClick={() => act("freeze", version)}>
             Freeze version
           </Button>
         )}
         {version.status === "frozen" && (
           <>
-            <Button size="sm" onClick={() => setDialog("publish")}>
+            <Button size="sm" onClick={() => act("publish", version)}>
               Publish
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setDialog("newdraft")}>
+            <Button variant="outline" size="sm" onClick={() => act("newdraft", version)}>
               New draft from this version
             </Button>
           </>
         )}
         {version.status === "published" && (
-          <Button size="sm" onClick={() => setDialog("newdraft")}>
+          <Button size="sm" onClick={() => act("newdraft", version)}>
             New draft from this version
           </Button>
         )}
       </div>
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <DialogContent
+          aria-label="Version history"
+          className="top-0 right-0 left-auto h-full max-h-none w-[420px] max-w-[100vw] translate-x-0 translate-y-0 gap-0 rounded-none border-y-0 border-r-0 p-0 sm:max-w-[420px] data-[state=closed]:zoom-out-100 data-[state=open]:zoom-in-100"
+        >
+          <HistoryBody
+            def={def}
+            version={version}
+            versions={versions}
+            onOpen={
+              onOpenVersion === undefined
+                ? undefined
+                : (id) => {
+                    onOpenVersion(id);
+                    setHistoryOpen(false);
+                  }
+            }
+            onAction={act}
+          />
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={dialog === "freeze"}
         onOpenChange={(open) => {
@@ -278,7 +434,7 @@ export function VersionActions({ def, version, versions,
       >
         <DialogContent aria-label="Freeze version">
           <FreezeDialogBody
-            version={version}
+            version={target}
             busy={busy === "freeze"}
             onConfirm={() => void onFreeze()}
             onCancel={() => setDialog(null)}
@@ -295,7 +451,7 @@ export function VersionActions({ def, version, versions,
       >
         <DialogContent aria-label="Publish">
           <PublishDialogBody
-            version={version}
+            version={target}
             def={def}
             publishedNumber={publishedNumber}
             versionsPending={versionsPending}
@@ -315,7 +471,7 @@ export function VersionActions({ def, version, versions,
       >
         <DialogContent aria-label="New draft">
           <NewDraftDialogBody
-            version={version}
+            version={target}
             busy={busy === "newdraft"}
             onCreate={(label) => void onCreateDraft(label)}
             onCancel={() => setDialog(null)}

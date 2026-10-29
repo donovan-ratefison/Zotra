@@ -5,7 +5,7 @@
 
 import { create } from "zustand";
 
-export type PanelTab = "general" | "requirements" | "scope";
+export type PanelTab = "general" | "screen" | "requirements" | "scope";
 export type StudioMode = "design" | "test";
 
 interface StudioState {

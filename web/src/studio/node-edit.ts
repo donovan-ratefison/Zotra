@@ -205,6 +205,25 @@ export function setScopeOverride(
   });
 }
 
+// Moves one field of the data model before or after another one. The
+// field order is the order of every form; the move keeps the other
+// fields in place. An unknown name leaves the definition as it is.
+export function moveField(
+  def: ProcessDefinition,
+  name: string,
+  to: string,
+): ProcessDefinition {
+  const from = def.fields.findIndex((f) => f.name === name);
+  const target = def.fields.findIndex((f) => f.name === to);
+  if (from < 0 || target < 0 || from === target) {
+    return def;
+  }
+  const fields = [...def.fields];
+  const [moved] = fields.splice(from, 1);
+  fields.splice(target, 0, moved!);
+  return { ...def, fields };
+}
+
 export function saveErrorText(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.code === "conflict") {

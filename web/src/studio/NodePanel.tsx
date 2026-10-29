@@ -41,6 +41,7 @@ import type {
 } from "./types";
 import { RuleBuilder } from "./RuleBuilder";
 import { ScopeMatrix } from "./ScopeMatrix";
+import { ScreenPane } from "./ScreenPane";
 
 const TYPE_TEXT: Record<NodeType, string> = {
   start: "Start",
@@ -51,6 +52,7 @@ const TYPE_TEXT: Record<NodeType, string> = {
 
 const TABS: { id: PanelTab; label: string }[] = [
   { id: "general", label: "General" },
+  { id: "screen", label: "Screen" },
   { id: "requirements", label: "Requirements" },
   { id: "scope", label: "Data and scope" },
 ];
@@ -158,7 +160,7 @@ export function NodePanel({
     <div
       role="tablist"
       aria-label="Step settings"
-      className="m-3 mt-3 grid grid-cols-3 gap-0.5 rounded-lg bg-secondary p-0.5"
+      className="m-3 mt-3 grid grid-cols-2 gap-0.5 rounded-lg bg-secondary p-0.5"
     >
       {TABS.map((t) => (
         <button
@@ -447,6 +449,11 @@ export function NodePanel({
       {tabStrip}
       <div className="min-h-0 flex-1 overflow-auto px-4 pb-5">
         {generalPane}
+        <div role="tabpanel" hidden={tab !== "screen"}>
+          {tab === "screen" && (
+            <ScreenPane def={working} node={node} editable={editable} onChange={apply} />
+          )}
+        </div>
         {requirementsPane}
         {scopePane}
       </div>

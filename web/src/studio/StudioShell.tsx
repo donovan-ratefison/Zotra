@@ -824,6 +824,7 @@ export function TopBar({
             versions={versions}
             versionsPending={versionsPending}
             onVersionsChanged={onVersionsChanged}
+            onOpenVersion={onSelectVersion}
           />
         </div>
       )}
