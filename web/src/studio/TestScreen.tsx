@@ -8,10 +8,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   BarChart3,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
+  Plus,
   Rewind,
   Sparkles,
 } from "lucide-react";
@@ -19,6 +16,7 @@ import { ApiError, updateDraft } from "./api";
 import { generateTests, type ExplainProposal } from "./ai-api";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
+import { Hint } from "@/ui/hint";
 import {
   createCase,
   getCoverage,
@@ -45,8 +43,8 @@ import {
 import { ReplayDialog } from "./ReplayDialog";
 import { commandsOf, runCopy } from "./replay";
 import { ProcessDiagram } from "./diagram";
-import { StepScreen } from "./StepScreen";
-import { Timeline } from "./Timeline";
+import { ActorSelect, StepHeader, StepScreen } from "./StepScreen";
+import { TimelineBar } from "./TimelineBar";
 import { useStudioStore } from "./store";
 import type { ProcessDefinition, VersionSummary } from "./types";
 
@@ -419,6 +417,8 @@ export function TestScreen({ def, version }: {
         ? caseAtQuery.data
         : caseQuery.data;
     const events = eventsQuery.data ?? [];
+    const userName = (id: string) =>
+      usersQuery.data?.find((u) => u.id === id)?.name ?? id;
     const caseView = caseViewOf(
       events,
       loaded.state,
@@ -429,11 +429,33 @@ export function TestScreen({ def, version }: {
         ? (caseAtQuery.data?.state.data ?? {})
         : loaded.state.data;
     const before = earlier >= 1 ? (earlierQuery.data?.state.data ?? {}) : {};
+    const currentNode =
+      def.nodes.find((nd) => nd.id === loaded.state.node_id) ?? null;
     content = (
       <>
-        <div className="flex h-11 shrink-0 items-center gap-2 border-b px-4">
-          <span className="font-mono text-sm">{`Test case ${loaded.case.reference}`}</span>
+        <div className="flex h-12 shrink-0 items-center gap-3 border-b px-4 text-[13px]">
+          {currentNode !== null && currentNode.type === "task" && loaded.state.status !== "closed" && (
+            <>
+              <span className="text-muted-foreground">Act as</span>
+              <ActorSelect
+                users={usersQuery.data}
+                node={currentNode}
+                state={loaded.state}
+                actor={effectiveActor}
+                onActorChange={setActor}
+                disabled={at !== null}
+                className="h-8 w-[200px]"
+              />
+              <span aria-hidden className="h-5 w-px bg-border" />
+            </>
+          )}
+          <span className="text-muted-foreground">Test case</span>
+          <span className="font-medium">{loaded.case.reference}</span>
           <Badge variant="secondary">{`v${version.number}`}</Badge>
+          <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
+            <Plus className="size-4" />
+            New test case
+          </Button>
           <span className="flex-1" />
           <Button
             variant="outline"
@@ -445,7 +467,7 @@ export function TestScreen({ def, version }: {
             Coverage
           </Button>
           {coverageOn && coverageQuery.data !== undefined && (
-            <span className="font-mono text-[12px] text-muted-foreground">
+            <span className="text-[12px] text-muted-foreground">
               {`${coverageQuery.data.taken} / ${coverageQuery.data.total} branches`}
             </span>
           )}
@@ -459,9 +481,6 @@ export function TestScreen({ def, version }: {
               {generating ? "Generating..." : "Generate tests"}
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
-            New test case
-          </Button>
         </div>
         {coverageOn && coverageQuery.isError && (
           <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2 text-sm">
@@ -478,14 +497,21 @@ export function TestScreen({ def, version }: {
             {at !== null && (
               <div
                 role="status"
-                className="flex shrink-0 items-center gap-2 border-b bg-blue-50 px-4 py-2 text-sm"
+                className="m-3 mb-0 flex shrink-0 items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[13px] text-blue-900"
               >
                 <Rewind className="size-4 shrink-0" />
-                <span>{`Replay at event ${at}. The commands wait for the present.`}</span>
+                <span>
+                  {`Replay at «${currentNode?.name ?? "the start"}», event ${at} of ${count}.`}
+                </span>
+                <Hint label="About the replay">
+                  The case shows its state at this event. The commands wait for
+                  the present. Copy the case to change a value and play again.
+                </Hint>
                 <span className="flex-1" />
                 <Button
                   variant="outline"
                   size="sm"
+                  className="bg-background"
                   onClick={() => {
                     setReplayError(null);
                     setReplayOpen(true);
@@ -493,7 +519,7 @@ export function TestScreen({ def, version }: {
                 >
                   Copy to a new case
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => setAt(null)}>
+                <Button variant="outline" size="sm" className="bg-background" onClick={() => setAt(null)}>
                   Back to the present
                 </Button>
               </div>
@@ -510,81 +536,43 @@ export function TestScreen({ def, version }: {
                 coverage={coverageQuery.data ?? null}
               />
             </div>
-            <div className="flex max-h-56 shrink-0 flex-col overflow-y-auto border-t">
-              {eventsQuery.isError ? (
-                <div className="flex flex-col gap-0.5 px-4 py-2 text-sm">
-                  <span>The events did not load.</span>
-                  <span className="text-muted-foreground">
-                    {eventsQuery.error instanceof ApiError
-                      ? eventsQuery.error.message
-                      : String(eventsQuery.error)}
-                  </span>
-                </div>
-              ) : eventsQuery.data === undefined ? (
-                <div className="px-4 py-2 text-sm text-muted-foreground">
-                  Loading the events
-                </div>
-              ) : (
-                <>
-                  <div className="flex items-center gap-1 px-4 py-1.5">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Go to the start"
-                      disabled={count === 0 || at === 1}
-                      onClick={() => setAt(count === 0 ? null : 1)}
-                    >
-                      <ChevronsLeft className="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Step back"
-                      disabled={n <= 1}
-                      onClick={() => setAt(n - 1)}
-                    >
-                      <ChevronLeft className="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Step forward"
-                      disabled={at === null}
-                      onClick={() => setAt(n === count ? null : n + 1)}
-                    >
-                      <ChevronRight className="size-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Go to the end"
-                      disabled={at === null}
-                      onClick={() => setAt(null)}
-                    >
-                      <ChevronsRight className="size-4" />
-                    </Button>
-                    <span className="ml-2 font-mono text-[12px] text-muted-foreground">
-                      {`${n} of ${count}`}
-                    </span>
-                  </div>
-                  <Timeline
-                    def={def}
-                    events={events}
-                    at={at}
-                    onSelect={setAt}
-                  />
-                </>
-              )}
-            </div>
+            {eventsQuery.isError ? (
+              <div className="flex shrink-0 flex-col gap-0.5 border-t px-4 py-2 text-sm">
+                <span>The events did not load.</span>
+                <span className="text-muted-foreground">
+                  {eventsQuery.error instanceof ApiError
+                    ? eventsQuery.error.message
+                    : String(eventsQuery.error)}
+                </span>
+              </div>
+            ) : eventsQuery.data === undefined ? (
+              <div className="shrink-0 border-t px-4 py-2 text-sm text-muted-foreground">
+                Loading the events
+              </div>
+            ) : (
+              <TimelineBar
+                def={def}
+                events={events}
+                state={caseQuery.data.state}
+                at={at}
+                onSelect={setAt}
+                userName={userName}
+              />
+            )}
           </div>
           <aside
             aria-label="Step screen"
-            className="flex w-[380px] shrink-0 flex-col overflow-y-auto border-l"
+            className="flex w-[380px] shrink-0 flex-col border-l"
           >
+            {currentNode !== null && loaded.state.status !== "closed" && (
+              <div className="shrink-0 border-b px-4 pt-3.5 pb-3">
+                <StepHeader def={def} node={currentNode} />
+              </div>
+            )}
             <div
               role="tablist"
               aria-label="Case panel"
-              className="grid grid-cols-3 gap-0.5 border-b p-1"
+              className="grid shrink-0 grid-cols-3 gap-0.5 border-b p-1"
             >
               {TABS.map((t) => (
                 <button
@@ -603,6 +591,7 @@ export function TestScreen({ def, version }: {
                 </button>
               ))}
             </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
             {panelTab === "screen" && (
               <StepScreen
                 def={def}
@@ -624,6 +613,8 @@ export function TestScreen({ def, version }: {
                 events={events}
                 uploading={uploading}
                 onUpload={onUpload}
+                actorInBar
+                showHeader={false}
               />
             )}
             {panelTab === "inspector" && (
@@ -650,6 +641,7 @@ export function TestScreen({ def, version }: {
                 />
               </div>
             )}
+            </div>
           </aside>
         </main>
       </>

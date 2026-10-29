@@ -100,7 +100,7 @@ export function AuditScreen({
                     {actorOf(users, event.actor)}
                   </td>
                   <td className="px-4 py-3 text-sm">
-                    {eventLabel(def, event)}
+                    {eventLabel(def, event, (id) => actorOf(users, id))}
                   </td>
                   <td className="px-4 py-3 font-mono text-[13px] text-muted-foreground">
                     {event.hash.slice(0, 8)}

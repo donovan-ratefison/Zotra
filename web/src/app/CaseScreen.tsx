@@ -240,7 +240,7 @@ export function CaseScreen({
           </div>
         </div>
       </div>
-      <div className="rounded-lg border bg-card pb-4">
+      <div className="rounded-lg border bg-card">
         <StepScreen
           def={loadedDef}
           state={loaded.state}

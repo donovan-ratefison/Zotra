@@ -5,6 +5,7 @@
 
 import { useState } from "react";
 import { Checkbox } from "@/ui/checkbox";
+import { valueText } from "./format";
 import { accessOf } from "./StepScreen";
 import type { ProcessDefinition, ScopeAccess } from "./types";
 
@@ -89,58 +90,52 @@ export function Inspector({
       </div>
 
       {view === "list" ? (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-muted-foreground">
-              <th className="py-1 pr-2 font-medium">Field</th>
-              <th className="py-1 pr-2 font-medium">Before</th>
-              <th className="py-1 pr-2 font-medium">After</th>
-              {hasRole && <th className="py-1 font-medium">Scope</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {fields.map((field) => {
-              const isAdded = !(field.name in before);
-              const isChanged = changed(field.name);
-              const access =
-                hasRole && node !== undefined
-                  ? accessOf(field, node, def)
-                  : null;
-              return (
-                <tr
-                  key={field.name}
-                  className={
-                    isAdded
-                      ? "bg-[#bbf7d0]"
-                      : isChanged
-                        ? "bg-[#fde68a]"
-                        : undefined
-                  }
-                >
-                  <td className="py-1 pr-2">{field.label}</td>
-                  <td className="py-1 pr-2">
-                    {field.name in before
-                      ? JSON.stringify(before[field.name])
-                      : "-"}
-                  </td>
-                  <td className="py-1 pr-2">
-                    {field.name in after
-                      ? JSON.stringify(after[field.name])
-                      : "-"}
-                    {isChanged && field.computed !== null && (
-                      <span className="ml-1 rounded border px-1 text-[10px]">
-                        computed
-                      </span>
-                    )}
-                  </td>
-                  {access !== null && (
-                    <td title={SCOPE_TEXT[access][1]}>{SCOPE_TEXT[access][0]}</td>
+        <ul aria-label="Fields" className="flex flex-col divide-y rounded-lg border text-[13px]">
+          {fields.map((field) => {
+            const isAdded = !(field.name in before);
+            const isChanged = changed(field.name);
+            const access =
+              hasRole && node !== undefined
+                ? accessOf(field, node, def)
+                : null;
+            const show = (side: Record<string, unknown>) =>
+              field.name in side ? valueText(field, side[field.name], def.currency) : "-";
+            return (
+              <li
+                key={field.name}
+                className={`flex items-start gap-2 px-2.5 py-1.5 ${
+                  isAdded ? "bg-[#dcfce7]" : isChanged ? "bg-[#fef3c7]" : ""
+                }`}
+              >
+                <span className="w-[42%] shrink-0 truncate text-muted-foreground" title={field.label}>
+                  {field.label}
+                </span>
+                <span className="min-w-0 flex-1 break-words">
+                  {isChanged && !isAdded && (
+                    <span className="text-muted-foreground line-through decoration-muted-foreground/60">
+                      {show(before)}
+                    </span>
                   )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                  {isChanged && !isAdded && <span className="mx-1 text-muted-foreground">→</span>}
+                  <span className={isChanged ? "font-medium" : undefined}>{show(after)}</span>
+                  {isChanged && field.computed !== null && (
+                    <span className="ml-1 rounded border px-1 text-[10px]">
+                      computed
+                    </span>
+                  )}
+                </span>
+                {access !== null && (
+                  <span
+                    title={SCOPE_TEXT[access][1]}
+                    className="shrink-0 rounded border px-1 font-mono text-[10.5px] text-muted-foreground"
+                  >
+                    {SCOPE_TEXT[access][0]}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       ) : (
         <pre className="font-mono text-[12px]">
           {fields.map((field, i) => {
@@ -167,11 +162,11 @@ export function Inspector({
 
       <div className="flex items-center gap-3 text-[12px] text-muted-foreground">
         <span className="flex items-center gap-1">
-          <span className="inline-block size-3 bg-[#bbf7d0]" />
+          <span className="inline-block size-3 rounded-sm bg-[#dcfce7]" />
           Added
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block size-3 bg-[#fde68a]" />
+          <span className="inline-block size-3 rounded-sm bg-[#fef3c7]" />
           Modified
         </span>
         {hasRole && <span>R Read · W Write · H Hidden</span>}

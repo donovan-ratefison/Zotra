@@ -573,7 +573,7 @@ describe("documents card", () => {
     expect(html).toContain("Required document missing");
     expect(html).toContain(">Attach<");
     expect(html).toContain("Drop a scan here or click to choose one.");
-    expect(html).toContain("PNG or JPG, 10 MiB at most.");
+    expect(html).toContain('aria-label="About the documents"');
     expect(html).toContain("ID card.png");
     expect(html).toContain("image/png · 27/10/2026, 12:00:00");
     expect(html).toContain(">View<");
@@ -636,12 +636,12 @@ describe("step screen gate", () => {
   test("5.2 row 17: a missing document disables the submit", () => {
     const html = renderStep(takenState);
     expect(html).toMatch(/<button[^>]*disabled[^>]*>[^<]*Submit/);
-    expect(html).toContain("Missing document: Salary slips.");
+    expect(html).toMatch(/Missing: [^<]*Salary slips/);
     const variant = renderStep(takenState, {
       documents: [scan(), scan({ id: "d2", name: "Salary slips.png" })],
     });
     expect(variant).toMatch(/<button(?![^>]*\bdisabled=)[^>]*>[^<]*Submit/);
-    expect(variant).not.toContain("Missing document: Salary slips.");
+    expect(variant).not.toMatch(/Missing: [^<]*Salary slips/);
   });
 
   test("5.2 row 18: a missing signature disables the decisions", () => {
@@ -651,21 +651,21 @@ describe("step screen gate", () => {
     });
     expect(html).toMatch(/<button[^>]*disabled[^>]*>[^<]*approve/);
     expect(html).toMatch(/<button[^>]*disabled[^>]*>[^<]*refuse/);
-    expect(html).toContain("The step has no signature yet.");
+    expect(html).toMatch(/Missing: [^<]*signature/);
     const variant = renderStep(signoffState, {
       decisionEnabled: true,
       events: [signatureEvent],
     });
     expect(variant).toMatch(/<button(?![^>]*\bdisabled=)[^>]*>[^<]*approve/);
     expect(variant).toMatch(/<button(?![^>]*\bdisabled=)[^>]*>[^<]*refuse/);
-    expect(variant).not.toContain("The step has no signature yet.");
+    expect(variant).not.toMatch(/Missing: [^<]*signature/);
   });
 
   test("5.2 row 26: a loading list counts every name as missing", () => {
     const html = renderStep(takenState, { documents: null });
     expect(html).toMatch(/<button[^>]*disabled[^>]*>[^<]*Submit/);
-    expect(html).toContain("Missing document: ID card.");
-    expect(html).toContain("Missing document: Salary slips.");
+    expect(html).toMatch(/Missing: [^<]*ID card/);
+    expect(html).toMatch(/Missing: [^<]*Salary slips/);
     expect(html).toContain("Loading the documents.");
     expect(html).not.toContain("image/png");
   });

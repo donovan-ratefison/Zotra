@@ -2,11 +2,19 @@
 // form from the fields and the scope, and the actions. It renders
 // one command at a time through onCommand; TestScreen owns the case
 // and the command answers.
+//
+// Layout rule: the form is compact (two columns, read values as a
+// short summary) and the actions sit in a footer that sticks to the
+// bottom of the scroll container, so the submit button never hides
+// under a scroll.
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/ui/button";
+import { Hint } from "@/ui/hint";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
-import { FieldInput, fieldInput } from "./field-inputs";
+import { FieldInput } from "./field-inputs";
+import { valueText } from "./format";
+import { roleColor } from "./layout";
 import { documentProvides, StepDocuments } from "./StepDocuments";
 import type {
   CaseEvent,
@@ -45,7 +53,105 @@ export function accessOf(field: Field, node: ProcessNode, def: ProcessDefinition
   return row === undefined ? "hidden" : row.access;
 }
 
-export function StepScreen({ def, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly = false, actorLocked = false, documents, documentsError, events, uploading, onUpload }: {
+// actorsFor gives the users who can act on the node: the users whose
+// roles hold the node role, or every user on a node without a role.
+export function actorsFor(users: UserDTO[], node: ProcessNode): UserDTO[] {
+  return users.filter((u) => node.role === null || u.role_ids.includes(node.role));
+}
+
+// shownActor gives the user the screen shows, which is the user the
+// commands send: the assignee when one is set, else the actor when
+// the list holds it, else the first entry.
+export function shownActor(users: UserDTO[], node: ProcessNode, state: CaseState, actor: string): string {
+  if (state.assignee !== "") {
+    return state.assignee;
+  }
+  const list = actorsFor(users, node);
+  return list.some((u) => u.id === actor) ? actor : (list[0]?.id ?? "");
+}
+
+// ActorSelect is the Act as pick of one task node. The test screen
+// renders it in its toolbar; the step screen renders it when no
+// toolbar holds it.
+export function ActorSelect({ users, node, state, actor, onActorChange, disabled, className }: {
+  users: UserDTO[];
+  node: ProcessNode;
+  state: CaseState;
+  actor: string;
+  onActorChange: (id: string) => void;
+  disabled: boolean;
+  className?: string;
+}) {
+  const list = actorsFor(users, node);
+  const value = shownActor(users, node, state, actor);
+  // A closed Radix select renders no selected label on the server,
+  // so the label goes in as children (the lot 2.3 pattern).
+  const label = list.find((u) => u.id === value)?.name ?? "";
+  return (
+    <Select value={value} onValueChange={onActorChange} disabled={disabled || state.assignee !== ""}>
+      <SelectTrigger aria-label="Act as" className={className ?? "w-full"}>
+        <SelectValue>{label}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {list.map((u) => (
+          <SelectItem key={u.id} value={u.id}>
+            {u.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+// StepHeader is the title block of one node: the type and the step
+// number, the name, then the role, the deadline and the documents.
+export function StepHeader({ def, node }: { def: ProcessDefinition; node: ProcessNode }) {
+  const roleName =
+    node.role === null
+      ? null
+      : def.roles.find((r) => r.id === node.role)?.name ?? node.role;
+  const color = roleColor(def, node.role);
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs text-muted-foreground">
+        {`${TYPE_TEXT[node.type] ?? node.type} · Step ${def.nodes.indexOf(node) + 1}`}
+      </span>
+      <h2 className="text-[17px] font-semibold leading-tight">{node.name}</h2>
+      <div className="flex flex-wrap items-center gap-1.5 text-xs">
+        {roleName !== null && (
+          <span className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5">
+            {color !== null && (
+              <span className="size-1.5 rounded-full" style={{ background: color }} />
+            )}
+            {roleName}
+          </span>
+        )}
+        {node.deadline_hours !== null && (
+          <span className="rounded-full border px-2 py-0.5 text-muted-foreground">
+            {`Deadline ${node.deadline_hours} h`}
+          </span>
+        )}
+        {node.documents.length > 0 && (
+          <span className="rounded-full border px-2 py-0.5 text-muted-foreground">
+            {`${node.documents.length} ${node.documents.length === 1 ? "document" : "documents"} required`}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Footer is the sticky action bar at the bottom of the scroll
+// container.
+function Footer({ children }: { children: ReactNode }) {
+  return (
+    <div className="sticky bottom-0 z-10 mt-auto flex flex-col gap-1.5 border-t bg-background px-4 py-3">
+      {children}
+    </div>
+  );
+}
+
+export function StepScreen({ def, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly = false, actorLocked = false, actorInBar = false, showHeader = true, documents, documentsError, events, uploading, onUpload }: {
   def: ProcessDefinition;
   state: CaseState;
   users: UserDTO[];
@@ -57,6 +163,8 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
   onValueChange: () => void;
   readOnly?: boolean;
   actorLocked?: boolean;
+  actorInBar?: boolean; // the caller renders ActorSelect in its toolbar
+  showHeader?: boolean; // the caller renders StepHeader above its tabs
   documents: DocumentDTO[] | null;
   documentsError: string | null;
   events: CaseEvent[];
@@ -76,34 +184,21 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
   if (node === undefined) {
     return null;
   }
-  const roleName =
-    node.role === null
-      ? null
-      : def.roles.find((r) => r.id === node.role)?.name ?? node.role;
 
   return (
-    <div className="flex flex-col gap-3 px-4 pt-3.5">
-      <div className="flex flex-col gap-1.5">
-        <span className="text-xs uppercase tracking-wide text-muted-foreground">
-          {TYPE_TEXT[node.type] ?? node.type}
-        </span>
-        <h2 className="text-[17px] font-semibold leading-tight">{node.name}</h2>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {roleName !== null && (
-            <span className="rounded-full border px-2 py-0.5">{roleName}</span>
-          )}
-          {node.deadline_hours !== null && <span>{node.deadline_hours} h</span>}
+    <div className="flex min-h-full flex-col">
+      {showHeader && (
+        <div className="px-4 pt-3.5">
+          <StepHeader def={def} node={node} />
         </div>
-      </div>
-
+      )}
       {readOnly && (
-        <p className="text-sm text-muted-foreground">
+        <p className="mx-4 mt-3 rounded-md bg-blue-50 px-2.5 py-1.5 text-[12.5px] text-blue-900">
           Replay: the commands wait for the present.
         </p>
       )}
-
       {node.type !== "task" ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="px-4 pt-3 text-sm text-muted-foreground">
           This step runs on its own.
         </p>
       ) : (
@@ -120,6 +215,7 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
           onValueChange={onValueChange}
           readOnly={readOnly}
           actorLocked={actorLocked}
+          actorInBar={actorInBar}
           documents={documents}
           documentsError={documentsError}
           events={events}
@@ -134,7 +230,7 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
 // TaskBody is the task-only part: the Act as pick, then the take
 // button or the form with the actions. A replay disables the pick and
 // hides the commands.
-function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly, actorLocked, documents, documentsError, events, uploading, onUpload }: {
+function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly, actorLocked, actorInBar, documents, documentsError, events, uploading, onUpload }: {
   def: ProcessDefinition;
   node: ProcessNode;
   state: CaseState;
@@ -147,18 +243,13 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, fa
   onValueChange: () => void;
   readOnly: boolean;
   actorLocked: boolean;
+  actorInBar: boolean;
   documents: DocumentDTO[] | null;
   documentsError: string | null;
   events: CaseEvent[];
   uploading: boolean;
   onUpload: (file: File, targetName: string) => void;
 }) {
-  // The users whose roles contain the node role (all users on a
-  // node without a role).
-  const list = users.filter(
-    (u) => node.role === null || u.role_ids.includes(node.role),
-  );
-
   // The effect fires with the assignee when one is set, else with
   // the first list entry when the actor is not in the list: what the
   // screen shows is what the commands send. The wiring depends on
@@ -172,104 +263,137 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, fa
       onActorChange(state.assignee);
       return;
     }
-    const list = users.filter(
-      (u) => node.role === null || u.role_ids.includes(node.role),
-    );
+    const list = actorsFor(users, node);
     if (list.length > 0 && !list.some((u) => u.id === actor)) {
       onActorChange(list[0]!.id);
     }
-  }, [state.node_id, state.assignee, users, node.role, actor, onActorChange, actorLocked]);
+  }, [state.node_id, state.assignee, users, node, actor, onActorChange, actorLocked]);
 
-  // What the screen shows is what the commands send: the assignee
-  // when one is set, else the actor, else the first entry.
-  const selectValue =
-    state.assignee !== ""
-      ? state.assignee
-      : list.some((u) => u.id === actor)
-        ? actor
-        : (list[0]?.id ?? "");
-  // A closed Radix select renders no selected label on the server,
-  // so the label goes in as children (the lot 2.3 pattern).
-  const selectLabel = list.find((u) => u.id === selectValue)?.name ?? "";
+  const actorName = (id: string) => users.find((u) => u.id === id)?.name ?? id;
 
+  const actorLine = actorLocked ? (
+    // The delivered app locks the actor to the picked demo profile:
+    // the line replaces the select.
+    <p className="text-[13px] text-muted-foreground">{`Acting as ${actorName(actor)}`}</p>
+  ) : actorInBar ? null : (
+    <label className="flex flex-col gap-1">
+      <span className="text-[12.5px] font-medium">Act as</span>
+      <ActorSelect
+        users={users}
+        node={node}
+        state={state}
+        actor={actor}
+        onActorChange={onActorChange}
+        disabled={readOnly}
+      />
+    </label>
+  );
+
+  if (actorLocked && state.assignee !== "" && state.assignee !== actor) {
+    // The shared-role rule: the first taker owns the case. A locked
+    // actor that is not the assignee sees the owner and no commands.
+    return (
+      <div className="flex flex-col gap-3 px-4 pt-3">
+        {actorLine}
+        <div className="rounded-lg border p-3 text-sm">
+          {`Taken by ${actorName(state.assignee)}.`}
+        </div>
+        <FailedChecks failedChecks={failedChecks} />
+      </div>
+    );
+  }
+
+  if (state.assignee === "") {
+    return (
+      <>
+        <div className="flex flex-col gap-3 px-4 pt-3 pb-4">
+          {actorLine}
+          <CaseSummary def={def} node={node} state={state} withWrites />
+          <FailedChecks failedChecks={failedChecks} />
+        </div>
+        {!readOnly && (
+          <Footer>
+            <Button onClick={() => onCommand({ type: "take" })}>Take the step</Button>
+          </Footer>
+        )}
+      </>
+    );
+  }
+
+  // The key remounts the form at each step change, so the local
+  // values reset without an effect.
   return (
-    <div className="flex flex-col gap-4">
-      {actorLocked ? (
-        // The delivered app locks the actor to the picked demo
-        // profile: the line replaces the select.
-        <p className="text-[13px] text-muted-foreground">
-          {`Acting as ${users.find((u) => u.id === actor)?.name ?? actor}`}
-        </p>
-      ) : (
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">Act as</span>
-          <Select value={selectValue} onValueChange={onActorChange} disabled={readOnly}>
-            <SelectTrigger aria-label="Act as" className="w-full">
-              <SelectValue>{selectLabel}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {list.map((u) => (
-                <SelectItem key={u.id} value={u.id}>
-                  {u.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </label>
-      )}
-
-      {actorLocked && state.assignee !== "" && state.assignee !== actor ? (
-        // The shared-role rule: the first taker owns the case. A
-        // locked actor that is not the assignee sees the owner and no
-        // commands. The header, the failed checks and the closed card
-        // still render.
-        <div className="flex flex-col gap-4">
-          <div className="rounded-lg border p-3 text-sm">
-            {`Taken by ${users.find((u) => u.id === state.assignee)?.name ?? state.assignee}.`}
-          </div>
-          <FailedChecks failedChecks={failedChecks} />
-        </div>
-      ) : state.assignee === "" ? (
-        <div className="flex flex-col gap-3">
-          {!readOnly && (
-            <Button onClick={() => onCommand({ type: "take" })}>
-              Take the step
-            </Button>
-          )}
-          <FailedChecks failedChecks={failedChecks} />
-        </div>
-      ) : (
-        // The key remounts the form at each step change, so the local
-        // values reset without an effect.
-        <StepForm
-          key={state.node_id}
-          def={def}
-          node={node}
-          state={state}
-          onCommand={onCommand}
-          failedChecks={failedChecks}
-          decisionEnabled={decisionEnabled}
-          onValueChange={onValueChange}
-          readOnly={readOnly}
-          documents={documents}
-          documentsError={documentsError}
-          events={events}
-          uploading={uploading}
-          onUpload={onUpload}
-        />
-      )}
-    </div>
+    <StepForm
+      key={state.node_id}
+      def={def}
+      node={node}
+      state={state}
+      actorLine={actorLine}
+      onCommand={onCommand}
+      failedChecks={failedChecks}
+      decisionEnabled={decisionEnabled}
+      onValueChange={onValueChange}
+      readOnly={readOnly}
+      documents={documents}
+      documentsError={documentsError}
+      events={events}
+      uploading={uploading}
+      onUpload={onUpload}
+    />
   );
 }
 
-// StepForm is the taken-step part: the write and read fields with
-// the local values, and the actions. The key on the parent render
-// resets the values at each step change. A replay disables the
-// inputs and hides the actions.
-function StepForm({ def, node, state, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly, documents, documentsError, events, uploading, onUpload }: {
+// CaseSummary lists the values the role reads on this step, two per
+// row, in their display form. A computed field shows here whatever
+// its access: the engine computes it. withWrites adds the fields the
+// role writes: before the take, the form is not open yet.
+function CaseSummary({ def, node, state, withWrites = false }: {
   def: ProcessDefinition;
   node: ProcessNode;
   state: CaseState;
+  withWrites?: boolean;
+}) {
+  // An empty value says nothing yet: it stays out of the summary.
+  const rows = def.fields.filter((field) => {
+    const access = accessOf(field, node, def);
+    const value = state.data[field.name];
+    return (
+      access !== "hidden" &&
+      field.type !== "document" &&
+      value !== null &&
+      value !== undefined &&
+      value !== "" &&
+      (withWrites || access === "read" || field.computed !== null)
+    );
+  });
+  if (rows.length === 0) {
+    return null;
+  }
+  return (
+    <section aria-label="Case data" className="rounded-lg bg-muted/50 px-3 py-2.5">
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
+        {rows.map((field) => (
+          <div key={field.name} className="flex min-w-0 flex-col">
+            <dt className="truncate text-[11.5px] text-muted-foreground">{field.label}</dt>
+            <dd className="truncate text-[13px] font-medium">
+              {valueText(field, state.data[field.name], def.currency)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+// StepForm is the taken-step part: the case summary, the write
+// fields with the local values, the documents, and the sticky
+// actions. The key on the parent render resets the values at each
+// step change. A replay disables the inputs and hides the actions.
+function StepForm({ def, node, state, actorLine, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly, documents, documentsError, events, uploading, onUpload }: {
+  def: ProcessDefinition;
+  node: ProcessNode;
+  state: CaseState;
+  actorLine: ReactNode;
   onCommand: (cmd: CommandInput) => void;
   failedChecks: { id: string; message: string }[];
   decisionEnabled: boolean;
@@ -339,93 +463,119 @@ function StepForm({ def, node, state, onCommand, failedChecks, decisionEnabled, 
   );
   const blocked = !documentsReady || (node.signature && !signed);
 
+  // valueOf gives the value an input shows: the local edit, else the
+  // stored value. A document field with no value yet starts with every
+  // attached scan ticked: the user attached them for this step.
+  const valueOf = (field: Field) =>
+    values[field.name] ??
+    state.data[field.name] ??
+    (field.type === "document" && list.length > 0 ? list.map((d) => d.id) : undefined);
+
+  // submitted adds the prefilled scans of a document field that the
+  // user did not touch: what the screen shows is what the submit sends.
+  const submitted = () => {
+    const out = { ...values };
+    for (const field of def.fields) {
+      if (field.type !== "document" || field.name in out) {
+        continue;
+      }
+      if (accessOf(field, node, def) !== "write" || field.computed !== null) {
+        continue;
+      }
+      const v = valueOf(field);
+      if (v !== undefined && state.data[field.name] === undefined) {
+        out[field.name] = v;
+      }
+    }
+    return out;
+  };
+
+  // The write fields: the inputs of the form, two per row. A document
+  // field takes the full row (one checkbox per scan).
+  const inputs = def.fields.filter(
+    (field) => accessOf(field, node, def) === "write" && field.computed === null,
+  );
+
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3">
-        {def.fields.map((field) => {
-          const access = accessOf(field, node, def);
-          if (access === "hidden") {
-            return null;
-          }
-          // A computed field renders read-only whatever its access:
-          // the engine computes it.
-          if (access === "read" || field.computed !== null) {
-            return (
-              <div key={field.name} className="flex flex-col gap-1.5">
-                <span className="text-sm font-medium">{field.label}</span>
-                <span className="text-sm text-muted-foreground">
-                  {fieldInput(field, state.data[field.name])}
-                </span>
-              </div>
-            );
-          }
-          return (
-            <label key={field.name} className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">{field.label}</span>
-              <FieldInput
-                field={field}
-                value={values[field.name] ?? state.data[field.name]}
-                onChange={(v) => {
-                  setValues((old) => ({ ...old, [field.name]: v }));
-                  onValueChange();
-                }}
-                disabled={readOnly}
-                scans={list.map((d) => ({ id: d.id, name: d.name }))}
-              />
-            </label>
-          );
-        })}
+    <>
+      <div className="flex flex-col gap-3 px-4 pt-3 pb-4">
+        {actorLine}
+        <CaseSummary def={def} node={node} state={state} />
+        {inputs.length > 0 && (
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+            {inputs.map((field) => (
+              <label
+                key={field.name}
+                className={`flex min-w-0 flex-col gap-1 ${field.type === "document" ? "col-span-2" : ""}`}
+              >
+                <span className="truncate text-[12.5px] font-medium">{field.label}</span>
+                <FieldInput
+                  field={field}
+                  value={valueOf(field)}
+                  onChange={(v) => {
+                    setValues((old) => ({ ...old, [field.name]: v }));
+                    onValueChange();
+                  }}
+                  disabled={readOnly}
+                  scans={list.map((d) => ({ id: d.id, name: d.name }))}
+                />
+              </label>
+            ))}
+          </div>
+        )}
+        {(node.documents.length > 0 || node.signature) && (
+          <StepDocuments
+            node={node}
+            documents={documents}
+            documentsError={documentsError}
+            uploading={uploading}
+            onUpload={onUpload}
+            onCommand={onCommand}
+            signed={signed}
+            readOnly={readOnly}
+            onFill={fillFormValues}
+            fillTargets={fillTargets}
+          />
+        )}
+        <FailedChecks failedChecks={failedChecks} />
       </div>
-      {(node.documents.length > 0 || node.signature) && (
-        <StepDocuments
-          node={node}
-          documents={documents}
-          documentsError={documentsError}
-          uploading={uploading}
-          onUpload={onUpload}
-          onCommand={onCommand}
-          signed={signed}
-          readOnly={readOnly}
-          onFill={fillFormValues}
-          fillTargets={fillTargets}
-        />
-      )}
       {!readOnly && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant={node.decisions.length > 0 ? "outline" : "default"}
-            disabled={blocked}
-            onClick={() => onCommand({ type: "submit", values })}
-          >
-            Submit
-          </Button>
-          {node.decisions.map((decision) => (
-            <Button
-              key={decision}
-              disabled={!decisionEnabled || blocked}
-              onClick={() => onCommand({ type: "decide", decision })}
-            >
-              {decision}
-            </Button>
-          ))}
-        </div>
-      )}
-      {!readOnly && blocked && (
-        <div className="flex flex-col gap-1">
-          {missing.map((name) => (
-            <p key={name} className="text-destructive text-sm">
-              {`Missing document: ${name}.`}
-            </p>
-          ))}
-          {node.signature && !signed && (
-            <p className="text-destructive text-sm">
-              The step has no signature yet.
+        <Footer>
+          {blocked && (
+            <p className="text-[12.5px] text-destructive">
+              {`Missing: ${[
+                ...(documents === null ? node.documents : missing),
+                ...(node.signature && !signed ? ["signature"] : []),
+              ].join(", ")}`}
             </p>
           )}
-        </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant={node.decisions.length > 0 ? "outline" : "default"}
+              disabled={blocked}
+              onClick={() => onCommand({ type: "submit", values: submitted() })}
+            >
+              Submit
+            </Button>
+            {node.decisions.map((decision) => (
+              <Button
+                key={decision}
+                className="capitalize"
+                disabled={!decisionEnabled || blocked}
+                onClick={() => onCommand({ type: "decide", decision })}
+              >
+                {decision}
+              </Button>
+            ))}
+            {node.decisions.length > 0 && (
+              <Hint label="How to decide">
+                Submit the values first. The decisions open when the checks pass.
+              </Hint>
+            )}
+          </div>
+        </Footer>
       )}
-      <FailedChecks failedChecks={failedChecks} />
-    </div>
+    </>
   );
 }
 
@@ -438,9 +588,9 @@ function FailedChecks({ failedChecks }: {
     return null;
   }
   return (
-    <div className="flex flex-col gap-1">
+    <div role="alert" className="flex flex-col gap-1 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
       {failedChecks.map((check) => (
-        <p key={check.id} className="text-destructive text-sm">
+        <p key={check.id} className="text-destructive text-[13px]">
           {`Check ${check.id}: ${check.message}`}
         </p>
       ))}

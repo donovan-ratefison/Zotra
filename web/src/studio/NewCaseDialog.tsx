@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent } from "@/ui/dialog";
+import { Hint } from "@/ui/hint";
 import { FieldInput } from "./field-inputs";
 import type { ProcessDefinition } from "./types";
 
@@ -24,20 +25,23 @@ export function NewCaseDialogBody({ def, busy, error, onCreate, onClose }: {
   const [values, setValues] = useState<Record<string, unknown>>({});
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
+    <div className="flex max-h-[80vh] flex-col">
+      <div className="flex items-center gap-1.5 pb-3">
         <h2 className="text-lg font-semibold leading-tight">New test case</h2>
-        <p className="text-sm text-muted-foreground">
+        <Hint label="About test cases" side="bottom">
           The case runs the opened version. Test data never enters
           production.
-        </p>
+        </Hint>
       </div>
-      <div className="flex flex-col gap-3">
+      <div className="-mx-1 grid min-h-0 grid-cols-2 gap-x-3 gap-y-2.5 overflow-y-auto px-1 pb-1">
         {def.fields
           .filter((field) => field.computed === null)
           .map((field) => (
-            <label key={field.name} className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium">{field.label}</span>
+            <label
+              key={field.name}
+              className={`flex min-w-0 flex-col gap-1 ${field.type === "document" ? "col-span-2" : ""}`}
+            >
+              <span className="truncate text-[12.5px] font-medium">{field.label}</span>
               <FieldInput
                 field={field}
                 value={values[field.name]}
@@ -49,8 +53,8 @@ export function NewCaseDialogBody({ def, busy, error, onCreate, onClose }: {
             </label>
           ))}
       </div>
-      {error !== null && <p className="text-destructive text-sm">{error}</p>}
-      <div className="flex justify-end gap-2">
+      {error !== null && <p className="pt-2 text-destructive text-sm">{error}</p>}
+      <div className="flex justify-end gap-2 border-t pt-3 mt-3">
         <Button variant="outline" onClick={onClose}>
           Cancel
         </Button>
@@ -73,7 +77,7 @@ export function NewCaseDialog({ open, onOpenChange, def, busy, error, onCreate, 
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent aria-label="New test case" className="max-h-[85vh] overflow-y-auto">
+      <DialogContent aria-label="New test case" className="sm:max-w-[560px]">
         <NewCaseDialogBody
           def={def}
           busy={busy}

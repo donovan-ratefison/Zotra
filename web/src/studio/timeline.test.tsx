@@ -10,7 +10,8 @@ import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, test } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactFlowProvider } from "@xyflow/react";
-import { eventLabel, Timeline } from "./Timeline";
+import { eventLabel } from "./Timeline";
+import { milestonesOf, TimelineBar, upcomingOf } from "./TimelineBar";
 import { Inspector } from "./Inspector";
 import { ChecksTab } from "./ChecksTab";
 import { StepScreen } from "./StepScreen";
@@ -251,14 +252,29 @@ function unquote(html: string): string {
 
 function renderTimeline(events: CaseEvent[], at: number | null): string {
   return renderToString(
-    createElement(Timeline, {
+    createElement(TimelineBar, {
       def: testDefinition,
       events,
+      state: { ...TIMELINE_STATE },
       at,
       onSelect: () => {},
+      userName: (id: string) => usersFixture.find((u) => u.id === id)?.name ?? id,
     }),
   );
 }
+
+// The present state of the timeline rows: open, at the entry task.
+const TIMELINE_STATE: CaseState = {
+  case_id: "c1",
+  version_id: "v1",
+  status: "open",
+  result: "",
+  node_id: "entry",
+  data: {},
+  assignee: "",
+  seq: 3,
+  prev_hash: "",
+};
 
 function renderInspector(def: ProcessDefinition, props: {
   before: Record<string, unknown>;
@@ -409,24 +425,61 @@ describe("timeline", () => {
     ev(3, "edge_taken", { edge_id: "e1" }),
   ];
 
-  test("3.2 row 9: no events gives one active Present row", () => {
+  test("3.2 row 9: no events gives no point and the empty text", () => {
     const html = renderTimeline([], null);
-    expect((html.match(/<button/g) ?? []).length).toBe(1);
-    expect((html.match(/aria-current="true"/g) ?? []).length).toBe(1);
-    expect(html).toMatch(/aria-current="true"[^>]*>Present/);
+    expect(html).toContain("No events yet.");
+    expect(html).not.toContain('aria-current="true"');
   });
 
-  test("3.2 row 10: three events plus the active Present row", () => {
+  test("3.2 row 10: the events group into one point per step, the last is current", () => {
+    const points = milestonesOf(testDefinition, threeEvents, (id) => id);
+    expect(points.map((m) => m.label)).toEqual([
+      "Application received",
+      "Application entry",
+    ]);
+    expect(points[0]!.detail).toBe("by u-advisor");
+    expect(points[1]!.events.map((e) => e.seq)).toEqual([2, 3]);
     const html = renderTimeline(threeEvents, null);
-    expect((html.match(/<button/g) ?? []).length).toBe(4);
     expect((html.match(/aria-current="true"/g) ?? []).length).toBe(1);
-    expect(html).toMatch(/aria-current="true"[^>]*>Present/);
+    expect(html).toMatch(/aria-current="true" aria-label="Application entry/);
   });
 
-  test("3.2 row 11: the row of seq 2 is active, Present is not", () => {
-    const html = renderTimeline(threeEvents, 2);
-    expect(html).toMatch(/aria-current="true"[^>]*><span[^>]*>2<\/span>/);
-    expect(html).not.toMatch(/aria-current="true"[^>]*>Present/);
+  test("3.2 row 11: a replay at seq 1 makes the first point current", () => {
+    const html = renderTimeline(threeEvents, 1);
+    expect(html).toMatch(/aria-current="true" aria-label="Application received/);
+    expect(html).not.toMatch(/aria-current="true" aria-label="Application entry/);
+  });
+
+  test("3.2 row 11b: the upcoming steps follow the shortest path to approval", () => {
+    expect(upcomingOf(testDefinition, TIMELINE_STATE)).toEqual([
+      "Review",
+      "Credit analysis",
+      "File complete?",
+      "Loan released",
+    ]);
+    expect(upcomingOf(testDefinition, { ...TIMELINE_STATE, status: "closed" })).toEqual([]);
+  });
+
+  test("3.2 row 11c: a failed check without a later pass marks the point", () => {
+    const points = milestonesOf(
+      testDefinition,
+      [
+        ...threeEvents,
+        ev(4, "check_evaluated", { node_id: "entry", check_id: "c1", result: false }),
+      ],
+      (id) => id,
+    );
+    expect(points[1]!.failed).toBe(true);
+    const passed = milestonesOf(
+      testDefinition,
+      [
+        ...threeEvents,
+        ev(4, "check_evaluated", { node_id: "entry", check_id: "c1", result: false }),
+        ev(5, "check_evaluated", { node_id: "entry", check_id: "c1", result: true }),
+      ],
+      (id) => id,
+    );
+    expect(passed[1]!.failed).toBe(false);
   });
 });
 
@@ -438,14 +491,9 @@ describe("inspector", () => {
         after: { amount: 120000, client_name: "Demo Client" },
       }),
     );
-    expect(html).toContain("Field");
-    expect(html).toContain("Before");
-    expect(html).toContain("After");
-    expect(html).toContain("Scope");
-    expect((html.match(/>-<\/td>/g) ?? []).length).toBe(2);
-    expect(html).toContain(">120000</td>");
-    expect(html).toContain('>"Demo Client"</td>');
-    expect((html.match(/<tr class="bg-\[#bbf7d0\]"/g) ?? []).length).toBe(2);
+    expect(html).toContain(">€120,000.00<");
+    expect(html).toContain(">Demo Client<");
+    expect((html.match(/<li class="[^"]*bg-\[#dcfce7\]"/g) ?? []).length).toBe(2);
     expect((html.match(/title="Write"/g) ?? []).length).toBe(2);
     expect((html.match(/>W</g) ?? []).length).toBe(2);
   });
@@ -480,7 +528,7 @@ describe("inspector", () => {
     });
     expect(html).toContain(">Monthly payment<");
     expect(html).toContain(">computed<");
-    expect((html.match(/<tr class="bg-\[#fde68a\]"/g) ?? []).length).toBe(2);
+    expect((html.match(/<li class="[^"]*bg-\[#fef3c7\]"/g) ?? []).length).toBe(2);
   });
 });
 

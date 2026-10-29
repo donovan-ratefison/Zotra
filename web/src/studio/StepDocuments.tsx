@@ -7,7 +7,8 @@
 import { useRef, useState } from "react";
 import { Button } from "@/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
-import { Separator } from "@/ui/separator";
+import { Hint } from "@/ui/hint";
+import { CheckCircle2, CircleDashed, FileText, PenLine, Upload } from "lucide-react";
 import { ScanDialog } from "./ScanDialog";
 import type { CommandInput } from "./case-api";
 import { readDocumentFields, type DocumentDTO } from "./doc-api";
@@ -28,52 +29,70 @@ function extOf(name: string): string {
   return i > 0 ? name.slice(i).toLowerCase() : "";
 }
 
-// RequiredRow is one required document name with its status and, on
-// a missing row, one hidden file input with its Attach button.
-function RequiredRow({ name, provided, showControl, onPick }: {
+// RequiredRow is one required document name with its status: the
+// providing scan opens with View; a missing row carries one hidden
+// file input with its Attach button.
+function RequiredRow({ name, scan, showControl, onPick, onView }: {
   name: string;
-  provided: boolean;
+  scan: DocumentDTO | undefined;
   showControl: boolean;
   onPick: (file: File) => void;
+  onView: (doc: DocumentDTO) => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const provided = scan !== undefined;
   return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-[13px]">{name}</span>
+    <li className="flex min-h-8 items-center gap-2">
       {provided ? (
-        <span className="text-[12px] text-muted-foreground">Attached</span>
+        <CheckCircle2 aria-hidden className="size-4 shrink-0 text-emerald-600" />
       ) : (
-        <>
-          <span className="text-[12px] text-destructive">
-            Required document missing
-          </span>
-          {showControl && (
-            <>
-              <input
-                ref={inputRef}
-                type="file"
-                accept="image/png,image/jpeg"
-                hidden
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    onPick(file);
-                  }
-                }}
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => inputRef.current?.click()}
-              >
-                Attach
-              </Button>
-            </>
-          )}
-        </>
+        <CircleDashed aria-hidden className="size-4 shrink-0 text-destructive" />
       )}
-    </div>
+      <span className="min-w-0 flex-1 truncate text-[13px]">{name}</span>
+      <span className="sr-only">{provided ? "Attached" : "Required document missing"}</span>
+      {provided ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2"
+          title={`${scan.name} · ${scan.mime} · ${utcText(scan.created_at)}`}
+          onClick={() => onView(scan)}
+        >
+          View
+        </Button>
+      ) : (
+        showControl && (
+          <>
+            <input
+              ref={inputRef}
+              type="file"
+              accept="image/png,image/jpeg"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  onPick(file);
+                }
+              }}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2"
+              onClick={() => inputRef.current?.click()}
+            >
+              Attach
+            </Button>
+          </>
+        )
+      )}
+    </li>
   );
+}
+
+// utcText gives the delivered UTC date form (the rule of lot 5.2).
+function utcText(iso: string): string {
+  return new Date(iso).toLocaleString("en-IE", { timeZone: "UTC" });
 }
 
 // DropZone is the attach zone: a click, an Enter or Space key, or a
@@ -115,14 +134,11 @@ function DropZone({ uploading, onPick }: {
               }
             }
       }
-      className="flex cursor-pointer flex-col items-center gap-1 rounded-lg border border-dashed p-4 text-center"
+      className="flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed px-3 py-2 text-center text-muted-foreground hover:bg-muted/50"
     >
-      <p className="text-sm font-semibold">
-        Drop a scan here or click to choose one.
-      </p>
-      <p className="text-[12px] text-muted-foreground">
-        PNG or JPG, 10 MiB at most. The file goes to the first missing
-        document.
+      <Upload aria-hidden className="size-3.5 shrink-0" />
+      <p className="text-[12.5px]">
+        {uploading ? "Uploading the scan." : "Drop a scan here or click to choose one."}
       </p>
       <input
         ref={inputRef}
@@ -169,14 +185,26 @@ export function StepDocuments({ node, documents, documentsError, uploading, onUp
   const attach = (file: File, required: string) =>
     onUpload(file, `${required}${extOf(file.name)}`);
 
+  // The scans that provide no required name: they stay reachable.
+  const others = list.filter(
+    (d) => !node.documents.some((name) => documentProvides(d.name, name)),
+  );
+
   return (
-    <div className="flex flex-col gap-1.5 rounded-lg border p-3">
-      <h4 className="text-sm font-medium">Documents</h4>
-      {node.documents.length > 0 && (
-        <p className="text-[12px] text-muted-foreground">
-          {`${providedCount} of ${node.documents.length} required`}
-        </p>
-      )}
+    <section aria-label="Documents" className="flex flex-col gap-1.5 rounded-lg border px-3 py-2.5">
+      <div className="flex items-center gap-1.5">
+        <h4 className="text-[13px] font-semibold">Documents</h4>
+        {node.documents.length > 0 && (
+          <span className="text-[12px] text-muted-foreground">
+            {`${providedCount} of ${node.documents.length} required`}
+          </span>
+        )}
+        <span className="flex-1" />
+        <Hint label="About the documents">
+          PNG or JPG, 10 MiB at most. A dropped file goes to the first missing
+          document. View opens the scan with its detected zones.
+        </Hint>
+      </div>
       {documentsError !== null ? (
         <p className="text-destructive text-sm">
           {`The documents did not load: ${documentsError}`}
@@ -185,92 +213,92 @@ export function StepDocuments({ node, documents, documentsError, uploading, onUp
         <p className="text-sm text-muted-foreground">Loading the documents.</p>
       ) : (
         <>
-          {node.documents.map((name) => (
-            <RequiredRow
-              key={name}
-              name={name}
-              provided={!missing.includes(name)}
-              showControl={!readOnly && !uploading}
-              onPick={(file) => attach(file, name)}
-            />
-          ))}
+          {node.documents.length > 0 && (
+            <ul className="flex flex-col">
+              {node.documents.map((name) => (
+                <RequiredRow
+                  key={name}
+                  name={name}
+                  scan={list.find((d) => documentProvides(d.name, name))}
+                  showControl={!readOnly && !uploading}
+                  onPick={(file) => attach(file, name)}
+                  onView={(doc) => setDialog({ doc, mode: "view" })}
+                />
+              ))}
+            </ul>
+          )}
           {missing.length > 0 && !readOnly && (
             <DropZone
               uploading={uploading}
               onPick={(file) => attach(file, missing[0]!)}
             />
           )}
-          <div className="flex flex-col gap-2">
-            {list.map((d) => (
-              <div key={d.id} className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 flex-col">
-                  <span className="truncate text-[13px]">{d.name}</span>
-                  <span className="text-[12px] text-muted-foreground">
-                    {`${d.mime} · ${new Date(d.created_at).toLocaleString(
-                      "en-IE",
-                      { timeZone: "UTC" },
-                    )}`}
+          {others.length > 0 && (
+            <ul className="flex flex-col">
+              {others.map((d) => (
+                <li key={d.id} className="flex min-h-8 items-center gap-2">
+                  <FileText aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate text-[13px]" title={`${d.mime} · ${utcText(d.created_at)}`}>
+                    {d.name}
                   </span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setDialog({ doc: d, mode: "view" })}
-                >
-                  View
-                </Button>
-              </div>
-            ))}
-          </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2"
+                    onClick={() => setDialog({ doc: d, mode: "view" })}
+                  >
+                    View
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
           {node.signature && (
-            <>
-              <Separator />
-              <div className="flex flex-col gap-1.5">
-                <p className="text-[12px] font-semibold uppercase text-muted-foreground">
-                  Signature
-                </p>
-                {signed ? (
-                  <p className="text-[13px]">Signed.</p>
-                ) : readOnly ? (
-                  <p className="text-[13px]">Not signed.</p>
-                ) : list.length === 0 ? (
-                  <p className="text-[12px] text-muted-foreground">
-                    No scans yet.
-                  </p>
-                ) : (
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-sm font-medium">Document to sign</span>
-                    <div className="flex items-center gap-2">
-                      <Select
-                        value={selectedScan?.id ?? ""}
-                        onValueChange={setSignId}
-                      >
-                        <SelectTrigger aria-label="Document to sign" className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {list.map((d) => (
-                            <SelectItem key={d.id} value={d.id}>
-                              {d.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          if (selectedScan) {
-                            setDialog({ doc: selectedScan, mode: "sign" });
-                          }
-                        }}
-                      >
-                        Sign
-                      </Button>
-                    </div>
-                  </label>
-                )}
-              </div>
-            </>
+            <div className="flex min-h-8 items-center gap-2 border-t pt-2">
+              <PenLine aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              <span className="text-[13px] font-medium">Signature</span>
+              <span className="flex-1" />
+              {signed ? (
+                <span className="flex items-center gap-1 text-[13px] text-emerald-700">
+                  <CheckCircle2 aria-hidden className="size-4" />
+                  Signed.
+                </span>
+              ) : readOnly ? (
+                <span className="text-[13px] text-muted-foreground">Not signed.</span>
+              ) : list.length === 0 ? (
+                <span className="text-[12px] text-muted-foreground">No scans yet.</span>
+              ) : (
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <Select
+                    value={selectedScan?.id ?? ""}
+                    onValueChange={setSignId}
+                  >
+                    <SelectTrigger aria-label="Document to sign" size="sm" className="h-7 max-w-[150px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {list.map((d) => (
+                        <SelectItem key={d.id} value={d.id}>
+                          {d.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2"
+                    onClick={() => {
+                      if (selectedScan) {
+                        setDialog({ doc: selectedScan, mode: "sign" });
+                      }
+                    }}
+                  >
+                    Sign
+                  </Button>
+                </div>
+              )}
+            </div>
           )}
         </>
       )}
@@ -301,6 +329,6 @@ export function StepDocuments({ node, documents, documentsError, uploading, onUp
               })}
         />
       )}
-    </div>
+    </section>
   );
 }

@@ -522,7 +522,8 @@ describe("step screen", () => {
 describe("test screen", () => {
   test("3.1 row 20: the opened case shows the header, the button and the actor", () => {
     const html = renderTestScreen();
-    expect(html).toContain("Test case CASE-2026-0001");
+    expect(html).toContain(">Test case<");
+    expect(html).toContain(">CASE-2026-0001<");
     expect(html).toContain("New test case");
     expect(html).toContain("Demo Advisor");
   });
