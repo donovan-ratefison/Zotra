@@ -42,6 +42,8 @@ import {
   withCheckMessage,
   withCheckPlainText,
 } from "./node-edit";
+import { ReplayDialog } from "./ReplayDialog";
+import { commandsOf, runCopy } from "./replay";
 import { ProcessDiagram } from "./diagram";
 import { StepScreen } from "./StepScreen";
 import { Timeline } from "./Timeline";
@@ -156,6 +158,11 @@ export function TestScreen({ def, version }: {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  // The replay copy: the dialog, its busy flag and its error. The
+  // error clears at each open of the dialog and at each run.
+  const [replayBusy, setReplayBusy] = useState(false);
+  const [replayError, setReplayError] = useState<string | null>(null);
+  const [replayOpen, setReplayOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [lastAnswer, setLastAnswer] = useState<{
     events: CaseEvent[];
@@ -268,6 +275,46 @@ export function TestScreen({ def, version }: {
       setCreateError(err instanceof ApiError ? err.message : String(err));
     } finally {
       setBusy(false);
+    }
+  }
+
+  // onReplayCopy copies the commands up to the replay point into a new
+  // test case, with the patched values when the tester changed one.
+  // runCopy never rejects; the catch holds an unexpected throw. The
+  // dialog stays open with busy while it runs, then closes on both end
+  // paths; the busy flag resets on every path (the uploading pattern).
+  async function onReplayCopy(
+    patch: { seq: number; values: Record<string, unknown> } | null,
+  ) {
+    if (at === null) {
+      return;
+    }
+    setReplayBusy(true);
+    setReplayError(null);
+    try {
+      const steps = commandsOf((eventsQuery.data ?? []).slice(0, at));
+      const answer = await runCopy(steps, version.id, patch);
+      if (answer.error === null) {
+        toast.success("Copy created.");
+      } else {
+        toast.error(`The copy stopped: ${answer.error}`);
+      }
+      // A create refusal leaves nothing to open: the tester stays on
+      // the source case.
+      if (answer.caseId !== "") {
+        setTestCaseId(answer.caseId);
+        setAt(null);
+        const params = new URLSearchParams(window.location.search);
+        params.set("mode", "test");
+        params.set("case", answer.caseId);
+        window.history.replaceState(null, "", `?${params.toString()}`);
+      }
+      setReplayOpen(false);
+    } catch (err) {
+      setReplayError(err instanceof ApiError ? err.message : String(err));
+      setReplayOpen(false);
+    } finally {
+      setReplayBusy(false);
     }
   }
 
@@ -436,6 +483,16 @@ export function TestScreen({ def, version }: {
                 <Rewind className="size-4 shrink-0" />
                 <span>{`Replay at event ${at}. The commands wait for the present.`}</span>
                 <span className="flex-1" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setReplayError(null);
+                    setReplayOpen(true);
+                  }}
+                >
+                  Copy to a new case
+                </Button>
                 <Button variant="outline" size="sm" onClick={() => setAt(null)}>
                   Back to the present
                 </Button>
@@ -611,6 +668,19 @@ export function TestScreen({ def, version }: {
         onCreate={(data) => void onNewCase(data)}
         onClose={() => setDialogOpen(false)}
       />
+      {at !== null && (
+        <ReplayDialog
+          open={replayOpen}
+          onOpenChange={setReplayOpen}
+          def={def}
+          events={eventsQuery.data ?? []}
+          at={at}
+          busy={replayBusy}
+          error={replayError}
+          onCreate={(patch) => void onReplayCopy(patch)}
+          onClose={() => setReplayOpen(false)}
+        />
+      )}
     </div>
   );
 }
