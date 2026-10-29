@@ -45,7 +45,7 @@ export function accessOf(field: Field, node: ProcessNode, def: ProcessDefinition
   return row === undefined ? "hidden" : row.access;
 }
 
-export function StepScreen({ def, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly = false, documents, documentsError, events, uploading, onUpload }: {
+export function StepScreen({ def, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly = false, actorLocked = false, documents, documentsError, events, uploading, onUpload }: {
   def: ProcessDefinition;
   state: CaseState;
   users: UserDTO[];
@@ -56,6 +56,7 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
   decisionEnabled: boolean;
   onValueChange: () => void;
   readOnly?: boolean;
+  actorLocked?: boolean;
   documents: DocumentDTO[] | null;
   documentsError: string | null;
   events: CaseEvent[];
@@ -118,6 +119,7 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
           decisionEnabled={decisionEnabled}
           onValueChange={onValueChange}
           readOnly={readOnly}
+          actorLocked={actorLocked}
           documents={documents}
           documentsError={documentsError}
           events={events}
@@ -132,7 +134,7 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
 // TaskBody is the task-only part: the Act as pick, then the take
 // button or the form with the actions. A replay disables the pick and
 // hides the commands.
-function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly, documents, documentsError, events, uploading, onUpload }: {
+function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly, actorLocked, documents, documentsError, events, uploading, onUpload }: {
   def: ProcessDefinition;
   node: ProcessNode;
   state: CaseState;
@@ -144,6 +146,7 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, fa
   decisionEnabled: boolean;
   onValueChange: () => void;
   readOnly: boolean;
+  actorLocked: boolean;
   documents: DocumentDTO[] | null;
   documentsError: string | null;
   events: CaseEvent[];
@@ -159,8 +162,12 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, fa
   // The effect fires with the assignee when one is set, else with
   // the first list entry when the actor is not in the list: what the
   // screen shows is what the commands send. The wiring depends on
-  // the step and on who owns it.
+  // the step and on who owns it. A locked actor stays the one given
+  // (the delivered app owns the actor; the shell sends it).
   useEffect(() => {
+    if (actorLocked) {
+      return;
+    }
     if (state.assignee !== "") {
       onActorChange(state.assignee);
       return;
@@ -171,7 +178,7 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, fa
     if (list.length > 0 && !list.some((u) => u.id === actor)) {
       onActorChange(list[0]!.id);
     }
-  }, [state.node_id, state.assignee, users, node.role, actor, onActorChange]);
+  }, [state.node_id, state.assignee, users, node.role, actor, onActorChange, actorLocked]);
 
   // What the screen shows is what the commands send: the assignee
   // when one is set, else the actor, else the first entry.
@@ -187,23 +194,42 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, fa
 
   return (
     <div className="flex flex-col gap-4">
-      <label className="flex flex-col gap-1.5">
-        <span className="text-sm font-medium">Act as</span>
-        <Select value={selectValue} onValueChange={onActorChange} disabled={readOnly}>
-          <SelectTrigger aria-label="Act as" className="w-full">
-            <SelectValue>{selectLabel}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {list.map((u) => (
-              <SelectItem key={u.id} value={u.id}>
-                {u.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </label>
+      {actorLocked ? (
+        // The delivered app locks the actor to the picked demo
+        // profile: the line replaces the select.
+        <p className="text-[13px] text-muted-foreground">
+          {`Acting as ${users.find((u) => u.id === actor)?.name ?? actor}`}
+        </p>
+      ) : (
+        <label className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium">Act as</span>
+          <Select value={selectValue} onValueChange={onActorChange} disabled={readOnly}>
+            <SelectTrigger aria-label="Act as" className="w-full">
+              <SelectValue>{selectLabel}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {list.map((u) => (
+                <SelectItem key={u.id} value={u.id}>
+                  {u.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+      )}
 
-      {state.assignee === "" ? (
+      {actorLocked && state.assignee !== "" && state.assignee !== actor ? (
+        // The shared-role rule: the first taker owns the case. A
+        // locked actor that is not the assignee sees the owner and no
+        // commands. The header, the failed checks and the closed card
+        // still render.
+        <div className="flex flex-col gap-4">
+          <div className="rounded-lg border p-3 text-sm">
+            {`Taken by ${users.find((u) => u.id === state.assignee)?.name ?? state.assignee}.`}
+          </div>
+          <FailedChecks failedChecks={failedChecks} />
+        </div>
+      ) : state.assignee === "" ? (
         <div className="flex flex-col gap-3">
           {!readOnly && (
             <Button onClick={() => onCommand({ type: "take" })}>

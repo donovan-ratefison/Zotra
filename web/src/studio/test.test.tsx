@@ -229,6 +229,7 @@ function renderStep(state: CaseState, props?: {
   actor?: string;
   failedChecks?: { id: string; message: string }[];
   decisionEnabled?: boolean;
+  actorLocked?: boolean;
 }): string {
   return renderToString(
     createElement(StepScreen, {
@@ -241,6 +242,7 @@ function renderStep(state: CaseState, props?: {
       failedChecks: props?.failedChecks ?? [],
       decisionEnabled: props?.decisionEnabled ?? false,
       onValueChange: () => {},
+      actorLocked: props?.actorLocked ?? false,
       documents: [scanRow],
       documentsError: null,
       events: [],
@@ -507,6 +509,13 @@ describe("step screen", () => {
       ],
     });
     expect(html).toContain("Check c1: The amount must be positive.");
+  });
+
+  test("6.2 row 18: actorLocked renders the acting-as line and keeps the form", () => {
+    const html = renderStep(takenState, { actorLocked: true });
+    expect(html).toContain("Acting as Demo Advisor");
+    expect(html).toContain("Submit");
+    expect(html).not.toContain("Act as");
   });
 });
 
