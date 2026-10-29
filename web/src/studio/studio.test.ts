@@ -21,7 +21,7 @@ import {
 } from "./layout";
 import { EdgePill, edgeAnchor, EventShape, neighborIn, TaskCard } from "./diagram";
 import { structureProblems } from "./ProcessPanel";
-import { StudioShell, TopBar } from "./StudioShell";
+import { StudioShell, TopBar, pushUndo } from "./StudioShell";
 import seedJson from "../../../internal/store/seed/example-process.json";
 import type {
   NodeType,
@@ -786,5 +786,57 @@ describe("shell states", () => {
     const html = renderShell(client);
     expect(html).toContain("No version yet.");
     expect(html).toContain("Create a draft to start.");
+  });
+});
+
+describe("undo", () => {
+  // A button whose content closes before the match, so the Policy
+  // button cannot leak in.
+  const undoButton = /<button[^>]*>(?:(?!<\/button>)[\s\S])*Undo<\/button>/;
+
+  test("55: the Undo button renders enabled, disabled, or not at all", () => {
+    const enabled = renderToString(
+      createElement(TopBar, {
+        def: miniDefinition,
+        version: versionRow(2, "draft"),
+        onUndo: () => {},
+        canUndo: true,
+      }),
+    );
+    const matches = enabled.match(new RegExp(undoButton.source, "g")) ?? [];
+    expect(matches).toHaveLength(1);
+    expect(matches[0]!.match(/<button[^>]*>/)![0]).not.toContain('disabled=""');
+
+    const disabled = renderToString(
+      createElement(TopBar, {
+        def: miniDefinition,
+        version: versionRow(2, "draft"),
+        onUndo: () => {},
+        canUndo: false,
+      }),
+    );
+    expect(disabled).toMatch(undoButton);
+    expect(disabled.match(undoButton)![0].match(/<button[^>]*>/)![0]).toContain(
+      'disabled=""',
+    );
+
+    const absent = renderToString(
+      createElement(TopBar, {
+        def: miniDefinition,
+        version: versionRow(2, "draft"),
+      }),
+    );
+    expect(absent).not.toMatch(undoButton);
+  });
+
+  test("56: pushUndo keeps at most 20 entries", () => {
+    let stack: ProcessDefinition[] = [];
+    for (let i = 0; i < 22; i++) {
+      stack = pushUndo(stack, { ...miniDefinition, name: `d${i}` });
+    }
+    expect(stack).toHaveLength(20);
+    expect(stack[0]!.name).toBe("d2");
+    expect(stack[19]!.name).toBe("d21");
+    expect(pushUndo([], miniDefinition)).toEqual([miniDefinition]);
   });
 });

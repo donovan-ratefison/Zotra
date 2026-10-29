@@ -2,9 +2,15 @@
 // version, in this order, then renders the top bar, the diagram and
 // the node panel, plus the import dialog.
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, FileText, Upload } from "lucide-react";
+import { ChevronRight, FileText, Undo2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import {
   ApiError,
@@ -13,6 +19,7 @@ import {
   getVersion,
   listProcesses,
   listVersions,
+  updateDraft,
 } from "./api";
 import { Button } from "@/ui/button";
 import { diffDefinitions } from "./diff";
@@ -223,6 +230,20 @@ export function StudioShell() {
     return pickVersion(rows);
   }, [q2.data, versionOverride]);
   const versionId = version ? version.id : null;
+
+  // Undo: the stack holds the definition as it was before each save
+  // of the open draft, at most 20 entries. A version switch clears
+  // it: each version undoes only its own saves. The reset compares
+  // the version of the stack during render, the pattern that the
+  // react-hooks lint asks for a state change on a value change.
+  const [undoStack, setUndoStack] = useState<ProcessDefinition[]>([]);
+  const [undoBusy, setUndoBusy] = useState(false);
+  const [stackVersionId, setStackVersionId] = useState(versionId);
+  if (stackVersionId !== versionId) {
+    setStackVersionId(versionId);
+    setUndoStack([]);
+  }
+
   const q3 = useQuery({
     queryKey: ["version", versionId],
     queryFn: () => getVersion(versionId!),
@@ -264,6 +285,71 @@ export function StudioShell() {
     void queryClient.invalidateQueries({ queryKey: ["versions", processId] });
     void queryClient.invalidateQueries({ queryKey: ["version", versionId] });
   }
+
+  // onSavedDraft pushes the pre-save definition onto the undo stack,
+  // then refetches the version. loadedDef is still the cached
+  // pre-save definition at this moment (the invalidation runs
+  // after).
+  function onSavedDraft() {
+    if (loadedDef === undefined) {
+      return;
+    }
+    setUndoStack((stack) => pushUndo(stack, loadedDef));
+    void queryClient.invalidateQueries({ queryKey: ["version", versionId] });
+  }
+
+  // undo writes the previous definition back as a normal draft
+  // save. Unsaved edits of the step panel are dropped with it.
+  const undo = useCallback(async () => {
+    if (undoBusy || undoStack.length === 0) {
+      return;
+    }
+    if (version === null || version.status !== "draft") {
+      return;
+    }
+    const previous = undoStack[undoStack.length - 1]!;
+    setUndoBusy(true);
+    try {
+      await updateDraft(version.id, previous);
+      setUndoStack((stack) => stack.slice(0, -1));
+      void queryClient.invalidateQueries({
+        queryKey: ["version", version.id],
+      });
+      toast.success("Undone");
+    } catch {
+      toast.error("The undo did not save.");
+    } finally {
+      setUndoBusy(false);
+    }
+  }, [undoBusy, undoStack, version, queryClient]);
+
+  // Ctrl+Z or Cmd+Z undoes the last save. While the focus sits in a
+  // field, the browser undo of that field wins: the listener skips
+  // inputs, textareas, selects and editable nodes.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) {
+        return;
+      }
+      if (e.key.toLowerCase() !== "z") {
+        return;
+      }
+      const target = e.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT")
+      ) {
+        return;
+      }
+      e.preventDefault();
+      void undo();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo]);
 
   // onSelectVersion opens the version of the selector click and
   // writes the id into the URL, so a reload reopens the same
@@ -446,6 +532,8 @@ export function StudioShell() {
             queryClient.invalidateQueries({ queryKey: ["versions", processId] })
           }
           onSelectVersion={onSelectVersion}
+          onUndo={() => void undo()}
+          canUndo={undoStack.length > 0 && version.status === "draft"}
         />
         <main className="flex min-h-0 flex-1">
           {mode === "test" ? (
@@ -486,11 +574,7 @@ export function StudioShell() {
                   <NodePanel
                     def={loaded.definition}
                     version={version}
-                    onSaved={() =>
-                      queryClient.invalidateQueries({
-                        queryKey: ["version", versionId],
-                      })
-                    }
+                    onSaved={onSavedDraft}
                   />
                 )}
               </aside>
@@ -534,6 +618,8 @@ export function TopBar({
   versionsPending = false,
   onVersionsChanged = () => {},
   onSelectVersion,
+  onUndo,
+  canUndo = false,
 }: {
   def: ProcessDefinition;
   version?: VersionSummary;
@@ -544,6 +630,8 @@ export function TopBar({
   versionsPending?: boolean;
   onVersionsChanged?: () => void;
   onSelectVersion?: (id: string) => void;
+  onUndo?: () => void;
+  canUndo?: boolean;
 }) {
   const dotColor = version === undefined ? undefined : STATUS_DOT[version.status] ?? "#71717a";
   const mode = useStudioStore((s) => s.mode);
@@ -601,6 +689,20 @@ export function TopBar({
         <span className="shrink-0">
           <UnsavedBadge className="text-[12px]" />
         </span>
+      )}
+      {onUndo !== undefined && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          disabled={!canUndo}
+          title="Undo the last save (Ctrl+Z)"
+          onClick={() => onUndo()}
+        >
+          <Undo2 aria-hidden="true" />
+          Undo
+        </Button>
       )}
       <span className="flex-1" />
       <Button
@@ -667,4 +769,13 @@ export function TopBar({
       )}
     </header>
   );
+}
+
+// pushUndo appends the definition that a save replaces. The stack
+// keeps at most 20 entries.
+export function pushUndo(
+  stack: ProcessDefinition[],
+  def: ProcessDefinition,
+): ProcessDefinition[] {
+  return [...stack.slice(-19), def];
 }
