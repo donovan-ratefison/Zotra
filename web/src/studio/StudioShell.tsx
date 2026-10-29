@@ -19,7 +19,7 @@ import { diffDefinitions } from "./diff";
 import { PolicyPanel } from "./PolicyPanel";
 import { ProcessDiagram } from "./diagram";
 import { ImportDialog } from "./ImportDialog";
-import { NodePanel } from "./NodePanel";
+import { NodePanel, UnsavedBadge } from "./NodePanel";
 import { ProcessPanel } from "./ProcessPanel";
 import { ProposalBar } from "./ProposalBar";
 import { VersionActions } from "./version-actions";
@@ -548,6 +548,7 @@ export function TopBar({
   const dotColor = version === undefined ? undefined : STATUS_DOT[version.status] ?? "#71717a";
   const mode = useStudioStore((s) => s.mode);
   const setMode = useStudioStore((s) => s.setMode);
+  const dirty = useStudioStore((s) => s.dirty);
   return (
     <header
       className="flex h-12 w-full shrink-0 items-center gap-3 border-b px-4"
@@ -594,6 +595,11 @@ export function TopBar({
               </option>
             ))}
           </select>
+        </span>
+      )}
+      {dirty && (
+        <span className="shrink-0">
+          <UnsavedBadge className="text-[12px]" />
         </span>
       )}
       <span className="flex-1" />

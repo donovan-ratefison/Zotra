@@ -18,6 +18,7 @@ import {
   labelValid,
 } from "./version-actions";
 import { TopBar } from "./StudioShell";
+import { useStudioStore } from "./store";
 import type {
   ProcessDefinition,
   VersionStatus,
@@ -394,6 +395,28 @@ describe("top bar", () => {
     expect(html).toContain("v1 · Published");
     expect(html).toContain("Export");
     expect(html).toContain("New draft from this version");
+  });
+
+  test("F3: the top bar shows the unsaved badge while the draft is dirty", () => {
+    const topBarProps = {
+      def: miniDefinition,
+      version: versionRow(1, "published"),
+      versions: [versionRow(1, "published")],
+      versionsPending: false,
+      onVersionsChanged: () => {},
+    };
+    // The server snapshot of zustand 5 is getInitialState(), so the
+    // dirty flag goes to the initial state and to the live state
+    // (the pattern of setStudioStore in panel.test.tsx).
+    Object.assign(useStudioStore.getInitialState(), { dirty: true });
+    useStudioStore.setState({ dirty: true });
+    const withBadge = renderToString(createElement(TopBar, topBarProps));
+    Object.assign(useStudioStore.getInitialState(), { dirty: false });
+    useStudioStore.setState({ dirty: false });
+    const withoutBadge = renderToString(createElement(TopBar, topBarProps));
+    const badge = withBadge.slice(withBadge.indexOf("text-amber-700"));
+    expect(badge).toContain("Unsaved changes");
+    expect(withoutBadge).not.toContain("Unsaved changes");
   });
 });
 

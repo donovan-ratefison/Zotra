@@ -3,7 +3,7 @@
 // three panes stay mounted, the inactive ones carry the hidden
 // attribute (the mockup pattern, and cross-pane tests rely on it).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ChevronRight, Clock } from "lucide-react";
 import { Button } from "@/ui/button";
@@ -71,6 +71,7 @@ export function NodePanel({
   const selectedNodeId = useStudioStore((s) => s.selectedNodeId);
   const tab = useStudioStore((s) => s.tab);
   const setTab = useStudioStore((s) => s.setTab);
+  const setDirty = useStudioStore((s) => s.setDirty);
 
   const [working, setWorking] = useState(def);
   const [prevDef, setPrevDef] = useState(def);
@@ -84,6 +85,17 @@ export function NodePanel({
   const [docName, setDocName] = useState("");
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const editable = version.status === "draft";
+  const dirty = working !== def;
+
+  // The top bar shows the unsaved sign while this panel holds
+  // edits. The cleanup hides it when the panel unmounts (a canvas
+  // click clears the selection and drops the edits).
+  useEffect(() => {
+    setDirty(dirty && editable);
+    return () => setDirty(false);
+  }, [dirty, editable, setDirty]);
+
   const node = selectedNodeId
     ? working.nodes.find((n) => n.id === selectedNodeId)
     : undefined;
@@ -91,8 +103,6 @@ export function NodePanel({
     return null;
   }
 
-  const editable = version.status === "draft";
-  const dirty = working !== def;
   const isTask = node.type === "task";
   const stepIndex = def.nodes.indexOf(node);
 
@@ -441,9 +451,7 @@ export function NodePanel({
         {scopePane}
       </div>
       <footer className="flex items-center gap-3 border-t px-4 py-2.5">
-        {dirty && editable && (
-          <span className="text-xs text-muted-foreground">Unsaved changes</span>
-        )}
+        {dirty && editable && <UnsavedBadge />}
         <Button
           type="button"
           size="sm"
@@ -457,7 +465,24 @@ export function NodePanel({
       {saveError !== null && (
         <p className="px-4 pb-2.5 text-xs text-destructive">{saveError}</p>
       )}
+      {/* The Report button owns the bottom right corner of the
+          page. The save button must sit above it. */}
+      <div className="h-14 shrink-0" aria-hidden="true" />
     </div>
+  );
+}
+
+// UnsavedBadge: the one unsaved sign. The step panel shows it
+// beside the save button, the top bar next to the version
+// selector.
+export function UnsavedBadge({ className = "" }: { className?: string }) {
+  return (
+    <span
+      className={`flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 font-medium text-amber-700 ${className}`}
+    >
+      <span className="size-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+      Unsaved changes
+    </span>
   );
 }
 

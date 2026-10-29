@@ -1,4 +1,5 @@
-// The 27 test rows of the panel brief, in order.
+// The 27 test rows of the panel brief, in order, plus the F rows of
+// lot fb-003 (unsaved badge and reserved corner).
 
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
@@ -20,7 +21,7 @@ import {
   withNodeRole,
   withNodeSignature,
 } from "./node-edit";
-import { NodePanel } from "./NodePanel";
+import { NodePanel, UnsavedBadge } from "./NodePanel";
 import { ScopeMatrix } from "./ScopeMatrix";
 import { StudioShell } from "./StudioShell";
 import { useStudioStore, type PanelTab } from "./store";
@@ -402,5 +403,27 @@ describe("shell empty state", () => {
     expect(html).toContain("Select a step to edit it.");
     expect(html).toContain("Structure");
     expect(html).toContain("Roles");
+  });
+});
+
+describe("unsaved badge and reserved corner", () => {
+  test("F1: the panel reserves the corner above the Report button", () => {
+    const html = renderNodePanel(draftVersion, {
+      selectedNodeId: "entry",
+      tab: "general",
+    });
+    const spacers = html.match(
+      /<div class="h-14 shrink-0" aria-hidden="true"><\/div>/g,
+    );
+    expect(spacers).toHaveLength(1);
+    expect(html).toContain("Save draft");
+  });
+
+  test("F2: the unsaved badge holds the dot and the amber colors", () => {
+    const html = renderToString(createElement(UnsavedBadge, {}));
+    expect(html).toContain("Unsaved changes");
+    expect(html).toContain("bg-amber-500/10");
+    expect(html).toContain("text-amber-700");
+    expect(html).toContain('bg-amber-500" aria-hidden="true"');
   });
 });
