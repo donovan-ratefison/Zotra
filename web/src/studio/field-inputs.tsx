@@ -2,6 +2,7 @@
 // section 5), plus the string and parse forms of one value. The step
 // form and the new test case dialog share them.
 
+import { useState } from "react";
 import { Checkbox } from "@/ui/checkbox";
 import { Input } from "@/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
@@ -32,6 +33,17 @@ export function fieldInput(field: Field, value: unknown): string {
     return Array.isArray(value) ? value.join(", ") : String(value);
   }
   return String(value);
+}
+
+// fieldText gives the text an input shows: the raw typed text while
+// it still parses to the current value, else the canonical string
+// form. A null text (nothing typed, or after a blur) always gives
+// the canonical form.
+export function fieldText(field: Field, value: unknown, text: string | null): string {
+  if (text !== null && parseFieldValue(field, text) === value) {
+    return text;
+  }
+  return fieldInput(field, value);
 }
 
 // parseFieldValue parses one input string back to the value of the
@@ -75,6 +87,7 @@ export function FieldInput({ field, value, onChange, disabled, scans }: {
   disabled: boolean;
   scans?: ScanOption[];
 }) {
+  const [text, setText] = useState<string | null>(null);
   if (field.type === "document") {
     if (!scans || scans.length === 0) {
       return (
@@ -150,8 +163,12 @@ export function FieldInput({ field, value, onChange, disabled, scans }: {
       type={type}
       step={step}
       aria-label={field.label}
-      value={fieldInput(field, value)}
-      onChange={(e) => onChange(parseFieldValue(field, e.target.value))}
+      value={fieldText(field, value, text)}
+      onChange={(e) => {
+        setText(e.target.value);
+        onChange(parseFieldValue(field, e.target.value));
+      }}
+      onBlur={() => setText(null)}
       disabled={disabled}
     />
   );

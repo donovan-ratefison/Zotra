@@ -531,7 +531,8 @@ func mergeValues(def process.Definition, data map[string]any, values map[string]
 // coerceValue converts one value to the Go shape of its field:
 // int64 for integer, float64 for money and
 // number, string for string and enum, bool for boolean, time.Time for
-// date (an RFC 3339 string is parsed), []string for document. A value
+// date (an RFC 3339 string is parsed, a plain YYYY-MM-DD string is
+// read as that day, midnight UTC), []string for document. A value
 // of another shape passes through unchanged.
 func coerceValue(f process.Field, v any) any {
 	switch f.Type {
@@ -567,6 +568,9 @@ func coerceValue(f process.Field, v any) any {
 			return t
 		case string:
 			if parsed, err := time.Parse(time.RFC3339, t); err == nil {
+				return parsed
+			}
+			if parsed, err := time.Parse("2006-01-02", t); err == nil {
 				return parsed
 			}
 		}

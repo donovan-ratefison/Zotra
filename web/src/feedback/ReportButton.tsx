@@ -1,6 +1,8 @@
 // The Report button: one probe at start, the pick mode, and the
-// report dialog.
+// report dialog. The idle button is one 24 x 24 icon fixed in the
+// bottom-right corner, clear of every app control.
 import { useEffect, useRef, useState } from "react";
+import { Flag } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/ui/button";
 import {
@@ -31,6 +33,24 @@ type Pick = {
 };
 
 type Phase = "idle" | "picking" | "dialog";
+
+// ReportTrigger is the idle Report button: one 24 x 24 icon fixed
+// at the bottom-right corner, clear of every app control.
+export function ReportTrigger({ onClick }: { onClick: () => void }) {
+  return (
+    <Button
+      data-testid="report-button"
+      variant="default"
+      size="icon-xs"
+      aria-label="Report"
+      title="Report"
+      className="fixed bottom-1 right-1 z-50"
+      onClick={onClick}
+    >
+      <Flag />
+    </Button>
+  );
+}
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -261,13 +281,5 @@ export function ReportButton() {
     );
   }
 
-  return (
-    <Button
-      data-testid="report-button"
-      className="fixed bottom-4 right-4 z-50"
-      onClick={() => setPhase("picking")}
-    >
-      Report
-    </Button>
-  );
+  return <ReportTrigger onClick={() => setPhase("picking")} />;
 }

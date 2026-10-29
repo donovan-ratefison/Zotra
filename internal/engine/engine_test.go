@@ -538,6 +538,70 @@ func TestScenarioFailedCheck(t *testing.T) {
 	_ = all5
 }
 
+// TestPlainFormDate checks the plain form date of the step form: the
+// engine reads a plain YYYY-MM-DD string as that day, midnight UTC.
+func TestPlainFormDate(t *testing.T) {
+	def := exampleDef(t)
+
+	// releaseSteps is the approved scenario with the release submit
+	// values replaced by one date string (the step form value).
+	releaseSteps := func(date string) []step {
+		steps := scenarioSteps()
+		steps[len(steps)-1].cmd = Submit{
+			Actor:  "u-backoffice",
+			Values: map[string]any{"release_date": date},
+		}
+		return steps
+	}
+
+	// Row 1: a future plain date passes and closes approved. The last
+	// events are edge_taken e14, step_entered released, case_closed
+	// approved.
+	events := runSteps(t, def, releaseSteps("2026-10-31"))
+	last := events[len(events)-3:]
+	for i, typ := range []string{EventEdgeTaken, EventStepEntered, EventCaseClosed} {
+		if last[i].Type != typ {
+			t.Errorf("row 1 event %d type = %q, want %q", i+1, last[i].Type, typ)
+		}
+	}
+	if got := wantPayload(t, last[0].Payload); got["edge_id"] != "e14" {
+		t.Errorf("row 1 edge = %v, want e14", got["edge_id"])
+	}
+	if got := wantPayload(t, last[2].Payload); got["result"] != "approved" {
+		t.Errorf("row 1 result = %v, want approved", got["result"])
+	}
+	st1 := foldEvents(t, def, events)
+	if st1.NodeID != "released" || st1.Result != "approved" {
+		t.Errorf("row 1 state node = %q, result = %q, want released, approved", st1.NodeID, st1.Result)
+	}
+
+	// Row 2: a past plain date fails the release check with result
+	// false and a nil error; the case stays on the release step.
+	events2 := runSteps(t, def, releaseSteps("2020-01-31"))
+	n := len(events2)
+	if events2[n-1].Type != EventCheckEvaluated {
+		t.Errorf("row 2 last event type = %q, want %q", events2[n-1].Type, EventCheckEvaluated)
+	}
+	check := wantPayload(t, events2[n-1].Payload)
+	if check["result"] != false {
+		t.Errorf("row 2 check result = %v, want false", check["result"])
+	}
+	if check["error"] != nil {
+		t.Errorf("row 2 check error = %v, want nil", check["error"])
+	}
+	st2 := foldEvents(t, def, events2)
+	if st2.NodeID != "release" {
+		t.Errorf("row 2 node = %q, want release (no move)", st2.NodeID)
+	}
+
+	// Row 3: the RFC 3339 form keeps working.
+	events3 := runSteps(t, def, releaseSteps("2026-10-31T00:00:00Z"))
+	st3 := foldEvents(t, def, events3)
+	if st3.NodeID != "released" || st3.Result != "approved" {
+		t.Errorf("row 3 state node = %q, result = %q, want released, approved", st3.NodeID, st3.Result)
+	}
+}
+
 func TestHandleRefusals(t *testing.T) {
 	def := exampleDef(t)
 	events := runApproved(t, def)
