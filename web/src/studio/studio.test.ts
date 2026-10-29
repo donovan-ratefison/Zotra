@@ -653,6 +653,37 @@ describe("top bar", () => {
     );
     expect(html).toContain("v3 · archived");
   });
+
+  test("18b: the version selector lists every version, enabled", () => {
+    const html = renderToString(
+      createElement(TopBar, {
+        def: miniDefinition,
+        version: versionRow(2, "draft"),
+        versions: [versionRow(2, "draft"), versionRow(1, "published")],
+        onSelectVersion: () => {},
+      }),
+    );
+    expect(html).toContain(`aria-label="Version"`);
+    expect(html).toContain("v2 · Draft");
+    expect(html).toContain("v1 · Published");
+    // The option of the open version carries selected="".
+    expect(html).toMatch(/<option[^>]*value="v2"[^>]*selected=""/);
+    // The select tag carries no disabled attribute.
+    expect(html.match(/<select[^>]*>/)![0]).not.toContain("disabled");
+  });
+
+  test("18c: with no handler the selector is disabled, one option", () => {
+    const html = renderToString(
+      createElement(TopBar, {
+        def: miniDefinition,
+        version: versionRow(1, "published"),
+      }),
+    );
+    const select = html.match(/<select[^>]*>/)![0];
+    expect(select).toContain(`aria-label="Version"`);
+    expect(select).toContain(`disabled=""`);
+    expect(html).toContain("v1 · Published");
+  });
 });
 
 describe("node shapes", () => {

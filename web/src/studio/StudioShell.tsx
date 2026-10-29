@@ -153,6 +153,17 @@ export function StudioShell() {
   const [policyHighlight, setPolicyHighlight] = useState<
     Paragraph[] | null
   >(null);
+  // The version override. null means: pick the version by the
+  // automatic rule (the highest number). Read once at mount from the
+  // URL; a selector click rewrites it. The render tests run with no
+  // location: null there.
+  const [versionOverride, setVersionOverride] = useState<
+    string | null
+  >((): string | null =>
+    typeof location === "undefined"
+      ? null
+      : new URLSearchParams(location.search).get("version"),
+  );
 
   // URL parameters, read once at mount. The tab parameter applies
   // only when it names a known tab; anything else is ignored. The
@@ -198,17 +209,19 @@ export function StudioShell() {
     queryFn: () => listVersions(processId!),
     enabled: processId !== null,
   });
+  // The version override (the URL at mount, or a selector click)
+  // wins over the automatic pick. An id that matches no row falls
+  // back to the automatic rule.
   const version = useMemo(() => {
     const rows = q2.data;
-    if (rows && rows.length > 0 && typeof window !== "undefined") {
-      const id = new URLSearchParams(window.location.search).get("version");
-      const match = id ? rows.find((row) => row.id === id) : undefined;
+    if (rows && rows.length > 0 && versionOverride !== null) {
+      const match = rows.find((row) => row.id === versionOverride);
       if (match) {
         return match;
       }
     }
     return pickVersion(rows);
-  }, [q2.data]);
+  }, [q2.data, versionOverride]);
   const versionId = version ? version.id : null;
   const q3 = useQuery({
     queryKey: ["version", versionId],
@@ -245,9 +258,24 @@ export function StudioShell() {
       "",
       `/?process=${encodeURIComponent(processId)}&version=${encodeURIComponent(versionId)}`,
     );
+    // The import must win over a stale version override.
+    setVersionOverride(versionId);
     void queryClient.invalidateQueries({ queryKey: ["processes"] });
     void queryClient.invalidateQueries({ queryKey: ["versions", processId] });
     void queryClient.invalidateQueries({ queryKey: ["version", versionId] });
+  }
+
+  // onSelectVersion opens the version of the selector click and
+  // writes the id into the URL, so a reload reopens the same
+  // version. processId is non-null when the bar renders a version:
+  // the version query needs it.
+  function onSelectVersion(id: string) {
+    setVersionOverride(id);
+    window.history.replaceState(
+      null,
+      "",
+      `/?process=${encodeURIComponent(processId!)}&version=${encodeURIComponent(id)}`,
+    );
   }
 
   // The proposal, the highlight source and the drawer values.
@@ -341,6 +369,7 @@ export function StudioShell() {
           onVersionsChanged={() =>
             queryClient.invalidateQueries({ queryKey: ["versions", processId] })
           }
+          onSelectVersion={onSelectVersion}
         />
         <ProposalBar
           diff={diffDefinitions(diffBase, proposal.definition)}
@@ -416,6 +445,7 @@ export function StudioShell() {
           onVersionsChanged={() =>
             queryClient.invalidateQueries({ queryKey: ["versions", processId] })
           }
+          onSelectVersion={onSelectVersion}
         />
         <main className="flex min-h-0 flex-1">
           {mode === "test" ? (
@@ -503,6 +533,7 @@ export function TopBar({
   versions = [],
   versionsPending = false,
   onVersionsChanged = () => {},
+  onSelectVersion,
 }: {
   def: ProcessDefinition;
   version?: VersionSummary;
@@ -512,8 +543,8 @@ export function TopBar({
   versions?: VersionSummary[];
   versionsPending?: boolean;
   onVersionsChanged?: () => void;
+  onSelectVersion?: (id: string) => void;
 }) {
-  const statusText = version === undefined ? undefined : STATUS_TEXT[version.status] ?? version.status;
   const dotColor = version === undefined ? undefined : STATUS_DOT[version.status] ?? "#71717a";
   const mode = useStudioStore((s) => s.mode);
   const setMode = useStudioStore((s) => s.setMode);
@@ -548,7 +579,21 @@ export function TopBar({
             style={{ backgroundColor: dotColor }}
             aria-hidden="true"
           />
-          {`v${version.number} · ${statusText}`}
+          {/* A native select, not a Radix one: the option list must
+              render in plain html for the rows. */}
+          <select
+            aria-label="Version"
+            value={version.id}
+            disabled={onSelectVersion === undefined}
+            onChange={(e) => onSelectVersion?.(e.target.value)}
+            className="cursor-pointer bg-transparent text-[12px] outline-none"
+          >
+            {(versions.length > 0 ? versions : [version]).map((row) => (
+              <option key={row.id} value={row.id}>
+                {`v${row.number} · ${STATUS_TEXT[row.status] ?? row.status}`}
+              </option>
+            ))}
+          </select>
         </span>
       )}
       <span className="flex-1" />
