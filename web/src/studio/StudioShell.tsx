@@ -21,6 +21,7 @@ import {
   listVersions,
   updateDraft,
 } from "./api";
+import { readCase, type CaseDTO, type CaseState } from "./case-api";
 import { Button } from "@/ui/button";
 import { diffDefinitions } from "./diff";
 import { PolicyPanel } from "./PolicyPanel";
@@ -120,6 +121,20 @@ function ErrorScreen({ error }: { error: unknown }) {
 }
 
 const TAB_VALUES: PanelTab[] = ["general", "requirements", "scope"];
+
+// caseVersionUrl builds the studio URL that pins a test case on its
+// own version: a reload reopens the same case on the same version.
+export function caseVersionUrl(
+  processId: string,
+  versionId: string,
+  caseId: string,
+): string {
+  return (
+    `/?process=${encodeURIComponent(processId)}` +
+    `&version=${encodeURIComponent(versionId)}` +
+    `&mode=test&case=${encodeURIComponent(caseId)}`
+  );
+}
 
 export function StudioShell() {
   const selectedNodeId = useStudioStore((s) => s.selectedNodeId);
@@ -230,6 +245,48 @@ export function StudioShell() {
     return pickVersion(rows);
   }, [q2.data, versionOverride]);
   const versionId = version ? version.id : null;
+
+  // The open test case pins its own version: the engine runs a case
+  // on the version it was created on, so the diagram, the forms, the
+  // badge and the coverage must come from that version, not from the
+  // opened one. The query shares the cache entry of the test screen
+  // (same key, same reader).
+  const testCaseId = useStudioStore((s) => s.testCaseId);
+  const caseVersion = useQuery({
+    queryKey: ["case", testCaseId],
+    queryFn: () => readCase(testCaseId!),
+    enabled: testCaseId !== null,
+    select: (answer: { case: CaseDTO; state: CaseState }) =>
+      answer.case.version_id,
+  });
+  // The pin is the render-phase state adjustment of the undo stack
+  // below: the override follows the version of the open case.
+  if (
+    caseVersion.data !== undefined &&
+    caseVersion.data !== versionOverride
+  ) {
+    setVersionOverride(caseVersion.data);
+  }
+  // A reload reopens the same case on the same version: the URL
+  // holds process, version, mode and case. It runs when the pin is
+  // in force (the case version is the rendered one).
+  useEffect(() => {
+    const caseVersionId = caseVersion.data;
+    if (
+      caseVersionId === undefined ||
+      testCaseId === null ||
+      processId === null ||
+      versionId === null ||
+      caseVersionId !== versionId
+    ) {
+      return;
+    }
+    window.history.replaceState(
+      null,
+      "",
+      caseVersionUrl(processId, caseVersionId, testCaseId),
+    );
+  }, [caseVersion.data, testCaseId, processId, versionId]);
 
   // Undo: the stack holds the definition as it was before each save
   // of the open draft, at most 20 entries. A version switch clears
@@ -357,6 +414,9 @@ export function StudioShell() {
   // the version query needs it.
   function onSelectVersion(id: string) {
     setVersionOverride(id);
+    // A version switch closes the open test case: the case view
+    // always shows the version of its case.
+    setTestCaseId(null);
     window.history.replaceState(
       null,
       "",
