@@ -455,8 +455,8 @@ type EventRow struct {
 	Reference string `json:"reference"`
 }
 
-// ListRecentEvents returns the newest events of every case, at
-// DESC then seq DESC, at most limit, with the case reference.
+// ListRecentEvents returns the newest events of every case, ordered by
+// at DESC then seq DESC, at most limit, with the case reference.
 func (s *Store) ListRecentEvents(ctx context.Context, limit int) ([]EventRow, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT e.case_id, e.seq, e.type, e.at, e.actor, e.payload,
