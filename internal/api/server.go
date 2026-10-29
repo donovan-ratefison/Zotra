@@ -86,6 +86,7 @@ func NewHandler(static fs.FS, version string, st *store.Store, feedbackDir strin
 		mux.HandleFunc("GET /api/documents/{id}", d.readDocument)
 		mux.HandleFunc("GET /api/documents/{id}/bytes", d.readDocumentBytes)
 		mux.HandleFunc("POST /api/documents/{id}/zones", d.documentZones)
+		mux.HandleFunc("POST /api/documents/{id}/read", d.documentRead)
 	}
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {

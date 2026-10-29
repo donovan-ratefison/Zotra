@@ -3,6 +3,7 @@ package ai
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -62,6 +63,48 @@ func (c *Client) Responses(ctx context.Context, payload []byte) ([]byte, error) 
 	return c.post(ctx, "/responses", payload)
 }
 
+// PostChat posts one prepared Chat Completions payload to
+// BaseURL + "/chat/completions" and returns the raw body. The
+// transport, the modes and the cache apply as for the other calls.
+func (c *Client) PostChat(ctx context.Context, payload []byte) ([]byte, error) {
+	return c.post(ctx, "/chat/completions", payload)
+}
+
+// VisionPayload builds the Chat Completions payload of one vision
+// call: one user message with a text part and an image part, and
+// the strict JSON Schema response format. model is the model name,
+// text the instruction, mime and imageData the scan. The image
+// travels as a data URL.
+func VisionPayload(model, text, mime string, imageData []byte,
+	schemaName string, schema map[string]any,
+) []byte {
+	payload := visionPayload{
+		Model: model,
+		Messages: []visionMessage{{
+			Role: "user",
+			Content: []visionPart{
+				{Type: "text", Text: text},
+				{Type: "image_url", ImageURL: &visionImage{
+					URL: "data:" + mime + ";base64," +
+						base64.StdEncoding.EncodeToString(imageData),
+				}},
+			},
+		}},
+		ResponseFormat: &responseFormat{
+			Type: "json_schema",
+			JSONSchema: jsonSchema{
+				Name:   schemaName,
+				Strict: true,
+				Schema: schema,
+			},
+		},
+	}
+	// json.Marshal of these structs never fails: every field holds a
+	// marshalable value. The sam.Request precedent.
+	b, _ := json.Marshal(payload)
+	return b
+}
+
 type responseFormat struct {
 	Type       string     `json:"type"`
 	JSONSchema jsonSchema `json:"json_schema"`
@@ -71,6 +114,33 @@ type jsonSchema struct {
 	Name   string         `json:"name"`
 	Strict bool           `json:"strict"`
 	Schema map[string]any `json:"schema"`
+}
+
+// visionImage is the image part payload: one data URL.
+type visionImage struct {
+	URL string `json:"url"`
+}
+
+// visionPart is one content part of one vision message. The omitempty
+// fields keep each part to its own keys: a text part holds type and
+// text, an image part holds type and image_url.
+type visionPart struct {
+	Type     string       `json:"type"`
+	Text     string       `json:"text,omitempty"`
+	ImageURL *visionImage `json:"image_url,omitempty"`
+}
+
+// visionMessage is one message of a vision payload.
+type visionMessage struct {
+	Role    string       `json:"role"`
+	Content []visionPart `json:"content"`
+}
+
+// visionPayload is the Chat Completions request of one vision call.
+type visionPayload struct {
+	Model          string          `json:"model"`
+	Messages       []visionMessage `json:"messages"`
+	ResponseFormat *responseFormat `json:"response_format"`
 }
 
 // post sends one POST with the API key headers and returns the raw

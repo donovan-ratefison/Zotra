@@ -283,6 +283,46 @@ function StepForm({ def, node, state, onCommand, failedChecks, decisionEnabled, 
 }) {
   const [values, setValues] = useState<Record<string, unknown>>({});
 
+  // fillTargets is the field list the read route needs: the write
+  // fields of the node in def.fields order, as name, label and type.
+  // The document type stays out: a scan shows no stored document ids,
+  // the Documents checkbox of the form holds them.
+  const fillTargets = def.fields
+    .filter(
+      (field) =>
+        accessOf(field, node, def) === "write" &&
+        field.computed === null &&
+        field.type !== "document",
+    )
+    .map((field) => ({
+      name: field.name,
+      label: field.label,
+      type: field.type,
+    }));
+
+  // fillFormValues merges the read values into the local values, one
+  // key per rendered input: write access and no computed expression.
+  // The other keys of the given record are dropped, and the read-only
+  // and computed fields stay untouched (the lot 3.1 rule). The fill
+  // is one setValues merge, then one onValueChange call: every value
+  // change disables the decision buttons until the next submit.
+  const fillFormValues = (filled: Record<string, unknown>) => {
+    setValues((old) => {
+      const next = { ...old };
+      for (const field of def.fields) {
+        if (field.computed !== null || !(field.name in filled)) {
+          continue;
+        }
+        if (accessOf(field, node, def) !== "write") {
+          continue;
+        }
+        next[field.name] = filled[field.name];
+      }
+      return next;
+    });
+    onValueChange();
+  };
+
   // The document gate: each required name is provided by one scan,
   // and a node with a signature needs a signature_added event for
   // this step. While the documents list loads, every required name
@@ -346,6 +386,8 @@ function StepForm({ def, node, state, onCommand, failedChecks, decisionEnabled, 
           onCommand={onCommand}
           signed={signed}
           readOnly={readOnly}
+          onFill={fillFormValues}
+          fillTargets={fillTargets}
         />
       )}
       {!readOnly && (

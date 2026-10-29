@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/donovan-ratefison/zotra/internal/ai"
+	"github.com/donovan-ratefison/zotra/internal/readfields"
 	"github.com/donovan-ratefison/zotra/internal/sam"
 	"github.com/donovan-ratefison/zotra/internal/store"
 )
@@ -170,6 +172,74 @@ func (d apiDeps) listCaseDocuments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, struct {
 		Documents []documentDTO `json:"documents"`
 	}{dtos})
+}
+
+// documentRead reads the fields of one scan with the text model. The
+// body names the fields, the schema asks one null-able property per
+// field, and the answer carries the values by field name. The AI flow
+// goes through the Chat Completions API, so the cache holds it as one
+// block.
+func (d apiDeps) documentRead(w http.ResponseWriter, r *http.Request) {
+	// 1. The body.
+	var body struct {
+		Fields []readfields.Field `json:"fields"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", msgInvalidJSON)
+		return
+	}
+	// 2. The field list.
+	fields := body.Fields
+	if len(fields) == 0 {
+		writeError(w, http.StatusBadRequest, "invalid_read",
+			"at least one field is required")
+		return
+	}
+	seen := map[string]bool{}
+	for i, f := range fields {
+		if f.Name == "" {
+			writeError(w, http.StatusBadRequest, "invalid_read",
+				fmt.Sprintf("field %d has no name", i))
+			return
+		}
+		if seen[f.Name] {
+			writeError(w, http.StatusBadRequest, "invalid_read",
+				fmt.Sprintf("duplicate field %s", f.Name))
+			return
+		}
+		seen[f.Name] = true
+	}
+	// 3. The document and its bytes.
+	id := r.PathValue("id")
+	doc, err := d.st.GetDocument(r.Context(), id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	data, err := d.st.DocumentBytes(r.Context(), id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	// 4. The AI call.
+	cfg := ai.LoadConfig()
+	payload := ai.VisionPayload(cfg.TextModel, ai.ReadFieldsPrompt,
+		doc.MIME, data, "read_fields", readfields.SchemaFor(fields))
+	aiBody, err := ai.New(cfg).PostChat(r.Context(), payload)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "ai_unavailable",
+			fmt.Sprintf("the AI layer is not available: %v", err))
+		return
+	}
+	values, err := readfields.ParseValues(aiBody, fields)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "bad_ai_output", err.Error())
+		return
+	}
+	// 5. The answer.
+	writeJSON(w, http.StatusOK, struct {
+		Values map[string]any `json:"values"`
+	}{values})
 }
 
 // documentZones asks SAM 3.1 for the zones of one scan. The AI flow

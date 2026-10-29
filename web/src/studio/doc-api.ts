@@ -96,3 +96,20 @@ export async function readZones(id: string): Promise<ZoneDTO[]> {
     },
   ).then((b) => b.zones);
 }
+
+// readDocumentFields sends POST /api/documents/<id>/read with the
+// field list in the body { fields }, and returns the values by field
+// name from the answer { values }.
+export async function readDocumentFields(
+  id: string,
+  fields: { name: string; label: string; type: string }[],
+): Promise<Record<string, unknown>> {
+  return request<{ values: Record<string, unknown> }>(
+    `/api/documents/${encodeURIComponent(id)}/read`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields }),
+    },
+  ).then((b) => b.values);
+}

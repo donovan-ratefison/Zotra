@@ -74,6 +74,12 @@ func ExplainCheckUser(nodeName, checkID, expression, message string,
 	return b.String()
 }
 
+// ReadFieldsPrompt is the instruction of the field reading.
+const ReadFieldsPrompt = `Read the listed fields of this document
+scan. Answer one JSON object with one key per listed field name.
+Use the JSON type of the field. Use null when the scan does not
+show the field. No other key.`
+
 // PolicyParagraph is one numbered paragraph of a policy: the id has
 // the form p<page>-<index>, the text is the paragraph text.
 type PolicyParagraph struct {

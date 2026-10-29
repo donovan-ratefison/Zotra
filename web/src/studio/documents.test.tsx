@@ -15,6 +15,7 @@ import { ApiError } from "./api";
 import { runCommand, type CaseEvent, type CaseState, type UserDTO } from "./case-api";
 import {
   listCaseDocuments,
+  readDocumentFields,
   readZones,
   uploadDocument,
   type DocumentDTO,
@@ -179,6 +180,18 @@ const stampZones: ZoneDTO[] = [
   { label: "stamp", box: { x: 1, y: 2, width: 3, height: 4 } },
 ];
 
+// fillTargetsFixture is the read target list of the lot 5.3 rows: the
+// write fields of the docsDefinition advisor scope in def.fields
+// order, the document field excluded.
+const fillTargetsFixture: { name: string; label: string; type: string }[] = [
+  { name: "amount", label: "Amount", type: "money" },
+  { name: "client_name", label: "Client", type: "string" },
+  { name: "duration_months", label: "Duration (months)", type: "integer" },
+  { name: "ok", label: "Ready", type: "boolean" },
+  { name: "kind", label: "Kind", type: "enum" },
+  { name: "signed_on", label: "Signed on", type: "date" },
+];
+
 const versionFixture: VersionSummary = {
   id: "v1",
   process_id: "p1",
@@ -287,8 +300,12 @@ function renderStep(state: CaseState, props?: {
 }
 
 // renderBody renders ScanDialogBody with the zones cache pre-seeded,
-// or left pending when zones is null.
-function renderBody(mode: "view" | "sign", zones: ZoneDTO[] | null): string {
+// or left pending when zones is null. The read argument, when given,
+// adds the five read props of lot 5.3 beside the lot 5.2 props.
+function renderBody(mode: "view" | "sign", zones: ZoneDTO[] | null, read?: {
+  reading?: boolean;
+  readValues?: Record<string, unknown> | null;
+}): string {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -299,7 +316,20 @@ function renderBody(mode: "view" | "sign", zones: ZoneDTO[] | null): string {
     createElement(
       QueryClientProvider,
       { client },
-      createElement(ScanDialogBody, { doc: scan(), mode, onSign: () => {} }),
+      createElement(ScanDialogBody, {
+        doc: scan(),
+        mode,
+        onSign: () => {},
+        ...(read === undefined
+          ? {}
+          : {
+              reading: read.reading ?? false,
+              readValues: read.readValues ?? null,
+              onRead: () => {},
+              fillTargets: fillTargetsFixture,
+              onFill: () => {},
+            }),
+      }),
     ),
   );
 }
@@ -455,6 +485,41 @@ describe("document api", () => {
       document_hash: "a".repeat(64),
     });
   });
+
+  test("5.3 row W1: readDocumentFields posts the fields and unwraps the values", async () => {
+    const calls = stubFetch(200, { values: { amount: 240000 } });
+    const values = await readDocumentFields("d1", [
+      { name: "amount", label: "Amount", type: "money" },
+    ]);
+    expect(values).toEqual({ amount: 240000 });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.path).toBe("/api/documents/d1/read");
+    expect(calls[0]!.method).toBe("POST");
+    expect(JSON.parse(calls[0]!.body as string)).toEqual({
+      fields: [{ name: "amount", label: "Amount", type: "money" }],
+    });
+  });
+
+  test("5.3 row W2: a refused read rejects as ApiError", async () => {
+    stubFetch(502, {
+      error: {
+        code: "bad_ai_output",
+        message: "unexpected field ghost",
+        details: [],
+      },
+    });
+    const error = await readDocumentFields("d1", [
+      { name: "amount", label: "Amount", type: "money" },
+    ]).then(
+      () => null,
+      (err: unknown) => err,
+    );
+    expect(error).toBeInstanceOf(ApiError);
+    const apiError = error as ApiError;
+    expect(apiError.status).toBe(502);
+    expect(apiError.code).toBe("bad_ai_output");
+    expect(apiError.message).toBe("unexpected field ghost");
+  });
 });
 
 describe("document field input", () => {
@@ -604,6 +669,12 @@ describe("step screen gate", () => {
     expect(html).toContain("Loading the documents.");
     expect(html).not.toContain("image/png");
   });
+
+  test("5.3 row W7: the taken step keeps the 5.2 render with the fill wiring", () => {
+    const html = renderStep(takenState);
+    expect(html).toContain("Documents");
+    expect(html).toContain("ID card.png");
+  });
 });
 
 describe("scan dialog body", () => {
@@ -634,6 +705,42 @@ describe("scan dialog body", () => {
     );
     const view = renderBody("view", signatureZones);
     expect(view).not.toContain("Sign this document");
+  });
+
+  test("5.3 row W3: the read block shows the read button, not the fill", () => {
+    const html = renderBody("view", signatureZones, {
+      reading: false,
+      readValues: null,
+    });
+    expect(html).toContain("Read the fields");
+    expect(html).toContain("signature: 25, 10, 50, 20");
+    expect(html).not.toContain("Reading the fields...");
+    expect(html).not.toContain("Fill the form");
+  });
+
+  test("5.3 row W4: the read values show one line per field", () => {
+    const html = renderBody("view", signatureZones, {
+      reading: false,
+      readValues: { amount: 240000 },
+    });
+    expect(html).toContain("Amount: 240000");
+    expect(html).toContain("Fill the form");
+    const notRead = renderBody("view", signatureZones, {
+      reading: false,
+      readValues: { amount: null },
+    });
+    expect(notRead).toContain("Amount: not read");
+  });
+
+  test("5.3 row W5: a running read disables the button and shows the line", () => {
+    const html = renderBody("view", signatureZones, { reading: true });
+    expect(html).toContain("Reading the fields...");
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>[^<]*Read the fields/);
+  });
+
+  test("5.3 row W6: without the read props no read button renders", () => {
+    const html = renderBody("view", signatureZones);
+    expect(html).not.toContain("Read the fields");
   });
 });
 

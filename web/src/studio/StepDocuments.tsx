@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/ui/separator";
 import { ScanDialog } from "./ScanDialog";
 import type { CommandInput } from "./case-api";
-import type { DocumentDTO } from "./doc-api";
+import { readDocumentFields, type DocumentDTO } from "./doc-api";
 import type { ProcessNode } from "./types";
 
 // documentProvides tells whether one scan provides one required
@@ -140,7 +140,7 @@ function DropZone({ uploading, onPick }: {
   );
 }
 
-export function StepDocuments({ node, documents, documentsError, uploading, onUpload, onCommand, signed, readOnly = false }: {
+export function StepDocuments({ node, documents, documentsError, uploading, onUpload, onCommand, signed, readOnly = false, onFill, fillTargets }: {
   node: ProcessNode;
   documents: DocumentDTO[] | null;
   documentsError: string | null;
@@ -149,6 +149,8 @@ export function StepDocuments({ node, documents, documentsError, uploading, onUp
   onCommand: (cmd: CommandInput) => void;
   signed: boolean;
   readOnly?: boolean;
+  onFill?: (values: Record<string, unknown>) => void;
+  fillTargets?: { name: string; label: string; type: string }[];
 }) {
   const [dialog, setDialog] = useState<{
     doc: DocumentDTO;
@@ -286,6 +288,17 @@ export function StepDocuments({ node, documents, documentsError, uploading, onUp
             onCommand({ type: "sign", document_hash: hash });
             setDialog(null);
           }}
+          {...(onFill === undefined || fillTargets === undefined
+            ? {}
+            : {
+                readFields: (doc: DocumentDTO) =>
+                  readDocumentFields(doc.id, fillTargets),
+                fillTargets,
+                onFill: (values: Record<string, unknown>) => {
+                  onFill(values);
+                  setDialog(null);
+                },
+              })}
         />
       )}
     </div>

@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/donovan-ratefison/zotra/internal/ai"
+	"github.com/donovan-ratefison/zotra/internal/readfields"
 	"github.com/donovan-ratefison/zotra/internal/sam"
 )
 
@@ -391,4 +392,134 @@ func TestCaseScanList(t *testing.T) {
 		entry["sha256"] != doc["sha256"] {
 		t.Errorf("entry = %v, want the upload id, name and sha256", entry)
 	}
+}
+
+// readFieldsFixture is the one-field list of the read rows.
+var readFieldsFixture = []readfields.Field{
+	{Name: "amount", Label: "Amount", Type: "money"},
+}
+
+// readPayload builds the Chat Completions payload the handler sends
+// for the PNG scan and the given fields. muse-spark-1.3 is the
+// default TextModel: no test sets ZOTRA_AI_TEXT_MODEL.
+func readPayload(t *testing.T, fields []readfields.Field) []byte {
+	t.Helper()
+	return ai.VisionPayload("muse-spark-1.3", ai.ReadFieldsPrompt,
+		"image/png", pngBytes(t), "read_fields", readfields.SchemaFor(fields))
+}
+
+// primeChat writes one cache file for one prepared Chat Completions
+// payload: <dir>/<ai.CacheKey("POST", "/v1/chat/completions",
+// payload)>.json holds the cache entry shape with a Chat Completions
+// envelope as body, and answer sits in choices[0].message.content.
+// The delivered primeAI builds the messages form of ChatCompletion,
+// so it cannot serve a vision payload.
+func primeChat(t *testing.T, dir string, payload []byte, answer string) {
+	env := struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}{}
+	env.Choices = append(env.Choices, struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	}{})
+	env.Choices[0].Message.Content = answer
+	envelope, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshal envelope: %v", err)
+	}
+	entry := struct {
+		Status  int         `json:"status"`
+		Headers http.Header `json:"headers"`
+		Body    string      `json:"body"`
+	}{Status: 200, Headers: http.Header{}, Body: string(envelope)}
+	entryBytes, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("marshal cache entry: %v", err)
+	}
+	path := filepath.Join(dir,
+		ai.CacheKey("POST", "/v1/chat/completions", payload)+".json")
+	if err := os.WriteFile(path, entryBytes, 0o644); err != nil {
+		t.Fatalf("write cache file: %v", err)
+	}
+}
+
+// postRead runs POST /api/documents/{id}/read for one document.
+func postRead(t *testing.T, id, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	return do(t, "POST", "/api/documents/"+id+"/read", body, "")
+}
+
+// 21.
+func TestDocumentRead(t *testing.T) {
+	dir := aiEnv(t)
+	h := newTestAPI(t)
+	id := uploadForZones(t, h)
+
+	primeChat(t, dir, readPayload(t, readFieldsFixture), `{"amount":240000}`)
+
+	rec := postRead(t, id, `{"fields":[{"name":"amount","label":"Amount","type":"money"}]}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("read: status %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Body.String(); got != `{"values":{"amount":240000}}` {
+		t.Errorf("body = %s, want {\"values\":{\"amount\":240000}}", got)
+	}
+}
+
+// 22.
+func TestDocumentReadBadOutput(t *testing.T) {
+	dir := aiEnv(t)
+	h := newTestAPI(t)
+	id := uploadForZones(t, h)
+
+	primeChat(t, dir, readPayload(t, readFieldsFixture), `{"ghost":1}`)
+
+	rec := postRead(t, id, `{"fields":[{"name":"amount","label":"Amount","type":"money"}]}`)
+	checkError(t, rec, http.StatusBadGateway, "bad_ai_output",
+		"unexpected field ghost")
+}
+
+// 23.
+func TestDocumentReadRefusals(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("ZOTRA_AI_MODE", "off")
+	t.Setenv("ZOTRA_AI_CACHE_DIR", dir)
+	h := newTestAPI(t)
+	id := uploadForZones(t, h)
+
+	// Not a JSON body.
+	rec := postRead(t, id, `not json`)
+	checkError(t, rec, http.StatusBadRequest, "invalid_json",
+		msgInvalidJSON)
+
+	// An empty field list.
+	rec = postRead(t, id, `{"fields":[]}`)
+	checkError(t, rec, http.StatusBadRequest, "invalid_read",
+		"at least one field is required")
+
+	// A field with no name.
+	rec = postRead(t, id, `{"fields":[{"name":"","label":"x","type":"string"}]}`)
+	checkError(t, rec, http.StatusBadRequest, "invalid_read",
+		"field 0 has no name")
+
+	// A duplicate name.
+	rec = postRead(t, id, `{"fields":[{"name":"amount","label":"A","type":"money"},`+
+		`{"name":"amount","label":"A","type":"money"}]}`)
+	checkError(t, rec, http.StatusBadRequest, "invalid_read",
+		"duplicate field amount")
+
+	// An unknown document, with one valid field list.
+	rec = postRead(t, "ghost", `{"fields":[{"name":"amount","label":"Amount","type":"money"}]}`)
+	checkError(t, rec, http.StatusNotFound, "not_found", "no document ghost")
+
+	// The AI layer is off.
+	rec = postRead(t, id, `{"fields":[{"name":"amount","label":"Amount","type":"money"}]}`)
+	checkError(t, rec, http.StatusServiceUnavailable, "ai_unavailable",
+		`the AI layer is not available: Post `+
+			`"https://api.meta.ai/v1/chat/completions": ai: off`)
 }
