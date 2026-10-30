@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 )
 
 // Message is one chat message.
@@ -144,7 +146,8 @@ type visionPayload struct {
 }
 
 // post sends one POST with the API key headers and returns the raw
-// response body. A status of 500 or more gives an error.
+// response body. A status out of 200 to 299 gives an error with the
+// status, the path and the detail of the provider.
 func (c *Client) post(ctx context.Context, path string, body []byte) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "POST", c.cfg.BaseURL+path, bytes.NewReader(body))
 	if err != nil {
@@ -161,8 +164,30 @@ func (c *Client) post(ctx context.Context, path string, body []byte) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode >= 500 {
-		return nil, fmt.Errorf("ai: status %d from %s", resp.StatusCode, req.URL.Path)
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		msg := fmt.Sprintf("ai: status %d from %s", resp.StatusCode, req.URL.Path)
+		if d := errorDetail(b); d != "" {
+			msg += ": " + d
+		}
+		return nil, errors.New(msg)
 	}
 	return b, nil
+}
+
+// errorDetail returns error.message of an OpenAI-compatible error
+// body, else the trimmed body text, cut to 200 bytes.
+func errorDetail(b []byte) string {
+	var e struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	d := strings.TrimSpace(string(b))
+	if json.Unmarshal(b, &e) == nil && e.Error.Message != "" {
+		d = e.Error.Message
+	}
+	if len(d) > 200 {
+		d = d[:200]
+	}
+	return d
 }

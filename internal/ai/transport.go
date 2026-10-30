@@ -79,6 +79,10 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 	}
 
+	// No key: a real call can only fail, so do not make it.
+	if t.cfg.APIKey == "" {
+		return nil, errors.New("ai: no API key")
+	}
 	resp, err := t.realCall(req, body)
 	if err != nil {
 		return nil, err

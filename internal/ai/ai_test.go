@@ -601,7 +601,7 @@ func TestClientStatusError(t *testing.T) {
 	_, err := New(cfg).ChatCompletion(context.Background(),
 		[]Message{{Role: "user", Content: "x"}}, "process",
 		map[string]any{"type": "object"})
-	want := "ai: status 500 from /chat/completions"
+	want := "ai: status 500 from /chat/completions: err"
 	if err == nil || err.Error() != want {
 		t.Fatalf("status error: got %v, want %q", err, want)
 	}
@@ -644,4 +644,99 @@ func TestPricePerMillion(t *testing.T) {
 			t.Errorf("%s: got %v/%v, want %v/%v", c.model, in, out, c.in, c.out)
 		}
 	}
+}
+
+// statusServer answers each request with status and body.
+func statusServer(t *testing.T, status int, body string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(status)
+		fmt.Fprint(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// chatOnce makes one ChatCompletion call with cfg.
+func chatOnce(cfg Config) ([]byte, error) {
+	return New(cfg).ChatCompletion(context.Background(),
+		[]Message{{Role: "user", Content: "x"}}, "process",
+		map[string]any{"type": "object"})
+}
+
+// Rows 1 to 5: a status out of 200 to 299 is an error with the
+// detail of the provider.
+func TestClientNon2xx(t *testing.T) {
+	long := strings.Repeat("a", 300)
+	rows := []struct {
+		name   string
+		status int
+		body   string
+		want   string
+	}{
+		{"401 json", 401, `{"error":{"message":"invalid key"}}`,
+			"ai: status 401 from /chat/completions: invalid key"},
+		{"400 text", 400, "bad schema\n",
+			"ai: status 400 from /chat/completions: bad schema"},
+		{"404 empty", 404, "", "ai: status 404 from /chat/completions"},
+		{"401 long", 401, `{"error":{"message":"` + long + `"}}`,
+			"ai: status 401 from /chat/completions: " + long[:200]},
+	}
+	for _, r := range rows {
+		t.Run(r.name, func(t *testing.T) {
+			srv := statusServer(t, r.status, r.body)
+			b, err := chatOnce(newConfig("live", t.TempDir(), srv.URL, 2))
+			if b != nil || err == nil || err.Error() != r.want {
+				t.Fatalf("got (%q, %v), want (nil, %q)", b, err, r.want)
+			}
+		})
+	}
+	t.Run("200", func(t *testing.T) {
+		srv := statusServer(t, 200, noUsageBody)
+		b, err := chatOnce(newConfig("live", t.TempDir(), srv.URL, 2))
+		if err != nil || string(b) != noUsageBody {
+			t.Fatalf("got (%q, %v), want the body", b, err)
+		}
+	})
+}
+
+// Rows 6 to 8: with no key, live and cache modes make no real call.
+// A cache hit still answers.
+func TestNoAPIKey(t *testing.T) {
+	for _, mode := range []string{"live", "cache"} {
+		t.Run(mode, func(t *testing.T) {
+			srv, count := newAIServer(t, usageBody)
+			dir := t.TempDir()
+			cfg := newConfig(mode, dir, srv.URL, 2)
+			cfg.APIKey = ""
+			_, err := NewTransport(cfg, nil).RoundTrip(post(t, srv.URL+"/v1/x", plainBody))
+			if err == nil || err.Error() != "ai: no API key" {
+				t.Fatalf("err = %v, want ai: no API key", err)
+			}
+			if n := count.Load(); n != 0 {
+				t.Fatalf("server called %d times, want 0", n)
+			}
+			if _, err := os.Stat(budgetPath(dir)); !os.IsNotExist(err) {
+				t.Fatalf("budget file written: %v", err)
+			}
+		})
+	}
+	t.Run("cache hit", func(t *testing.T) {
+		srv, count := newAIServer(t, usageBody)
+		dir := t.TempDir()
+		writeCacheFile(t, dir, "POST", "/v1/x", []byte(plainBody),
+			`{"status":200,"headers":{},"body":"cached"}`)
+		cfg := newConfig("cache", dir, srv.URL, 2)
+		cfg.APIKey = ""
+		resp, err := NewTransport(cfg, nil).RoundTrip(post(t, srv.URL+"/v1/x", plainBody))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if body := readBody(t, resp); body != "cached" {
+			t.Fatalf("body = %q, want cached", body)
+		}
+		if n := count.Load(); n != 0 {
+			t.Fatalf("server called %d times, want 0", n)
+		}
+	})
 }

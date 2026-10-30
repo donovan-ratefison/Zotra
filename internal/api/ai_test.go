@@ -30,6 +30,7 @@ import (
 func aiLive(t *testing.T, url string) {
 	t.Helper()
 	t.Setenv("ZOTRA_AI_MODE", "live")
+	t.Setenv("ZOTRA_AI_API_KEY", "test-key")
 	t.Setenv("ZOTRA_AI_BASE_URL", url)
 	t.Setenv("ZOTRA_AI_CACHE_DIR", t.TempDir())
 }
@@ -860,6 +861,7 @@ func aiCacheStub(t *testing.T) (count *int, last *string) {
 	}))
 	t.Cleanup(srv.Close)
 	t.Setenv("ZOTRA_AI_MODE", "cache")
+	t.Setenv("ZOTRA_AI_API_KEY", "test-key")
 	t.Setenv("ZOTRA_AI_BASE_URL", srv.URL)
 	t.Setenv("ZOTRA_AI_CACHE_DIR", t.TempDir())
 	return count, last
@@ -937,5 +939,90 @@ func TestPolicyWithName(t *testing.T) {
 	}
 	if want := map[string]any{"name": "B", "x": 1.0}; !reflect.DeepEqual(have, want) {
 		t.Errorf("withName = %v, want %v", have, want)
+	}
+}
+
+// errorStub starts one stub server that answers each request with
+// status 401 and an OpenAI-compatible error body. count holds the
+// number of requests it saw.
+func errorStub(t *testing.T) (*httptest.Server, *int) {
+	t.Helper()
+	count := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		count++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"invalid key"}}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &count
+}
+
+// checkUnavailable asserts a 503 ai_unavailable answer whose message
+// holds each part.
+func checkUnavailable(t *testing.T, rec *httptest.ResponseRecorder, parts ...string) {
+	t.Helper()
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body is not an error body: %v", err)
+	}
+	if body.Error.Code != "ai_unavailable" {
+		t.Errorf("code = %q, want ai_unavailable", body.Error.Code)
+	}
+	for _, p := range parts {
+		if !strings.Contains(body.Error.Message, p) {
+			t.Errorf("message %q does not hold %q", body.Error.Message, p)
+		}
+	}
+}
+
+// Row 9: a 401 of the provider gives 503 with no repair loop.
+func TestChangeProvider401(t *testing.T) {
+	srv, count := errorStub(t)
+	aiLive(t, srv.URL)
+	newTestAPI(t)
+	draftID := chatDraft(t)
+
+	rec := postChange(t, changeReq(draftID, "Add a 12 h deadline to the legal officer."))
+	checkUnavailable(t, rec, "status 401", "invalid key")
+	if *count != 1 {
+		t.Errorf("requests = %d, want 1", *count)
+	}
+}
+
+// Row 10: mode cache with no key makes no call and gives 503.
+func TestChangeNoAPIKey(t *testing.T) {
+	srv, count := errorStub(t)
+	t.Setenv("ZOTRA_AI_MODE", "cache")
+	t.Setenv("ZOTRA_AI_API_KEY", "")
+	t.Setenv("ZOTRA_AI_BASE_URL", srv.URL)
+	t.Setenv("ZOTRA_AI_CACHE_DIR", t.TempDir())
+	newTestAPI(t)
+	draftID := chatDraft(t)
+
+	rec := postChange(t, changeReq(draftID, "Add a 12 h deadline to the legal officer."))
+	checkUnavailable(t, rec, "no API key")
+	if *count != 0 {
+		t.Errorf("requests = %d, want 0", *count)
+	}
+}
+
+// Row 11: a 401 of the provider gives 503 on the policy import.
+func TestPolicyProvider401(t *testing.T) {
+	srv, count := errorStub(t)
+	aiLive(t, srv.URL)
+	newTestAPI(t)
+
+	checkUnavailable(t, postPolicy(t, fixtureRequest()), "status 401", "invalid key")
+	if *count != 1 {
+		t.Errorf("requests = %d, want 1", *count)
 	}
 }
