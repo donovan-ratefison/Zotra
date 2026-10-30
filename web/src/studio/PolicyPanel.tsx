@@ -4,7 +4,9 @@
 // it (its viewer module needs a DOM).
 
 import { useEffect, useState } from "react";
+import { Maximize2, Minimize2 } from "lucide-react";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { Button } from "@/ui/button";
 import type { Paragraph } from "./policy";
 
 export function isHighlighted(str: string, highlight: Paragraph[]): boolean {
@@ -21,9 +23,16 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-export function PolicyPanel({ file, highlight }: {
+export function PolicyPanel({
+  file,
+  highlight,
+  maximized = false,
+  onToggleMaximize,
+}: {
   file: File | null;
   highlight: Paragraph[];
+  maximized?: boolean;
+  onToggleMaximize?: () => void;
 }) {
   const [mod, setMod] = useState<typeof import("react-pdf") | null>(null);
   // The load error is tied to the file that failed it, so a new file
@@ -63,6 +72,22 @@ export function PolicyPanel({ file, highlight }: {
           <span className="truncate text-[12px] text-muted-foreground">
             {file.name}
           </span>
+        )}
+        {onToggleMaximize !== undefined && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="ml-auto"
+            aria-label={maximized ? "Restore the policy" : "Maximize the policy"}
+            title={maximized ? "Restore" : "Maximize"}
+            onClick={onToggleMaximize}
+          >
+            {maximized ? (
+              <Minimize2 aria-hidden="true" />
+            ) : (
+              <Maximize2 aria-hidden="true" />
+            )}
+          </Button>
         )}
       </div>
       {file === null ? (

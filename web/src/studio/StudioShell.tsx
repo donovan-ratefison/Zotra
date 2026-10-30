@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -23,6 +24,7 @@ import {
 } from "./api";
 import { readCase, type CaseDTO, type CaseState } from "./case-api";
 import { Button } from "@/ui/button";
+import { cn } from "@/lib/utils";
 import { changedIds, diffDefinitions } from "./diff";
 import { PolicyPanel } from "./PolicyPanel";
 import { ProcessDiagram } from "./diagram";
@@ -31,6 +33,7 @@ import { ImportDialog } from "./ImportDialog";
 import { NodePanel, UnsavedBadge } from "./NodePanel";
 import { ProcessPanel } from "./ProcessPanel";
 import { ProposalBar } from "./ProposalBar";
+import { ResizeHandle } from "./resize";
 import { VersionActions } from "./version-actions";
 import type { Paragraph } from "./policy";
 import { useStudioStore, type PanelTab } from "./store";
@@ -171,6 +174,16 @@ export function StudioShell() {
       new URLSearchParams(window.location.search).get("policy") === "1"
     );
   });
+  // The panel sizes. They are not stored: a reload gives the
+  // defaults.
+  const [policyShare, setPolicyShare] = useState(0.4);
+  const [policyMax, setPolicyMax] = useState(false);
+  const [asideWidth, setAsideWidth] = useState(380);
+  const [chatHeight, setChatHeight] = useState(220);
+  const columnRef = useRef<HTMLDivElement | null>(null);
+  const policyRef = useRef<HTMLDivElement | null>(null);
+  const mainRef = useRef<HTMLElement | null>(null);
+  const chatRef = useRef<HTMLDivElement | null>(null);
   // The highlight override. null means: derive the highlight from
   // the selected node (the state before any chip click).
   const [policyHighlight, setPolicyHighlight] = useState<
@@ -487,7 +500,52 @@ export function StudioShell() {
 
   function onTogglePolicy() {
     setPolicyOpen((v) => !v);
+    setPolicyMax(false);
   }
+
+  // The policy panel and its handle, the same in the design view and
+  // in the proposal view. The share is a fraction of the column
+  // height; the drag measures from the panel bottom, because the chat
+  // can sit below the panel.
+  const policyBlock = policyOpen && (
+    <>
+      {!policyMax && (
+        <ResizeHandle
+          orientation="horizontal"
+          label="Resize the policy panel"
+          value={policyShare}
+          min={0.15}
+          max={0.85}
+          step={0.05}
+          onResize={setPolicyShare}
+          measure={(e) => {
+            const column = columnRef.current?.getBoundingClientRect();
+            const panel = policyRef.current?.getBoundingClientRect();
+            if (column === undefined || panel === undefined) {
+              return policyShare;
+            }
+            return (panel.bottom - e.clientY) / column.height;
+          }}
+        />
+      )}
+      <div
+        ref={policyRef}
+        className={cn(
+          "overflow-hidden border-t",
+          policyMax ? "min-h-0 flex-1" : "shrink-0",
+        )}
+        style={policyMax ? undefined : { height: `${policyShare * 100}%` }}
+      >
+        <PolicyPanel
+          file={panelFile}
+          highlight={highlight}
+          maximized={policyMax}
+          onToggleMaximize={() => setPolicyMax((v) => !v)}
+        />
+      </div>
+    </>
+  );
+  const diagramClass = cn("min-h-0 flex-1", policyOpen && policyMax && "hidden");
 
   // onAccept creates the process and its first draft from the
   // proposal. A failure keeps the proposal, so the designer can
@@ -555,8 +613,8 @@ export function StudioShell() {
           onReject={onReject}
         />
         <main className="flex min-h-0 flex-1">
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1">
+          <div ref={columnRef} className="flex min-w-0 flex-1 flex-col">
+            <div className={diagramClass}>
               <ProcessDiagram
                 def={proposal.definition}
                 selectedNodeId={selectedNodeId}
@@ -565,11 +623,7 @@ export function StudioShell() {
                 onCitationClick={onCitationClick}
               />
             </div>
-            {policyOpen && (
-              <div className="h-[40%] shrink-0 overflow-hidden border-t">
-                <PolicyPanel file={panelFile} highlight={highlight} />
-              </div>
-            )}
+            {policyBlock}
           </div>
         </main>
       </div>
@@ -626,13 +680,13 @@ export function StudioShell() {
           onUndo={() => void undo()}
           canUndo={undoStack.length > 0 && version.status === "draft"}
         />
-        <main className="flex min-h-0 flex-1">
+        <main ref={mainRef} className="flex min-h-0 flex-1">
           {mode === "test" ? (
             <TestScreen def={loaded.definition} version={version} />
           ) : (
             <>
-              <div className="flex min-w-0 flex-1 flex-col">
-                <div className="min-h-0 flex-1">
+              <div ref={columnRef} className="flex min-w-0 flex-1 flex-col">
+                <div className={diagramClass}>
                   <ProcessDiagram
                     def={chatProposal ?? loaded.definition}
                     selectedNodeId={selectedNodeId}
@@ -647,21 +701,59 @@ export function StudioShell() {
                     highlightNodeIds={selectedNodeId === null ? canvasFocus : null}
                   />
                 </div>
-                {policyOpen && (
-                  <div className="h-[40%] shrink-0 overflow-hidden border-t">
-                    <PolicyPanel file={panelFile} highlight={highlight} />
-                  </div>
-                )}
-                <AssistantChat
-                  version={loaded}
-                  def={loaded.definition}
-                  onProposal={setChatProposal}
-                  onAccepted={onSavedDraft}
+                {policyBlock}
+                <ResizeHandle
+                  orientation="horizontal"
+                  label="Resize the chat"
+                  value={chatHeight}
+                  min={120}
+                  max={480}
+                  step={20}
+                  onResize={setChatHeight}
+                  measure={(e) => {
+                    // The list sits below the chat header: its new
+                    // height is the cursor distance to the list
+                    // bottom, less the header height.
+                    const section = chatRef.current?.firstElementChild;
+                    const header = section?.firstElementChild;
+                    const list = chatRef.current?.querySelector("#chat-thread");
+                    if (header == null || list == null) {
+                      return chatHeight;
+                    }
+                    return (
+                      list.getBoundingClientRect().bottom -
+                      e.clientY -
+                      header.getBoundingClientRect().height
+                    );
+                  }}
                 />
+                <div ref={chatRef} className="shrink-0">
+                  <AssistantChat
+                    version={loaded}
+                    def={loaded.definition}
+                    onProposal={setChatProposal}
+                    onAccepted={onSavedDraft}
+                    listHeight={chatHeight}
+                  />
+                </div>
               </div>
+              <ResizeHandle
+                orientation="vertical"
+                label="Resize the step panel"
+                value={asideWidth}
+                min={300}
+                max={640}
+                step={20}
+                onResize={setAsideWidth}
+                measure={(e) => {
+                  const main = mainRef.current?.getBoundingClientRect();
+                  return main === undefined ? asideWidth : main.right - e.clientX;
+                }}
+              />
               <aside
                 aria-label="Step detail"
-                className="flex w-[380px] shrink-0 flex-col border-l"
+                className="flex shrink-0 flex-col border-l"
+                style={{ width: asideWidth }}
               >
                 {selectedNodeId === null ? (
                   <ProcessPanel

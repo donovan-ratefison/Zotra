@@ -305,6 +305,7 @@ export function ChatPanelView(props: {
   state: ChatState;
   version: Version;
   collapsed: boolean;
+  listHeight?: number;
   draft?: string;
   onDraftChange?: (text: string) => void;
   onSend?: () => void;
@@ -313,7 +314,7 @@ export function ChatPanelView(props: {
   onReject?: () => void;
   accepting?: boolean;
 }): ReactElement {
-  const { state, version, collapsed } = props;
+  const { state, version, collapsed, listHeight = 220 } = props;
   const last = state.turns[state.turns.length - 1] ?? null;
   const pending = last !== null && last.kind === "proposal";
   const waiting = last !== null && last.kind === "waiting";
@@ -369,7 +370,8 @@ export function ChatPanelView(props: {
           <div
             id="chat-thread"
             ref={threadRef}
-            className="flex max-h-[220px] flex-col gap-2 overflow-y-auto px-4 py-2"
+            className="flex flex-col gap-2 overflow-y-auto px-4 py-2"
+            style={{ maxHeight: listHeight }}
           >
             {state.turns.map((turn, i) => (
               <ChatTurnView
@@ -470,11 +472,18 @@ export async function acceptProposal(opts: {
 // proposal, maps its async calls onto chatEvent, and renders the
 // view. The thread lives here only: no storage, and the model gets
 // only the current request, no history.
-export function AssistantChat({ version, def, onProposal, onAccepted }: {
+export function AssistantChat({
+  version,
+  def,
+  onProposal,
+  onAccepted,
+  listHeight,
+}: {
   version: Version;
   def: ProcessDefinition;
   onProposal: (next: ProcessDefinition | null) => void;
   onAccepted: () => void;
+  listHeight?: number;
 }) {
   const [state, setState] = useState<ChatState>({ turns: [], notice: null });
   const [collapsed, setCollapsed] = useState(false);
@@ -555,6 +564,7 @@ export function AssistantChat({ version, def, onProposal, onAccepted }: {
       state={state}
       version={version}
       collapsed={collapsed}
+      listHeight={listHeight}
       draft={draft}
       onDraftChange={setDraft}
       onSend={send}
