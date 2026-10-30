@@ -24,6 +24,7 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import {
+  Database,
   FileText,
   Info,
   ListChecks,
@@ -42,11 +43,13 @@ import {
   type FlowEdge,
   type FlowNode,
   type LabelPos,
+  SOURCE_SIZE,
+  withSources,
 } from "./layout";
 import { initials, type CaseView } from "./case-view";
 import { EditToolbar, type AddType } from "./edit";
 import type { CoverageReport } from "./case-api";
-import type { NodeType, ProcessDefinition, ProcessNode } from "./types";
+import type { NodeType, ProcessDefinition, ProcessNode, SourceRow } from "./types";
 
 // React Flow renders an edge only when both of its nodes carry
 // handle bounds. ELK gives the exact edge points, so the handles
@@ -514,7 +517,36 @@ export function EdgePill({ text, anchor, dimmed = false }: {
   );
 }
 
-export function ElkEdge({ markerEnd, data }: EdgeProps) {
+// True for the id of an external source card: the cards are not
+// steps, so they take no click, hover or link.
+export function isSourceNode(id: string): boolean {
+  return id.startsWith("source:");
+}
+
+// The card of an external source, above the step that fetches it.
+// Its one handle only gives the dotted link a start: it never
+// connects, also in edit mode.
+export function SourceCard({ source }: { source: SourceRow }) {
+  return (
+    <>
+      <Handle
+        type="source"
+        position={Position.Right}
+        isConnectable={false}
+        style={{ opacity: 0, pointerEvents: "none" }}
+      />
+      <div
+        className="flex items-center gap-1.5 rounded-md border border-dashed bg-card px-2 text-[11.5px] text-zinc-600"
+        style={{ width: SOURCE_SIZE.width, height: SOURCE_SIZE.height, borderColor: "var(--border)" }}
+      >
+        <Database size={14} className="shrink-0 text-zinc-500" />
+        <span className="truncate">{source.name}</span>
+      </div>
+    </>
+  );
+}
+
+export function ElkEdge({ id, markerEnd, data }: EdgeProps) {
   const { points, pill, anchor, ghost, proposed, traversed, coverage, lit, dimmed } = data as DiagramEdgeData & {
     ghost?: boolean;
     proposed?: boolean;
@@ -524,6 +556,11 @@ export function ElkEdge({ markerEnd, data }: EdgeProps) {
     dimmed?: boolean;
   };
   const path = roundedPath(points);
+  if (id?.startsWith("source-link:")) {
+    return (
+      <BaseEdge path={path} style={{ stroke: "#a1a1aa", strokeWidth: 1.5, strokeDasharray: "4 3" }} />
+    );
+  }
   const resolved = edgeAnchor({ anchor }, points);
   return (
     <>
@@ -633,6 +670,7 @@ const nodeTypes: NodeTypes = {
   token: ({ data }: NodeProps) => {
     return <TokenBadge data={data as { label: string; name: string }} />;
   },
+  source: ({ data }: NodeProps) => <SourceCard source={(data as { source: SourceRow }).source} />,
 };
 
 const edgeTypes: EdgeTypes = { elk: ElkEdge };
@@ -817,6 +855,17 @@ export function CoverageLegendRow() {
   );
 }
 
+// The source legend row: a plain child of the Legend panel, as the
+// coverage row.
+export function SourceLegendRow() {
+  return (
+    <div className="flex items-center gap-1.5 text-[11px] text-zinc-600">
+      <Database size={12} />
+      External source
+    </div>
+  );
+}
+
 // The legend stays folded: one small button that opens the list of
 // shapes, so it never covers the diagram. The coverage row sits
 // under the button, always visible while a report is on: the
@@ -873,6 +922,7 @@ function Legend({ coverage }: { coverage: CoverageReport | null }) {
           </svg>
           End: refused
         </div>
+        <SourceLegendRow />
         <div className={rowClass}>The dot on a task is the role color.</div>
       </div>
       )}
@@ -1009,7 +1059,7 @@ export function ProcessDiagram({
     onConnect: (from: string, to: string) => void;
   } | null;
 }) {
-  const [layout, setLayout] = useState<Awaited<ReturnType<typeof layoutProcess>> | null>(null);
+  const [layout, setLayout] = useState<ReturnType<typeof withSources> | null>(null);
   const connectable = edit !== null;
   const wrapRef = useRef<HTMLDivElement | null>(null);
   // The step under the pointer, else the step with keyboard focus:
@@ -1032,7 +1082,7 @@ export function ProcessDiagram({
   }, [active, def, highlightNodeIds]);
   useEffect(() => {
     let ignore = false;
-    layoutProcess(def).then((result) => {
+    layoutProcess(def).then((r) => withSources(def, r)).then((result) => {
       if (!ignore) {
         setLayout(result);
       }
@@ -1046,7 +1096,7 @@ export function ProcessDiagram({
     if (layout === null) {
       return [];
     }
-    const flowNodes: Node[] = layout.nodes.map((n) => ({
+    const stepNodes: Node[] = layout.nodes.map((n) => ({
       ...n,
       style: {
         opacity: lightSet !== null && !lightSet.has(n.id) ? 0.3 : 1,
@@ -1062,6 +1112,8 @@ export function ProcessDiagram({
         ...(caseView ? { nodeState: nodeStateOf(n.id, caseView) } : {}),
       },
     }));
+    // The source cards join unchanged: no dim, ghost or case style.
+    const flowNodes: Node[] = [...stepNodes, ...layout.sources.nodes];
     if (
       caseView === null ||
       caseView.actorName === null ||
@@ -1102,7 +1154,7 @@ export function ProcessDiagram({
     const counts = new Map(
       (coverage?.edges ?? []).map((edge) => [edge.edge_id, edge.count]),
     );
-    return layout.edges.map((e) => {
+    const stepEdges = layout.edges.map((e) => {
       const proposed = ghostIds !== undefined && ghostIds.edges.has(e.id);
       const traversed =
         caseView !== null && caseView.traversedEdgeIds.includes(e.id);
@@ -1137,6 +1189,9 @@ export function ProcessDiagram({
                 : e.markerEnd,
       };
     });
+    // The source links join unchanged: no ghost, coverage, traversed,
+    // lit or dim style.
+    return [...stepEdges, ...layout.sources.edges];
   }, [layout, ghost, ghostIds, caseView, coverage, active, lightSet, selectedNodeId]);
   const focus = useMemo(
     () => (ghostIds === undefined || layout === null ? null : focusBox(layout, ghostIds)),
@@ -1197,8 +1252,8 @@ export function ProcessDiagram({
         elementsSelectable={true}
         minZoom={0.2}
         maxZoom={2}
-        onNodeClick={(_, n) => onNodeSelect(n.id)}
-        onNodeMouseEnter={(_, n) => n.type !== "token" && setHoverId(n.id)}
+        onNodeClick={(_, n) => !isSourceNode(n.id) && onNodeSelect(n.id)}
+        onNodeMouseEnter={(_, n) => n.type !== "token" && !isSourceNode(n.id) && setHoverId(n.id)}
         onNodeMouseLeave={() => setHoverId(null)}
         onPaneClick={() => onNodeSelect(null)}
       >

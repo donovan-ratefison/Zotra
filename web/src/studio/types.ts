@@ -67,6 +67,14 @@ export interface ProcessEdge {
   condition: string | null;
   is_default: boolean;
 }
+// An external source of the process: a task lists its id in
+// source_ids, and the engine fetches its url at that task.
+export interface SourceRow {
+  id: string;
+  name: string;
+  url: string;
+  test_values: Record<string, unknown>;
+}
 export interface ProcessDefinition {
   schema_version: string;
   name: string;
@@ -78,7 +86,7 @@ export interface ProcessDefinition {
   scope: ScopeRow[];
   nodes: ProcessNode[];
   edges: ProcessEdge[];
-  sources: unknown[];
+  sources: SourceRow[];
 }
 
 // Rows of the database tables, as the API serves them.

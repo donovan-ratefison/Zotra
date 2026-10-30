@@ -4,7 +4,7 @@
 import ELK, { type ElkNode } from "elkjs/lib/elk.bundled.js";
 import type { Edge, Node } from "@xyflow/react";
 import { MarkerType, Position } from "@xyflow/react";
-import type { NodeType, ProcessDefinition, ProcessEdge, ProcessNode } from "./types";
+import type { NodeType, ProcessDefinition, ProcessEdge, ProcessNode, SourceRow } from "./types";
 
 export const ROLE_COLORS = [
   "#0891b2",
@@ -1108,4 +1108,101 @@ export async function layoutProcess(def: ProcessDefinition): Promise<{
     };
   });
   return { nodes, edges, width: laidOut.width ?? 0, height: laidOut.height ?? 0 };
+}
+
+// The external source cards of the diagram. They sit outside the
+// layout of the steps: withSources adds them to a finished layout, so
+// layoutProcess keeps its output.
+export const SOURCE_SIZE = { width: 150, height: 36 };
+
+export type SourceFlowNode = Node<{ source: SourceRow }, "source">;
+
+type Layout = Awaited<ReturnType<typeof layoutProcess>>;
+
+// The source cards and their dotted links. Each source that a task
+// lists gets one card, in one row centered above the first task that
+// lists it, and one link to each task that lists it. The input stays
+// unchanged.
+// shortcut: a source that a later task also lists keeps its card
+// above the first task, and its link can cross other shapes; upgrade
+// when a process shares one source between two tasks.
+export function withSources(
+  def: ProcessDefinition,
+  layout: Layout,
+): Layout & { sources: { nodes: SourceFlowNode[]; edges: FlowEdge[] } } {
+  const byId = new Map(def.sources.map((s) => [s.id, s]));
+  const nodeIds = new Set(def.nodes.map((n) => n.id));
+  const placed = new Set<string>();
+  const cards: SourceFlowNode[] = [];
+  const links: FlowEdge[] = [];
+  const { width: W, height: H } = SOURCE_SIZE;
+  for (const node of def.nodes) {
+    if (node.type !== "task") {
+      continue;
+    }
+    const task = layout.nodes.find((n) => n.id === node.id)!;
+    const tx = task.position.x;
+    const ty = task.position.y;
+    const tw = task.width ?? 0;
+    // A missing source, a source id that collides with a node id, and
+    // a repeat in the same list are skipped.
+    const linked = [...new Set(node.source_ids)]
+      .map((id) => byId.get(id))
+      .filter((s): s is SourceRow => s !== undefined && !nodeIds.has(`source:${s.id}`));
+    const row = linked.filter((s) => !placed.has(s.id));
+    const rowW = row.length * W + (row.length - 1) * 12;
+    row.forEach((source, i) => {
+      placed.add(source.id);
+      cards.push({
+        id: `source:${source.id}`,
+        type: "source",
+        position: { x: tx + tw / 2 - rowW / 2 + i * (W + 12), y: ty - 40 - H },
+        width: W,
+        height: H,
+        draggable: false,
+        selectable: false,
+        focusable: false,
+        ariaLabel: `${source.name}, external source`,
+        data: { source },
+      });
+    });
+    linked.forEach((source, k) => {
+      const card = cards.find((c) => c.id === `source:${source.id}`)!;
+      const cx = card.position.x + W / 2;
+      const cy = card.position.y + H;
+      const xk = tx + (tw * (k + 1)) / (linked.length + 1);
+      const points =
+        cx >= tx && cx <= tx + tw
+          ? [{ x: cx, y: cy }, { x: cx, y: ty }]
+          : [{ x: cx, y: cy }, { x: cx, y: ty - 20 }, { x: xk, y: ty - 20 }, { x: xk, y: ty }];
+      links.push({
+        id: `source-link:${node.id}:${source.id}`,
+        source: `source:${source.id}`,
+        target: node.id,
+        type: "elk",
+        data: { points, pill: null, anchor: null },
+      });
+    });
+  }
+  if (cards.length === 0) {
+    return { ...layout, sources: { nodes: [], edges: [] } };
+  }
+  const dy = Math.max(0, 8 - Math.min(...cards.map((c) => c.position.y)));
+  const down = (p: DiagramPoint) => ({ x: p.x, y: p.y + dy });
+  const moveNode = <T extends Node>(n: T): T => ({ ...n, position: down(n.position) });
+  const moveEdge = (e: FlowEdge): FlowEdge => ({
+    ...e,
+    data: {
+      ...e.data!,
+      points: e.data!.points.map(down),
+      anchor: e.data!.anchor ? down(e.data!.anchor) : e.data!.anchor,
+    },
+  });
+  return {
+    nodes: layout.nodes.map(moveNode),
+    edges: layout.edges.map(moveEdge),
+    width: Math.max(layout.width, ...cards.map((c) => c.position.x + W + 8)),
+    height: layout.height + dy,
+    sources: { nodes: cards.map(moveNode), edges: links.map(moveEdge) },
+  };
 }
