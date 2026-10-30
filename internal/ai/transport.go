@@ -83,7 +83,10 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	if t.cfg.Mode == "cache" && resp.StatusCode < 500 {
+	// The cache holds complete answers only: a 2xx status. A refused
+	// answer (400 and the like) reaches the API again on the next
+	// call. The budget cost keeps its own rule below 500.
+	if t.cfg.Mode == "cache" && resp.StatusCode >= 200 && resp.StatusCode <= 299 {
 		if werr := t.writeCache(filepath.Join(t.cfg.CacheDir, key+".json"), resp.StatusCode, resp.Header, bodyOf(resp)); werr != nil {
 			return nil, werr
 		}

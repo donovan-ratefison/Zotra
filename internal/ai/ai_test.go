@@ -513,6 +513,39 @@ func TestServerErrorNotCached(t *testing.T) {
 	}
 }
 
+// TestClientErrorNotCached: in mode cache, a 400 answer reaches the
+// server again on the next call, and no cache file is written.
+func TestClientErrorNotCached(t *testing.T) {
+	var count atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		count.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, "bad schema")
+	}))
+	t.Cleanup(srv.Close)
+	dir := t.TempDir()
+	cfg := newConfig("cache", dir, srv.URL, 2)
+	tr := NewTransport(cfg, nil)
+	key := CacheKey("POST", "/v1/x", []byte(plainBody))
+
+	for i := 0; i < 2; i++ {
+		resp, err := tr.RoundTrip(post(t, srv.URL+"/v1/x", plainBody))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if body := readBody(t, resp); resp.StatusCode != 400 || body != "bad schema" {
+			t.Fatalf("call %d: status=%d, body=%q", i+1, resp.StatusCode, body)
+		}
+	}
+	if n := count.Load(); n != 2 {
+		t.Fatalf("server called %d times, want 2", n)
+	}
+	if _, err := os.Stat(filepath.Join(dir, key+".json")); !os.IsNotExist(err) {
+		t.Fatalf("cache file written for a 400 answer: %v", err)
+	}
+}
+
 func TestUsageNames(t *testing.T) {
 	srv, _ := newAIServer(t, inputNamesBody)
 	dir := t.TempDir()

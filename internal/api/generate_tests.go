@@ -23,9 +23,20 @@ import (
 // generateTestsSchema returns the response schema of the test
 // generator, in strict mode: every model object carries
 // additionalProperties false, and a step always holds its four
-// fields, with null for the unused ones. The data and values objects
-// stay open: they hold free-form field values.
+// fields, with null for the unused ones. Strict mode allows no free
+// object, so each field value travels as one pair: field is the
+// field name, value is the JSON text of the value. The handler
+// decodes the pairs before the engine runs the case.
 func generateTestsSchema() map[string]any {
+	pair := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"field": map[string]any{"type": "string"},
+			"value": map[string]any{"type": "string"},
+		},
+		"required":             []string{"field", "value"},
+		"additionalProperties": false,
+	}
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -35,14 +46,20 @@ func generateTestsSchema() map[string]any {
 					"type": "object",
 					"properties": map[string]any{
 						"target_edge": map[string]any{"type": "string"},
-						"data":        map[string]any{"type": "object"},
+						"data": map[string]any{
+							"type":  "array",
+							"items": pair,
+						},
 						"steps": map[string]any{
 							"type": "array",
 							"items": map[string]any{
 								"type": "object",
 								"properties": map[string]any{
-									"type":          map[string]any{"type": "string"},
-									"values":        map[string]any{"type": "object"},
+									"type": map[string]any{"type": "string"},
+									"values": map[string]any{
+										"type":  "array",
+										"items": pair,
+									},
 									"decision":      map[string]any{"type": "string"},
 									"document_hash": map[string]any{"type": "string"},
 								},
@@ -116,20 +133,44 @@ func processSummary(def process.Definition) []byte {
 	return b
 }
 
+// fieldPair is one field value of a model answer: field is the
+// field name, value is the JSON text of the value (for example
+// "80000", "\"Eric\"", "[\"a\"]", "true").
+type fieldPair struct {
+	Field string `json:"field"`
+	Value string `json:"value"`
+}
+
 // generatedStep is one step of a model answer. The schema requires
 // the four fields; the handler reads null as absent.
 type generatedStep struct {
-	Type         string         `json:"type"`
-	Values       map[string]any `json:"values"`
-	Decision     *string        `json:"decision"`
-	DocumentHash *string        `json:"document_hash"`
+	Type         string      `json:"type"`
+	Values       []fieldPair `json:"values"`
+	Decision     *string     `json:"decision"`
+	DocumentHash *string     `json:"document_hash"`
 }
 
 // generatedCase is one case of a model answer.
 type generatedCase struct {
 	TargetEdge string          `json:"target_edge"`
-	Data       map[string]any  `json:"data"`
+	Data       []fieldPair     `json:"data"`
 	Steps      []generatedStep `json:"steps"`
+}
+
+// pairMap turns one pair array into a field map: json.Unmarshal
+// reads each value string as JSON text. A duplicate field name takes
+// the last entry. An empty array gives an empty map. A value that is
+// not JSON text gives the error of the pair.
+func pairMap(pairs []fieldPair) (map[string]any, error) {
+	m := map[string]any{}
+	for _, p := range pairs {
+		var v any
+		if err := json.Unmarshal([]byte(p.Value), &v); err != nil {
+			return nil, fmt.Errorf("field %s: invalid JSON value", p.Field)
+		}
+		m[p.Field] = v
+	}
+	return m, nil
 }
 
 // createdCaseDTO is one entry of the created list of the answer.
@@ -323,10 +364,16 @@ func simulateGenerated(def process.Definition, c store.Case,
 	drop := func(format string, args ...any) ([]engine.Event, string) {
 		return nil, fmt.Sprintf(format, args...)
 	}
+	// The pairs of the start data become the field map first: a bad
+	// value drops the case.
+	data, err := pairMap(gc.Data)
+	if err != nil {
+		return drop("case %d: %s", i, err)
+	}
 	// The start command, with the real case id.
 	at := t0
 	events, err := engine.Handle(def, engine.State{}, engine.Start{
-		CaseID: c.ID, VersionID: c.VersionID, Actor: "system", Data: gc.Data,
+		CaseID: c.ID, VersionID: c.VersionID, Actor: "system", Data: data,
 	}, at)
 	if err != nil {
 		return drop("case %d: %s", i, err)
@@ -342,7 +389,11 @@ func simulateGenerated(def process.Definition, c store.Case,
 		var cmd engine.Command
 		switch s.Type {
 		case "submit":
-			cmd = engine.Submit{Actor: "system", Values: s.Values}
+			values, err := pairMap(s.Values)
+			if err != nil {
+				return drop("case %d: step %d: %s", i, j+1, err)
+			}
+			cmd = engine.Submit{Actor: "system", Values: values}
 		case "decide":
 			decision := ""
 			if s.Decision != nil {

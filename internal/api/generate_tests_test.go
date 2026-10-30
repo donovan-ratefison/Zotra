@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -170,15 +171,23 @@ var red14 = []string{
 
 // answerRow2 is the primed model answer of the AI rows that need one
 // good case: one submit of 3 documents takes e04, and the complete
-// gateway loops back to entry.
-const answerRow2 = `{"cases":[{"target_edge":"e04",` +
-	`"data":{"client_name":"Ravina Soa","profession":"Engineer",` +
-	`"amount":240000.0,"duration_months":240,"down_payment":40000.0,` +
-	`"annual_rate":0.035,"monthly_income":4500.0,` +
-	`"documents":["ID card","Salary slips","Bank statements"]},` +
-	`"steps":[{"type":"submit",` +
-	`"values":{"documents":["ID card","Salary slips","Bank statements"]},` +
-	`"decision":null,"document_hash":null}]}]}`
+// gateway loops back to entry. The field values travel in pairs: the
+// value of each pair is the JSON text of the value.
+const answerRow2 = `{"cases":[{"target_edge":"e04","data":` + dataPairs +
+	`,"steps":[{"type":"submit","values":[` + docValuesPair +
+	`],"decision":null,"document_hash":null}]}]}`
+
+// dataPairs is the start data of the example process in pair form,
+// with the 3 documents of the e04 path.
+const dataPairs = `[` +
+	`{"field":"client_name","value":"\"Ravina Soa\""},` +
+	`{"field":"profession","value":"\"Engineer\""},` +
+	`{"field":"amount","value":"240000.0"},` +
+	`{"field":"duration_months","value":"240"},` +
+	`{"field":"down_payment","value":"40000.0"},` +
+	`{"field":"annual_rate","value":"0.035"},` +
+	`{"field":"monthly_income","value":"4500.0"},` +
+	`{"field":"documents","value":"[\"ID card\",\"Salary slips\",\"Bank statements\"]"}]`
 
 // entrySubmit returns the entry submit body with one amount and the
 // named documents.
@@ -474,24 +483,37 @@ func TestThreeFailures(t *testing.T) {
 	}
 }
 
+// entryDataPairs is the start data of the example process in pair
+// form, with the four documents of the e06 path. The rows below
+// change one pair with strings.Replace, so the base stays one
+// fixture.
+const entryDataPairs = `[{"field":"client_name","value":"\"Ravina Soa\""},` +
+	`{"field":"profession","value":"\"Engineer\""},` +
+	`{"field":"amount","value":"240000.0"},` +
+	`{"field":"duration_months","value":"240"},` +
+	`{"field":"down_payment","value":"40000.0"},` +
+	`{"field":"annual_rate","value":"0.035"},` +
+	`{"field":"monthly_income","value":"4500.0"},` +
+	`{"field":"documents","value":"[\"ID card\",\"Salary slips\",\"Bank statements\",\"Property title\"]"}]`
+
+// docValuesPair is the values pair of the e04 submit: the JSON text
+// of the 3-document list.
+const docValuesPair = `{"field":"documents",` +
+	`"value":"[\"ID card\",\"Salary slips\",\"Bank statements\"]"}`
+
 // 5.
 func TestDroppedCases(t *testing.T) {
 	dir := aiEnv(t)
 	st := newTestStoreAPI(t)
 	def := defOfExample(t)
-	answer := `{"cases":[` +
-		`{"target_edge":"e04","data":{"client_name":"Ravina Soa",` +
-		`"profession":"Engineer","amount":240000.0,"duration_months":240,` +
-		`"down_payment":40000.0,"annual_rate":0.035,"monthly_income":4500.0,` +
-		`"documents":["ID card","Salary slips","Bank statements",` +
-		`"Property title"]},"steps":[{"type":"decide","decision":"maybe",` +
-		`"values":null,"document_hash":null}]},` +
-		`{"target_edge":"e06","data":{"client_name":"Ravina Soa",` +
-		`"profession":"Engineer","amount":240000.0,"duration_months":240,` +
-		`"down_payment":40000.0,"annual_rate":0.035,"monthly_income":4500.0,` +
-		`"documents":["ID card","Salary slips","Bank statements",` +
-		`"Property title"]},"steps":[{"type":"submit","values":{},` +
-		`"decision":null,"document_hash":null}]}]}`
+	answer := fmt.Sprintf(`{"cases":[`+
+		`{"target_edge":"e04","data":%s,`+
+		`"steps":[{"type":"decide","decision":"maybe",`+
+		`"values":null,"document_hash":null}]},`+
+		`{"target_edge":"e06","data":%s,"steps":[`+
+		`{"type":"submit","values":[],`+
+		`"decision":null,"document_hash":null}]}]}`,
+		entryDataPairs, entryDataPairs)
 	primeAI(t, dir, msgRuns(t, def, red14, 1), answer)
 
 	rec := postGenerate(t, seedVersionID)
@@ -532,12 +554,8 @@ func TestSkippedTarget(t *testing.T) {
 	dir := aiEnv(t)
 	st := newTestStoreAPI(t)
 	def := defOfExample(t)
-	answer := `{"cases":[{"target_edge":"e99","data":` +
-		`{"client_name":"Ravina Soa","profession":"Engineer",` +
-		`"amount":240000.0,"duration_months":240,"down_payment":40000.0,` +
-		`"annual_rate":0.035,"monthly_income":4500.0,` +
-		`"documents":["ID card","Salary slips","Bank statements",` +
-		`"Property title"]},"steps":[]}]}`
+	answer := fmt.Sprintf(`{"cases":[{"target_edge":"e99","data":%s,`+
+		`"steps":[]}]}`, entryDataPairs)
 	primeAI(t, dir, msgRuns(t, def, red14, 1), answer)
 
 	rec := postGenerate(t, seedVersionID)
@@ -602,20 +620,16 @@ func TestStepErrors(t *testing.T) {
 	dir := aiEnv(t)
 	st := newTestStoreAPI(t)
 	def := defOfExample(t)
-	// The inner content of the data object of each case. Case 2 adds
-	// one unknown field.
-	entryData := `"client_name":"Ravina Soa","profession":"Engineer",` +
-		`"amount":240000.0,"duration_months":240,"down_payment":40000.0,` +
-		`"annual_rate":0.035,"monthly_income":4500.0,` +
-		`"documents":["ID card","Salary slips","Bank statements",` +
-		`"Property title"]`
+	// Case 2 adds one unknown field: one more pair in the start data.
+	ghostData := strings.TrimSuffix(entryDataPairs, `]`) +
+		`,{"field":"ghost","value":"\"x\""}]`
 	answer := fmt.Sprintf(`{"cases":[`+
-		`{"target_edge":"e04","data":{%s},"steps":[`+
+		`{"target_edge":"e04","data":%s,"steps":[`+
 		`{"type":"take","values":null,"decision":null,`+
 		`"document_hash":null}]},`+
-		`{"target_edge":"e04","data":{%s,"ghost":"x"},"steps":[`+
-		`{"type":"submit","values":{},"decision":null,`+
-		`"document_hash":null}]}]}`, entryData, entryData)
+		`{"target_edge":"e04","data":%s,"steps":[{"type":"submit",`+
+		`"values":[%s],"decision":null,"document_hash":null}]}]}`,
+		entryDataPairs, ghostData, docValuesPair)
 	primeAI(t, dir, msgRuns(t, def, red14, 1), answer)
 
 	rec := postGenerate(t, seedVersionID)
@@ -678,5 +692,141 @@ func TestEmptyAnswer(t *testing.T) {
 	}
 	if len(cs) != 0 {
 		t.Errorf("ListCases = %d rows, want 0", len(cs))
+	}
+}
+
+// 12.
+func TestPairValues(t *testing.T) {
+	dir := aiEnv(t)
+	st := newTestStoreAPI(t)
+	def := defOfExample(t)
+	// The start data holds a quoted string, an array, and two entries
+	// with the field client_name: the last entry wins.
+	data := strings.Replace(dataPairs,
+		`{"field":"client_name","value":"\"Ravina Soa\""},`,
+		`{"field":"client_name","value":"\"First entry\""},`+
+			`{"field":"client_name","value":"\"Ravina Soa\""},`, 1)
+	answer := fmt.Sprintf(`{"cases":[{"target_edge":"e04","data":%s,`+
+		`"steps":[{"type":"submit","values":[%s],"decision":null,`+
+		`"document_hash":null}]}]}`, data, docValuesPair)
+	primeAI(t, dir, msgRuns(t, def, red14, 1), answer)
+
+	rec := postGenerate(t, seedVersionID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	body := decodeGenerate(t, rec)
+	if len(body.Created) != 1 {
+		t.Fatalf("created = %v, want 1 entry", body.Created)
+	}
+	if len(body.Errors) != 0 {
+		t.Errorf("errors = %v, want empty", body.Errors)
+	}
+	// The start event holds the decoded map: the quoted string decodes
+	// without its quotes, the array decodes as a list, and the last
+	// duplicate entry gives the value.
+	events, err := st.ListEvents(t.Context(), body.Created[0].CaseID)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if len(events) == 0 || events[0].Type != engine.EventCaseCreated {
+		t.Fatalf("first event = %+v, want case_created", events[0])
+	}
+	var p engine.CaseCreatedPayload
+	if err := json.Unmarshal(events[0].Payload, &p); err != nil {
+		t.Fatalf("unmarshal start payload: %v", err)
+	}
+	if p.Data["client_name"] != "Ravina Soa" {
+		t.Errorf("client_name = %v, want the last entry Ravina Soa", p.Data["client_name"])
+	}
+	docs, ok := p.Data["documents"].([]any)
+	if !ok || len(docs) != 3 || docs[0] != "ID card" {
+		t.Errorf("documents = %v, want the decoded list of 3", p.Data["documents"])
+	}
+}
+
+// 13.
+func TestBadPairValue(t *testing.T) {
+	dir := aiEnv(t)
+	st := newTestStoreAPI(t)
+	def := defOfExample(t)
+	// The amount value is not JSON text: the case drops with the
+	// error of the pair.
+	data := strings.Replace(entryDataPairs,
+		`"value":"240000.0"`, `"value":"very much"`, 1)
+	answer := fmt.Sprintf(`{"cases":[{"target_edge":"e04","data":%s,`+
+		`"steps":[]}]}`, data)
+	primeAI(t, dir, msgRuns(t, def, red14, 1), answer)
+
+	rec := postGenerate(t, seedVersionID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	body := decodeGenerate(t, rec)
+	if len(body.Created) != 0 {
+		t.Errorf("created = %v, want empty", body.Created)
+	}
+	want := []string{"case 1: field amount: invalid JSON value"}
+	if !equalStrings(body.Errors, want) {
+		t.Errorf("errors = %v, want %v", body.Errors, want)
+	}
+	cs, err := st.ListCases(t.Context())
+	if err != nil {
+		t.Fatalf("list cases: %v", err)
+	}
+	if len(cs) != 1 {
+		t.Fatalf("ListCases = %d rows, want 1", len(cs))
+	}
+	events, err := st.ListEvents(t.Context(), cs[0].ID)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if len(events) != 0 {
+		t.Errorf("case %s holds %d events, want 0", cs[0].ID, len(events))
+	}
+}
+
+// 14.
+func TestSchemaStrict(t *testing.T) {
+	// Strict mode allows no free object: every object of the schema
+	// carries additionalProperties false. The walk checks the top
+	// object, each properties entry and each items entry.
+	var open []string
+	var walk func(path string, node map[string]any)
+	walk = func(path string, node map[string]any) {
+		if node["type"] == "object" && node["additionalProperties"] != false {
+			open = append(open, path)
+		}
+		if props, ok := node["properties"].(map[string]any); ok {
+			for name, p := range props {
+				if pm, ok := p.(map[string]any); ok {
+					walk(path+"."+name, pm)
+				}
+			}
+		}
+		if items, ok := node["items"].(map[string]any); ok {
+			walk(path+"[i]", items)
+		}
+	}
+	schema := generateTestsSchema()
+	walk("schema", schema)
+	if len(open) != 0 {
+		t.Errorf("objects without additionalProperties false: %v", open)
+	}
+	// Each pair item requires both fields: the data array hangs off
+	// the case object, the values array off the step object.
+	caseProps := schema["properties"].(map[string]any)["cases"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
+	stepProps := caseProps["steps"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
+	pairs := []struct {
+		field string
+		items map[string]any
+	}{
+		{"data", caseProps["data"].(map[string]any)["items"].(map[string]any)},
+		{"values", stepProps["values"].(map[string]any)["items"].(map[string]any)},
+	}
+	for _, p := range pairs {
+		if !reflect.DeepEqual(p.items["required"], []string{"field", "value"}) {
+			t.Errorf("%s items required = %v, want [field value]", p.field, p.items["required"])
+		}
 	}
 }

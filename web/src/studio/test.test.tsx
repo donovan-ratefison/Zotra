@@ -9,15 +9,30 @@ import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactFlowProvider } from "@xyflow/react";
+import { toast } from "sonner";
 import { ApiError } from "./api";
 import { FieldInput, fieldInput, parseFieldValue } from "./field-inputs";
 import { listUsers, runCommand } from "./case-api";
 import { NewCaseDialogBody } from "./NewCaseDialog";
 import { StepScreen } from "./StepScreen";
-import { TestScreen } from "./TestScreen";
+import { runGenerateTests, TestScreen } from "./TestScreen";
 import { useStudioStore, type StudioMode } from "./store";
 import type { CaseState, UserDTO } from "./case-api";
 import type { ProcessDefinition, VersionSummary } from "./types";
+
+// The toast calls of the generate action become vi.fn(): the rows
+// below read the calls (the render of the tests has no window).
+vi.mock("sonner", () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    warning: vi.fn(),
+    loading: vi.fn(),
+    custom: vi.fn(),
+    dismiss: vi.fn(),
+  },
+}));
 
 // The base fixture is the miniDefinition of lot 2.2 (one advisor
 // role, one amount field, one scope row, empty entry checks, the
@@ -281,6 +296,8 @@ function renderTestScreen(): string {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.mocked(toast.success).mockClear();
+  vi.mocked(toast.error).mockClear();
   setStudioStore({
     selectedNodeId: null,
     tab: "general",
@@ -526,5 +543,52 @@ describe("test screen", () => {
     expect(html).toContain(">CASE-2026-0001<");
     expect(html).toContain("New test case");
     expect(html).toContain("Demo Advisor");
+  });
+});
+
+describe("generate tests toast", () => {
+  test("fb-008 row 1: no created case and one error gives the error toast with the first error", async () => {
+    const calls = stubFetch(200, {
+      version_id: "v1",
+      red_edges: ["e04"],
+      created: [],
+      errors: ["case 1: edge e04 not reached"],
+    });
+    await runGenerateTests(new QueryClient(), "v1");
+    expect(toast.error).toHaveBeenCalledWith(
+      "The generation created no case: case 1: edge e04 not reached",
+    );
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.path).toBe("/api/ai/generate-tests");
+    expect(calls[0]!.method).toBe("POST");
+  });
+
+  test("fb-008 row 2: one created case keeps the success toast with the count", async () => {
+    stubFetch(200, {
+      version_id: "v1",
+      red_edges: [],
+      created: [
+        { case_id: "c9", reference: "CASE-2026-0009", target_edge: "e04" },
+      ],
+      errors: [],
+    });
+    await runGenerateTests(new QueryClient(), "v1");
+    expect(toast.success).toHaveBeenCalledWith("1 test cases created.");
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  test("fb-008 row 3: no created case and no error gives the bare error toast", async () => {
+    stubFetch(200, {
+      version_id: "v1",
+      red_edges: [],
+      created: [],
+      errors: [],
+    });
+    await runGenerateTests(new QueryClient(), "v1");
+    expect(toast.error).toHaveBeenCalledWith(
+      "The generation created no case.",
+    );
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });

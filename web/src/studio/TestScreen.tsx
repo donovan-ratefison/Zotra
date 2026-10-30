@@ -4,7 +4,7 @@
 // step of it.
 
 import { useState, type ReactNode } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   BarChart3,
@@ -13,7 +13,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { ApiError, updateDraft } from "./api";
-import { generateTests, type ExplainProposal } from "./ai-api";
+import { generateTests, type ExplainProposal, type GenerateTestsAnswer } from "./ai-api";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Hint } from "@/ui/hint";
@@ -70,6 +70,36 @@ function ErrorScreen({ heading, error }: { heading: string; error: unknown }) {
 // policy drawer to open (the drawer is a design-mode tool), so a
 // citation chip click does nothing here.
 function ignoreCitation() {}
+
+// runGenerateTests is the generate action of the coverage bar. It
+// asks for the test cases and shows the toast of the answer: the
+// success toast with the count for one created case or more, the
+// error toast with the first error of the answer when no case is
+// created, and the bare error text when the answer holds no error
+// either. A refused request gives the error toast of the refusal.
+// Then the coverage query refetches. Exported for the tests.
+export async function runGenerateTests(
+  queryClient: QueryClient,
+  versionId: string,
+): Promise<void> {
+  try {
+    const answer: GenerateTestsAnswer = await generateTests(versionId);
+    if (answer.created.length > 0) {
+      toast.success(`${answer.created.length} test cases created.`);
+    } else if (answer.errors[0] !== undefined) {
+      toast.error(`The generation created no case: ${answer.errors[0]}`);
+    } else {
+      toast.error("The generation created no case.");
+    }
+    void queryClient.invalidateQueries({
+      queryKey: ["coverage", versionId],
+    });
+  } catch (err) {
+    toast.error(
+      err instanceof ApiError ? err.message : "The generation did not run.",
+    );
+  }
+}
 
 // The tabs of the aside, in render order. The tab state is local to
 // the test screen; only the active pane mounts.
@@ -317,22 +347,15 @@ export function TestScreen({ def, version }: {
   }
 
   // onGenerateTests asks the AI for test cases for the red edges of
-  // the version. A created case has no cached query, so only the
-  // coverage invalidation runs; the tester opens the new case by
-  // hand.
+  // onGenerateTests runs the generate action (runGenerateTests)
+  // with the busy flag of the button. A created case has no cached
+  // query, so only the coverage invalidation runs inside the action;
+  // the tester opens the new case by hand.
   const [generating, setGenerating] = useState(false);
   async function onGenerateTests() {
     setGenerating(true);
     try {
-      const answer = await generateTests(version.id);
-      toast.success(`${answer.created.length} test cases created.`);
-      void queryClient.invalidateQueries({
-        queryKey: ["coverage", version.id],
-      });
-    } catch (err) {
-      toast.error(
-        err instanceof ApiError ? err.message : "The generation did not run.",
-      );
+      await runGenerateTests(queryClient, version.id);
     } finally {
       setGenerating(false);
     }
