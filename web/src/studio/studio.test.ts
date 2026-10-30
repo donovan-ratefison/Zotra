@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ReactFlowProvider } from "@xyflow/react";
+import { Position, ReactFlowProvider, type Node } from "@xyflow/react";
 import { getVersion, listProcesses, listVersions, ApiError } from "./api";
 import {
   diagramEdgeText,
@@ -896,6 +896,70 @@ describe("diagram layout guard", () => {
     expect(gridLayout(def)).toBeNull();
     const { nodes } = await layoutProcess(def);
     expect(nodes.map((n) => n.id).sort()).toEqual(def.nodes.map((n) => n.id).sort());
+  });
+
+  // Each node carries its measured size and its two handles, so a new
+  // node object never clears the handle bounds of React Flow and the
+  // links stay on the canvas after a save (feedback item 0006).
+  function expectFrame(nodes: Node[]) {
+    for (const n of nodes) {
+      const { width, height } = n as { width: number; height: number };
+      expect(n.measured).toEqual({ width, height });
+      expect(n.handles).toEqual([
+        { type: "target", position: Position.Left, x: 0, y: height / 2, width: 1, height: 1, id: null },
+        { type: "source", position: Position.Right, x: width, y: height / 2, width: 1, height: 1, id: null },
+      ]);
+    }
+  }
+
+  test("49a: each grid node carries its measured size and two handles", async () => {
+    expect(gridLayout(seedDefinition)).not.toBeNull();
+    const { nodes } = await layoutProcess(seedDefinition);
+    expect(nodes).toHaveLength(seedDefinition.nodes.length);
+    expectFrame(nodes);
+  });
+
+  test("49b: each ELK node carries its measured size and two handles", async () => {
+    const def: ProcessDefinition = {
+      ...miniDefinition,
+      edges: [
+        ...miniDefinition.edges,
+        { id: "self", from: "complete", to: "complete", label: null, decision: null, condition: null, is_default: false },
+      ],
+    };
+    expect(gridLayout(def)).toBeNull();
+    const { nodes } = await layoutProcess(def);
+    expect(nodes).toHaveLength(def.nodes.length);
+    expectFrame(nodes);
+  });
+
+  test("49c: the seed geometry stays identical to the layout before the handles", async () => {
+    const { nodes, edges, width, height } = await layoutProcess(seedDefinition);
+    // The node boxes and the digest of the edges at 1242c8a.
+    expect(nodes.map((n) => [n.id, n.position.x, n.position.y, n.width, n.height])).toEqual([
+      ["start", 48, 70, 40, 40],
+      ["entry", 124, 54, 152, 72],
+      ["complete", 312, 64, 52, 52],
+      ["analysis", 403.2, 54, 152, 72],
+      ["threshold", 632.8, 64, 52, 52],
+      ["offer", 720.8, 54, 152, 72],
+      ["signing", 908.8, 54, 152, 72],
+      ["release", 1096.8, 54, 152, 72],
+      ["released", 1152.8, 210, 40, 40],
+      ["decision", 582.8, 194, 152, 72],
+      ["refused", 638.8, 350, 40, 40],
+    ]);
+    const geom = JSON.stringify({
+      nodes: nodes.map((n) => [n.id, n.position, n.width, n.height]),
+      edges,
+      width,
+      height,
+    });
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(geom));
+    const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+    expect(hex).toBe(
+      "0f4f389fd0ac476d8aef438d6dbe2e339c42ff297a0e7744e35851891de8029b",
+    );
   });
 
   test("48n: a wide ELK fallback wraps under the row budget", async () => {

@@ -3,7 +3,7 @@
 
 import ELK, { type ElkNode } from "elkjs/lib/elk.bundled.js";
 import type { Edge, Node } from "@xyflow/react";
-import { MarkerType } from "@xyflow/react";
+import { MarkerType, Position } from "@xyflow/react";
 import type { NodeType, ProcessDefinition, ProcessEdge, ProcessNode } from "./types";
 
 export const ROLE_COLORS = [
@@ -933,6 +933,19 @@ export function toElkGraph(def: ProcessDefinition): ElkNode {
   };
 }
 
+// The measured size and the two handles of a node. With them, React
+// Flow keeps the handle bounds when a new node object replaces the
+// old one, so the links always render (feedback item 0006).
+function nodeFrame(width: number, height: number) {
+  return {
+    measured: { width, height },
+    handles: [
+      { type: "target" as const, position: Position.Left, x: 0, y: height / 2, width: 1, height: 1, id: null },
+      { type: "source" as const, position: Position.Right, x: width, y: height / 2, width: 1, height: 1, id: null },
+    ],
+  };
+}
+
 // The React Flow nodes and edges of a grid layout, moved so that
 // every shape, link and text has a positive position.
 function fromGrid(def: ProcessDefinition, grid: GridLayout) {
@@ -964,6 +977,7 @@ function fromGrid(def: ProcessDefinition, grid: GridLayout) {
       position: move({ x: c.cx - c.w / 2, y: c.cy - c.h / 2 }),
       width: c.w,
       height: c.h,
+      ...nodeFrame(c.w, c.h),
       draggable: false,
       selectable: true,
       ariaLabel: `${node.name}, ${node.type}`,
@@ -1062,6 +1076,7 @@ export async function layoutProcess(def: ProcessDefinition): Promise<{
       position: { x: child.x ?? 0, y: child.y ?? 0 },
       width: child.width,
       height: child.height,
+      ...nodeFrame(child.width ?? 0, child.height ?? 0),
       draggable: false,
       selectable: true,
       ariaLabel: `${node.name}, ${node.type}`,
