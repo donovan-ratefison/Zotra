@@ -36,6 +36,7 @@ import {
 import { edgePillText, roleColor } from "./layout";
 import {
   addCheck,
+  isDirty,
   removeCheck,
   saveErrorText,
   withCheckExpression,
@@ -115,7 +116,7 @@ export function NodePanel({
 
   const editable = version.status === "draft";
   const structure = editable ? onStructure : undefined;
-  const dirty = working !== def;
+  const dirty = isDirty(working, def);
 
   // The top bar shows the unsaved sign while this panel holds
   // edits. The cleanup hides it when the panel unmounts (a canvas

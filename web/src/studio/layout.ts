@@ -361,7 +361,15 @@ function walk(def: ProcessDefinition, startId: string): { order: string[]; back:
     post.push(id);
   };
   visit(startId);
-  return { order: post.reverse(), back };
+  const order = [...post].reverse();
+  // The nodes that the start does not reach continue the walk, so
+  // their back links follow the same rule.
+  for (const n of def.nodes) {
+    if (!state.has(n.id)) {
+      visit(n.id);
+    }
+  }
+  return { order, back };
 }
 
 function port(c: Cell, side: Side, offset: number): DiagramPoint {
@@ -425,9 +433,6 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
     return null;
   }
   const { order, back } = walk(def, spine[0]!);
-  if (order.length !== def.nodes.length) {
-    return null;
-  }
   const sizeOf = (id: string) => NODE_SIZE[byId.get(id)!.type];
   const cells = new Map<string, Cell>();
   const labelOf = (from: string, to: string) => {
@@ -494,6 +499,25 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
       cell = { ...cell, cy: row * ROW_PITCH, row };
     }
     cells.set(id, cell);
+  }
+
+  // 2b. Each node that the start does not reach (a new step with no
+  // link yet) goes on a parking row under the diagram, left to right,
+  // so the reached nodes keep their place.
+  let parkRow = Math.max(...[...cells.values()].map((c) => c.row)) + 1;
+  let parkRight = 0;
+  for (const n of def.nodes) {
+    if (cells.has(n.id)) {
+      continue;
+    }
+    const s = NODE_SIZE[n.type];
+    let cx = parkRight === 0 ? s.width / 2 : parkRight + GRID_GAP + s.width / 2;
+    if (parkRight !== 0 && cx + s.width / 2 > ROW_BUDGET) {
+      parkRow++;
+      cx = s.width / 2;
+    }
+    cells.set(n.id, { cx, cy: parkRow * ROW_PITCH, w: s.width, h: s.height, row: parkRow });
+    parkRight = cx + s.width / 2;
   }
 
   // 3. The route kind of every link. Spine steps on their row run

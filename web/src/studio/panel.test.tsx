@@ -10,6 +10,7 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { updateDraft, ApiError } from "./api";
 import {
   addCheck,
+  isDirty,
   newCheckId,
   removeCheck,
   saveErrorText,
@@ -27,6 +28,7 @@ import { ScopeMatrix } from "./ScopeMatrix";
 import { StudioShell } from "./StudioShell";
 import { useStudioStore, type PanelTab } from "./store";
 import type { ProcessDefinition, VersionSummary } from "./types";
+import seedJson from "../../../internal/store/seed/example-process.json";
 
 const panelDefinition: ProcessDefinition = {
   schema_version: "1",
@@ -551,5 +553,34 @@ describe("link and end details", () => {
       () => {},
     );
     expect(end.match(/<button[^>]*aria-label="End result"[^>]*>/)![0]).toContain('disabled=""');
+  });
+});
+
+// Rows D1 to D5 (feedback item 0023): the panel compares the values,
+// not the objects.
+describe("unsaved sign by value", () => {
+  const seed = seedJson as ProcessDefinition;
+
+  test("D1: the same object is not dirty", () => {
+    expect(isDirty(seed, seed)).toBe(false);
+  });
+
+  test("D2: an equal copy is not dirty", () => {
+    expect(isDirty(JSON.parse(JSON.stringify(seed)) as ProcessDefinition, seed)).toBe(false);
+  });
+
+  test("D3: a changed deadline is dirty", () => {
+    expect(isDirty(withNodeDeadline(seed, "analysis", 50), seed)).toBe(true);
+  });
+
+  test("D4: a reverted deadline is not dirty", () => {
+    const reverted = withNodeDeadline(withNodeDeadline(seed, "analysis", 50), "analysis", 48);
+    expect(isDirty(reverted, seed)).toBe(false);
+  });
+
+  test("D5: the panel of an unchanged draft shows no unsaved sign", () => {
+    const html = renderNodePanel(draftVersion, { selectedNodeId: "analysis", tab: "general" }, seed);
+    expect(html).not.toContain("Unsaved changes");
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>[^<]*Save draft/);
   });
 });

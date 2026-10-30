@@ -20,6 +20,7 @@ import {
   toElkGraph,
 } from "./layout";
 import { EdgePill, edgeAnchor, EventShape, fitViewport, focusBox, focusViewport, neighborIn, TaskCard } from "./diagram";
+import { addNode, connect } from "./edit";
 import { structureProblems } from "./ProcessPanel";
 import { StudioShell, TopBar, pushUndo } from "./StudioShell";
 import ELK from "elkjs/lib/elk.bundled.js";
@@ -444,11 +445,15 @@ function widestRow(grid: NonNullable<ReturnType<typeof gridLayout>>): number {
   return Math.max(...[...grid.cells.values()].map((c) => c.cx + c.w / 2));
 }
 
-// A chain with one more task that the start never reaches: the grid
-// refuses it, so the ELK fallback draws it.
-function unreachedChain(steps: number): ProcessDefinition {
+// A chain with no end: mainPath gives null, so the ELK fallback
+// draws it.
+function endlessChain(steps: number): ProcessDefinition {
   const def = chainDefinition(steps);
-  return { ...def, nodes: [...def.nodes, nodeCopy("entry", "lonely")] };
+  return {
+    ...def,
+    nodes: def.nodes.filter((n) => n.id !== "released"),
+    edges: def.edges.filter((e) => e.to !== "released"),
+  };
 }
 
 // A chain of one start, the given number of plain steps and one
@@ -963,25 +968,31 @@ describe("diagram layout guard", () => {
   });
 
   test("48n: a wide ELK fallback wraps under the row budget", async () => {
-    const def = unreachedChain(12);
+    const def = endlessChain(12);
     expect(gridLayout(def)).toBeNull();
     const { width } = await layoutProcess(def);
     expect(width).toBeLessThanOrEqual(1360);
-    expect(width).toBeLessThan(2708);
+    // 2608: the single band width of ELK without wrapping (scratch run).
+    expect(width).toBeLessThan(2608);
   });
 
   test("48o: a 20-step ELK fallback wraps under the row budget", async () => {
-    const { width } = await layoutProcess(unreachedChain(20));
+    const { width } = await layoutProcess(endlessChain(20));
     expect(width).toBeLessThanOrEqual(1360);
   });
 
   test("48p: a narrow ELK fallback keeps the first pass", async () => {
-    const lonely: ProcessDefinition = {
+    // A link to itself on a gateway: the grid refuses it.
+    const looped: ProcessDefinition = {
       ...miniDefinition,
-      nodes: [...miniDefinition.nodes, nodeCopy("entry", "lonely")],
+      edges: [
+        ...miniDefinition.edges,
+        { id: "self", from: "complete", to: "complete", label: null, decision: null, condition: null, is_default: false },
+      ],
     };
-    const first = await new ELK().layout(toElkGraph(lonely));
-    const { width } = await layoutProcess(lonely);
+    expect(gridLayout(looped)).toBeNull();
+    const first = await new ELK().layout(toElkGraph(looped));
+    const { width } = await layoutProcess(looped);
     expect(width).toBe(first.width);
   });
 
@@ -999,14 +1010,122 @@ describe("diagram layout guard", () => {
     expect(v.y).toBe(235.5);
   });
 
-  test("51: a definition with a node the start never reaches falls back on ELK", async () => {
+  test("51: a node the start never reaches goes on the parking row", async () => {
     const lonely: ProcessDefinition = {
       ...miniDefinition,
       nodes: [...miniDefinition.nodes, nodeCopy("entry", "lonely")],
     };
-    expect(gridLayout(lonely)).toBeNull();
+    const grid = gridLayout(lonely);
+    expect(grid).not.toBeNull();
+    const rows = [...grid!.cells].filter(([id]) => id !== "lonely").map(([, c]) => c.row);
+    expect(grid!.cells.get("lonely")!.row).toBe(Math.max(...rows) + 1);
     const { nodes } = await layoutProcess(lonely);
     expect(nodes).toHaveLength(7);
+  });
+
+  // Rows G1 to G7 (feedback item 0024): a step that the start does not
+  // reach goes on a parking row, and the seed cells do not move.
+  const seedGrid = () => gridLayout(seedDefinition)!;
+  const seedRow = () => Math.max(...[...seedGrid().cells.values()].map((c) => c.row));
+  function expectSeedCells(grid: NonNullable<ReturnType<typeof gridLayout>>, skip = "") {
+    for (const [id, c] of seedGrid().cells) {
+      if (id === skip) {
+        continue;
+      }
+      const g = grid.cells.get(id)!;
+      expect([id, g.cx, g.cy, g.row]).toEqual([id, c.cx, c.cy, c.row]);
+    }
+  }
+
+  test("G1: an added task keeps every seed cell", () => {
+    const grid = gridLayout(addNode(seedDefinition, "task").def);
+    expect(grid).not.toBeNull();
+    expectSeedCells(grid!);
+  });
+
+  test("G2: the added task sits at the left of the first parking row", () => {
+    const { def, id } = addNode(seedDefinition, "task");
+    const c = gridLayout(def)!.cells.get(id)!;
+    expect(c.row).toBe(seedRow() + 1);
+    expect(c.cx).toBe(76);
+    expect(c.cy).toBe((seedRow() + 1) * 140);
+  });
+
+  test("G3: three added steps sit left to right on one parking row", () => {
+    const a = addNode(seedDefinition, "task");
+    const b = addNode(a.def, "gateway");
+    const e = addNode(b.def, "end");
+    const grid = gridLayout(e.def);
+    expect(grid).not.toBeNull();
+    const cells = [a.id, b.id, e.id].map((id) => grid!.cells.get(id)!);
+    expect(cells.map((c) => c.row)).toEqual(Array(3).fill(seedRow() + 1));
+    for (let i = 1; i < 3; i++) {
+      const gap = cells[i]!.cx - cells[i]!.w / 2 - (cells[i - 1]!.cx + cells[i - 1]!.w / 2);
+      expect(gap).toBe(36);
+    }
+  });
+
+  test("G4: a link from a parked task gets a route", () => {
+    const { def, id } = addNode(seedDefinition, "task");
+    const linked = connect(def, id, "analysis")!;
+    const grid = gridLayout(linked);
+    expect(grid).not.toBeNull();
+    expectSeedCells(grid!);
+    const edge = linked.edges.find((e) => e.from === id)!;
+    expect(grid!.points.get(edge.id)!.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test("G5: a link into the new task makes it a reached node", () => {
+    const { def, id } = addNode(seedDefinition, "task");
+    const grid = gridLayout(connect(def, "decision", id)!);
+    expect(grid).not.toBeNull();
+    // Step 2 places the new task first in the topological order, so
+    // "refused" takes the next free row under it.
+    expectSeedCells(grid!, "refused");
+    const decision = grid!.cells.get("decision")!;
+    const c = grid!.cells.get(id)!;
+    // The anchor rule of step 2: under the node that leads to it.
+    expect([c.cx, c.row]).toEqual([decision.cx, decision.row + 1]);
+    expect(grid!.cells.get("refused")!.row).toBe(decision.row + 2);
+  });
+
+  test("G6: parked rows wrap under the row budget", () => {
+    let def = chainDefinition(12);
+    const ids: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      const added = addNode(def, "task");
+      def = added.def;
+      ids.push(added.id);
+    }
+    const grid = gridLayout(def);
+    expect(grid).not.toBeNull();
+    const cells = ids.map((id) => grid!.cells.get(id)!);
+    expect(new Set(cells.map((c) => c.row)).size).toBeGreaterThan(1);
+    for (const c of cells) {
+      expect(c.cx + c.w / 2).toBeLessThanOrEqual(1360);
+    }
+  });
+
+  test("G7: the layout of an added task keeps the seed positions", async () => {
+    const def = addNode(seedDefinition, "task").def;
+    const { nodes } = await layoutProcess(def);
+    expect(nodes).toHaveLength(seedDefinition.nodes.length + 1);
+    const seedIds = new Set(seedDefinition.nodes.map((n) => n.id));
+    expect(nodes.filter((n) => seedIds.has(n.id)).map((n) => [n.id, n.position.x, n.position.y]))
+      .toEqual([
+        ["start", 48, 70],
+        ["entry", 124, 54],
+        ["complete", 312, 64],
+        ["analysis", 403.2, 54],
+        ["threshold", 632.8, 64],
+        ["offer", 720.8, 54],
+        ["signing", 908.8, 54],
+        ["release", 1096.8, 54],
+        ["released", 1152.8, 210],
+        ["decision", 582.8, 194],
+        ["refused", 638.8, 350],
+      ]);
+    expectFrame(nodes);
   });
 });
 

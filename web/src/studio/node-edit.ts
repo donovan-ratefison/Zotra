@@ -233,3 +233,11 @@ export function saveErrorText(err: unknown): string {
   }
   return "The draft did not save.";
 }
+
+// True when the working copy differs from the saved copy by value. A
+// revert or a save gives a new object with the same values, so the
+// object compare alone is not enough. The edit helpers keep the key
+// order, so the JSON text is a value compare.
+export function isDirty(working: ProcessDefinition, saved: ProcessDefinition): boolean {
+  return working !== saved && JSON.stringify(working) !== JSON.stringify(saved);
+}
