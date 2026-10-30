@@ -20,6 +20,13 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# After a reboot, Postgres can still start: wait for it, else the
+# list below is empty and createdb fails on an existing database.
+for _ in $(seq 1 30); do
+  docker exec zotra-db pg_isready -U zotra -q && break
+  sleep 2
+done
+
 # The database zotra_review, once.
 if ! docker exec zotra-db psql -U zotra -lqt | cut -d '|' -f 1 | grep -qw zotra_review; then
   docker exec zotra-db createdb -U zotra zotra_review
