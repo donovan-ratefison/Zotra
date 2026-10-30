@@ -1,0 +1,789 @@
+{
+  "name": "Construction loan",
+  "edges": [
+    {
+      "id": "e_start",
+      "to": "assemble_file",
+      "from": "start",
+      "label": "Start",
+      "decision": null,
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_file_complete",
+      "to": "financial_control",
+      "from": "assemble_file",
+      "label": "File complete",
+      "decision": "complete",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_file_incomplete",
+      "to": "end_refused",
+      "from": "assemble_file",
+      "label": "Request documents",
+      "decision": "request_documents",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_fin_compliant",
+      "to": "legal_control",
+      "from": "financial_control",
+      "label": "Compliant",
+      "decision": "compliant",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_fin_returned",
+      "to": "end_refused",
+      "from": "financial_control",
+      "label": "Return file",
+      "decision": "returned",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_leg_regular",
+      "to": "transmit_request",
+      "from": "legal_control",
+      "label": "Regular",
+      "decision": "regular",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_leg_rejected",
+      "to": "end_refused",
+      "from": "legal_control",
+      "label": "Reject",
+      "decision": "rejected",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_transmit",
+      "to": "check_preconditions",
+      "from": "transmit_request",
+      "label": "Request transmitted",
+      "decision": null,
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_pre_approved",
+      "to": "approval_gateway",
+      "from": "check_preconditions",
+      "label": "Preconditions approved",
+      "decision": "approved",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_pre_returned",
+      "to": "end_refused",
+      "from": "check_preconditions",
+      "label": "Return",
+      "decision": "returned",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_gate_big",
+      "to": "approve_draw",
+      "from": "approval_gateway",
+      "label": "Over 80000 EUR",
+      "decision": null,
+      "condition": "draw_amount > 80000.0",
+      "is_default": false
+    },
+    {
+      "id": "e_gate_small",
+      "to": "disburse_funds",
+      "from": "approval_gateway",
+      "label": "Up to 80000 EUR",
+      "decision": null,
+      "condition": null,
+      "is_default": true
+    },
+    {
+      "id": "e_dir_approved",
+      "to": "disburse_funds",
+      "from": "approve_draw",
+      "label": "Approved",
+      "decision": "approved",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_dir_refused",
+      "to": "end_refused",
+      "from": "approve_draw",
+      "label": "Refused",
+      "decision": "refused",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_disburse",
+      "to": "end_approved",
+      "from": "disburse_funds",
+      "label": "Disbursed",
+      "decision": null,
+      "condition": null,
+      "is_default": false
+    }
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "name": "Start",
+      "role": null,
+      "type": "start",
+      "checks": [],
+      "citations": [
+        "p1-3"
+      ],
+      "decisions": [],
+      "documents": [],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": null,
+      "scope_overrides": []
+    },
+    {
+      "id": "assemble_file",
+      "name": "Assemble application file",
+      "role": "client_advisor",
+      "type": "task",
+      "checks": [
+        {
+          "id": "chk_loan_threshold",
+          "message": "Loan must be 20000 EUR or more to apply this policy",
+          "citations": [
+            "p1-3"
+          ],
+          "expression": "loan_amount >= 20000.0",
+          "plain_text": "Policy applies to construction loans of 20000 EUR or more"
+        },
+        {
+          "id": "chk_offer_docs",
+          "message": "Accepted loan offer must be in the file",
+          "citations": [
+            "p1-5"
+          ],
+          "expression": "size(accepted_offer_docs) >= 1",
+          "plain_text": "File contains the accepted offer"
+        },
+        {
+          "id": "chk_permit_docs",
+          "message": "Building permit certificate must be in the file",
+          "citations": [
+            "p1-5"
+          ],
+          "expression": "size(building_permit_docs) >= 1",
+          "plain_text": "File contains the building permit certificate"
+        },
+        {
+          "id": "chk_contract_docs",
+          "message": "Signed construction contract must be in the file",
+          "citations": [
+            "p1-5"
+          ],
+          "expression": "size(construction_contract_docs) >= 1",
+          "plain_text": "File contains the signed construction contract"
+        },
+        {
+          "id": "chk_insurance_docs",
+          "message": "Damage-works insurance certificate must be in the file",
+          "citations": [
+            "p1-5"
+          ],
+          "expression": "size(damage_insurance_docs) >= 1",
+          "plain_text": "File contains the damage-works insurance certificate"
+        }
+      ],
+      "citations": [
+        "p1-5",
+        "p1-3"
+      ],
+      "decisions": [
+        "complete",
+        "request_documents"
+      ],
+      "documents": [],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 72,
+      "scope_overrides": []
+    },
+    {
+      "id": "financial_control",
+      "name": "Financial control",
+      "role": "credit_analyst",
+      "type": "task",
+      "checks": [
+        {
+          "id": "chk_debt_ratio",
+          "message": "Household debt ratio must be 33 percent or less",
+          "citations": [
+            "p2-4"
+          ],
+          "expression": "debt_ratio <= 0.33",
+          "plain_text": "Debt ratio is 33 percent or less"
+        },
+        {
+          "id": "chk_contribution",
+          "message": "Personal contribution must be 15 percent or more of total cost",
+          "citations": [
+            "p2-4"
+          ],
+          "expression": "personal_contribution >= total_project_cost * 0.15",
+          "plain_text": "Contribution is 15 percent or more of total cost"
+        }
+      ],
+      "citations": [
+        "p1-5",
+        "p2-4"
+      ],
+      "decisions": [
+        "compliant",
+        "returned"
+      ],
+      "documents": [],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 24,
+      "scope_overrides": []
+    },
+    {
+      "id": "legal_control",
+      "name": "Legal control",
+      "role": "legal_officer",
+      "type": "task",
+      "checks": [
+        {
+          "id": "chk_legal_permit",
+          "message": "Building permit certificate must be in the file",
+          "citations": [
+            "p2-4"
+          ],
+          "expression": "size(building_permit_docs) >= 1",
+          "plain_text": "Building permit is in the file"
+        },
+        {
+          "id": "chk_legal_contract",
+          "message": "Signed construction contract must be in the file",
+          "citations": [
+            "p2-4"
+          ],
+          "expression": "size(construction_contract_docs) >= 1",
+          "plain_text": "Construction contract is signed and in the file"
+        },
+        {
+          "id": "chk_builder_insured",
+          "message": "Builder must be insured",
+          "citations": [
+            "p2-4"
+          ],
+          "expression": "builder_insured == true",
+          "plain_text": "Builder is insured"
+        },
+        {
+          "id": "chk_damage_active",
+          "message": "Damage-works insurance must cover the site",
+          "citations": [
+            "p2-4"
+          ],
+          "expression": "damage_insurance_active == true",
+          "plain_text": "Damage-works insurance covers the site"
+        }
+      ],
+      "citations": [
+        "p1-5",
+        "p2-4"
+      ],
+      "decisions": [
+        "regular",
+        "rejected"
+      ],
+      "documents": [],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 48,
+      "scope_overrides": []
+    },
+    {
+      "id": "transmit_request",
+      "name": "Transmit draw request",
+      "role": "client_advisor",
+      "type": "task",
+      "checks": [
+        {
+          "id": "chk_invoice",
+          "message": "Stage invoice from the builder must be provided",
+          "citations": [
+            "p1-5"
+          ],
+          "expression": "size(stage_invoice_docs) >= 1",
+          "plain_text": "Stage invoice is provided"
+        },
+        {
+          "id": "chk_progress",
+          "message": "Work progress certificate must be provided",
+          "citations": [
+            "p1-5"
+          ],
+          "expression": "size(progress_certificate_docs) >= 1",
+          "plain_text": "Progress certificate is provided"
+        }
+      ],
+      "citations": [
+        "p1-5"
+      ],
+      "decisions": [],
+      "documents": [],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 48,
+      "scope_overrides": []
+    },
+    {
+      "id": "check_preconditions",
+      "name": "Check preconditions",
+      "role": "risk_manager",
+      "type": "task",
+      "checks": [
+        {
+          "id": "pc_debt",
+          "message": "Household debt ratio must be 33 percent or less",
+          "citations": [
+            "p2-4"
+          ],
+          "expression": "debt_ratio <= 0.33",
+          "plain_text": "Debt ratio 33 percent or less"
+        },
+        {
+          "id": "pc_contrib",
+          "message": "Personal contribution must be 15 percent or more of total cost",
+          "citations": [
+            "p2-4"
+          ],
+          "expression": "personal_contribution >= total_project_cost * 0.15",
+          "plain_text": "Contribution 15 percent or more"
+        },
+        {
+          "id": "pc_offer_signed",
+          "message": "Offer must be signed by both parties and 10 day reflection period elapsed",
+          "citations": [
+            "p2-4"
+          ],
+          "expression": "offer_signed == true && reflection_days >= 10",
+          "plain_text": "Offer signed and reflection period elapsed"
+        },
+        {
+          "id": "pc_permit",
+          "message": "Building permit certificate must be in the file",
+          "citations": [
+            "p2-4"
+          ],
+          "expression": "size(building_permit_docs) >= 1",
+          "plain_text": "Permit in file"
+        },
+        {
+          "id": "pc_contract",
+          "message": "Construction contract must be signed with an insured builder",
+          "citations": [
+            "p2-4"
+          ],
+          "expression": "size(construction_contract_docs) >= 1 && builder_insured == true",
+          "plain_text": "Contract signed with insured builder"
+        },
+        {
+          "id": "pc_insurance",
+          "message": "Damage-works insurance must cover the site before first draw",
+          "citations": [
+            "p2-4"
+          ],
+          "expression": "damage_insurance_active == true",
+          "plain_text": "Damage insurance covers site"
+        },
+        {
+          "id": "pc_draw_invoices",
+          "message": "Draw amount must be equal to or less than total stage invoices",
+          "citations": [
+            "p2-4"
+          ],
+          "expression": "draw_amount <= stage_invoices_total",
+          "plain_text": "Draw does not exceed stage invoices"
+        },
+        {
+          "id": "pc_total_loan",
+          "message": "Total disbursed including this draw must not exceed loan amount",
+          "citations": [
+            "p2-4"
+          ],
+          "expression": "total_disbursed + draw_amount <= loan_amount",
+          "plain_text": "Total disbursed within loan amount"
+        },
+        {
+          "id": "pc_retention",
+          "message": "5 percent retention may be released only after delivery and lifting of reservations",
+          "citations": [
+            "p2-4"
+          ],
+          "expression": "!is_retention_release || (delivery_completed && reservations_lifted)",
+          "plain_text": "Retention released only after delivery and lifted reservations"
+        },
+        {
+          "id": "pc_offer_age",
+          "message": "Loan offer must be less than 3 months old at first draw",
+          "citations": [
+            "p2-4"
+          ],
+          "expression": "offer_age_days < 90",
+          "plain_text": "Offer less than 3 months old"
+        },
+        {
+          "id": "pc_committee",
+          "message": "Draw over 200000 EUR requires credit committee approval",
+          "citations": [
+            "p2-5"
+          ],
+          "expression": "draw_amount <= 200000.0 || credit_committee_approval == true",
+          "plain_text": "Large draw needs committee approval"
+        }
+      ],
+      "citations": [
+        "p1-5",
+        "p2-4"
+      ],
+      "decisions": [
+        "approved",
+        "returned"
+      ],
+      "documents": [],
+      "signature": true,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 24,
+      "scope_overrides": []
+    },
+    {
+      "id": "approval_gateway",
+      "name": "Director approval required",
+      "role": null,
+      "type": "gateway",
+      "checks": [],
+      "citations": [
+        "p2-2",
+        "p2-5"
+      ],
+      "decisions": [],
+      "documents": [],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": null,
+      "scope_overrides": []
+    },
+    {
+      "id": "approve_draw",
+      "name": "Approve draw",
+      "role": "branch_director",
+      "type": "task",
+      "checks": [],
+      "citations": [
+        "p2-2",
+        "p2-5"
+      ],
+      "decisions": [
+        "approved",
+        "refused"
+      ],
+      "documents": [],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 24,
+      "scope_overrides": []
+    },
+    {
+      "id": "disburse_funds",
+      "name": "Disburse funds",
+      "role": "disbursement_officer",
+      "type": "task",
+      "checks": [
+        {
+          "id": "chk_checklist_signed",
+          "message": "Signed preconditions checklist must be kept with the transfer",
+          "citations": [
+            "p3-3",
+            "p2-4"
+          ],
+          "expression": "size(signed_checklist_docs) >= 1",
+          "plain_text": "Signed checklist is kept"
+        }
+      ],
+      "citations": [
+        "p2-2",
+        "p3-3"
+      ],
+      "decisions": [],
+      "documents": [],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 24,
+      "scope_overrides": []
+    },
+    {
+      "id": "end_approved",
+      "name": "Funds disbursed",
+      "role": null,
+      "type": "end",
+      "checks": [],
+      "citations": [
+        "p2-2"
+      ],
+      "decisions": [],
+      "documents": [],
+      "signature": false,
+      "end_result": "approved",
+      "source_ids": [],
+      "deadline_hours": null,
+      "scope_overrides": []
+    },
+    {
+      "id": "end_refused",
+      "name": "Request refused",
+      "role": null,
+      "type": "end",
+      "checks": [],
+      "citations": [
+        "p1-5",
+        "p2-2"
+      ],
+      "decisions": [],
+      "documents": [],
+      "signature": false,
+      "end_result": "refused",
+      "source_ids": [],
+      "deadline_hours": null,
+      "scope_overrides": []
+    }
+  ],
+  "roles": [
+    {
+      "id": "client_advisor",
+      "name": "Client Advisor",
+      "department": "Retail"
+    },
+    {
+      "id": "credit_analyst",
+      "name": "Credit Analyst",
+      "department": "Credit"
+    },
+    {
+      "id": "legal_officer",
+      "name": "Legal Officer",
+      "department": "Legal"
+    },
+    {
+      "id": "risk_manager",
+      "name": "Risk Manager",
+      "department": "Risk"
+    },
+    {
+      "id": "branch_director",
+      "name": "Branch Director",
+      "department": "Branch"
+    },
+    {
+      "id": "disbursement_officer",
+      "name": "Disbursement Officer",
+      "department": "Operations"
+    }
+  ],
+  "scope": [],
+  "theme": {
+    "logo_url": null,
+    "brand_name": "Banque Ravina",
+    "primary_color": "#0f4c45"
+  },
+  "fields": [
+    {
+      "name": "loan_amount",
+      "type": "money",
+      "label": "Loan amount",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "draw_amount",
+      "type": "money",
+      "label": "Draw amount",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "total_project_cost",
+      "type": "money",
+      "label": "Total project cost",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "personal_contribution",
+      "type": "money",
+      "label": "Personal contribution",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "debt_ratio",
+      "type": "number",
+      "label": "Debt ratio",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "offer_signed",
+      "type": "boolean",
+      "label": "Loan offer signed by both parties",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "reflection_days",
+      "type": "integer",
+      "label": "Reflection period elapsed in days",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "accepted_offer_docs",
+      "type": "document",
+      "label": "Accepted loan offer",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "building_permit_docs",
+      "type": "document",
+      "label": "Building permit certificate",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "construction_contract_docs",
+      "type": "document",
+      "label": "Signed construction contract",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "builder_insured",
+      "type": "boolean",
+      "label": "Builder insured",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "damage_insurance_docs",
+      "type": "document",
+      "label": "Damage works insurance certificate",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "damage_insurance_active",
+      "type": "boolean",
+      "label": "Damage works insurance active",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "stage_invoices_total",
+      "type": "money",
+      "label": "Total stage invoices",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "stage_invoice_docs",
+      "type": "document",
+      "label": "Stage invoice",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "progress_certificate_docs",
+      "type": "document",
+      "label": "Work progress certificate",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "total_disbursed",
+      "type": "money",
+      "label": "Total already disbursed",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "is_retention_release",
+      "type": "boolean",
+      "label": "Is retention release",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "delivery_completed",
+      "type": "boolean",
+      "label": "Delivery completed",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "reservations_lifted",
+      "type": "boolean",
+      "label": "Reservations lifted",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "offer_age_days",
+      "type": "integer",
+      "label": "Offer age at first draw in days",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "signed_checklist_docs",
+      "type": "document",
+      "label": "Signed preconditions checklist",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "credit_committee_approval",
+      "type": "boolean",
+      "label": "Credit committee approval",
+      "options": [],
+      "computed": null
+    }
+  ],
+  "sources": [],
+  "currency": "EUR",
+  "schema_version": "1",
+  "policy_document_id": null
+}

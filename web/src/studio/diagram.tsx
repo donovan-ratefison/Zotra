@@ -12,6 +12,7 @@ import {
   MiniMap,
   Panel,
   ReactFlow,
+  getViewportForBounds,
   useReactFlow,
   useStore,
   Position,
@@ -20,6 +21,7 @@ import {
   type Node,
   type NodeProps,
   type NodeTypes,
+  type Viewport,
 } from "@xyflow/react";
 import {
   FileText,
@@ -640,8 +642,22 @@ export function TokenBadge({ data }: {
   );
 }
 
-function ZoomControls() {
-  const { zoomIn, zoomOut, fitView } = useReactFlow();
+// The viewport that shows the full layout box (nodes, links, link
+// texts and node labels) in the canvas box, at 100 % or less.
+export function fitViewport(
+  layout: { width: number; height: number },
+  box: { width: number; height: number },
+): Viewport {
+  return getViewportForBounds(
+    { x: 0, y: 0, width: layout.width, height: layout.height },
+    box.width, box.height, 0.2, 1, 0.1,
+  );
+}
+
+type LayoutSize = { width: number; height: number };
+
+function ZoomControls({ box, layout }: { box: RefObject<HTMLDivElement | null>; layout: LayoutSize }) {
+  const { zoomIn, zoomOut, setViewport } = useReactFlow();
   const percent = useStore((s) => Math.round(s.transform[2] * 100));
   return (
     <Panel position="bottom-left">
@@ -673,7 +689,12 @@ function ZoomControls() {
           aria-label="Fit to view"
           title="Fit to view"
           className="rounded p-1 text-zinc-600 hover:bg-zinc-100"
-          onClick={() => fitView()}
+          onClick={() => {
+            const el = box.current;
+            if (el !== null) {
+              void setViewport(fitViewport(layout, { width: el.clientWidth, height: el.clientHeight }));
+            }
+          }}
         >
           <Maximize size={14} />
         </button>
@@ -683,13 +704,14 @@ function ZoomControls() {
 }
 
 // The canvas holds the whole diagram: a fresh fit when the layout has
-// landed (React Flow mounts with the nodes and the observer reports
-// its box) and each time the canvas box changes after that (the policy
-// drawer takes a band of the column when it opens). The fitView prop
-// covers the mount itself; the frame delay lets React Flow paint the
-// new box before the fit reads it.
-function AutoFit({ box }: { box: RefObject<HTMLDivElement | null> }) {
-  const { fitView } = useReactFlow();
+// landed (the observer reports the box on mount), when the layout size
+// changes, and each time the canvas box changes after that (the policy
+// drawer takes a band of the column when it opens). The fit covers the
+// full layout box, not only the nodes, so no link text leaves the
+// canvas. The frame delay lets React Flow paint the new box first.
+function AutoFit({ box, layout }: { box: RefObject<HTMLDivElement | null>; layout: LayoutSize }) {
+  const { setViewport } = useReactFlow();
+  const { width, height } = layout;
   useEffect(() => {
     const el = box.current;
     if (el === null || typeof ResizeObserver === "undefined") {
@@ -699,7 +721,7 @@ function AutoFit({ box }: { box: RefObject<HTMLDivElement | null> }) {
     const observer = new ResizeObserver(() => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
-        void fitView({ padding: 0.1, maxZoom: 1 });
+        void setViewport(fitViewport({ width, height }, { width: el.clientWidth, height: el.clientHeight }));
       });
     });
     observer.observe(el);
@@ -707,7 +729,7 @@ function AutoFit({ box }: { box: RefObject<HTMLDivElement | null> }) {
       cancelAnimationFrame(raf);
       observer.disconnect();
     };
-  }, [box, fitView]);
+  }, [box, setViewport, width, height]);
   return null;
 }
 
@@ -1084,8 +1106,6 @@ export function ProcessDiagram({
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.1, maxZoom: 1 }}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={true}
@@ -1097,7 +1117,7 @@ export function ProcessDiagram({
         onPaneClick={() => onNodeSelect(null)}
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="#d4d4d8" />
-        <AutoFit box={wrapRef} />
+        <AutoFit box={wrapRef} layout={layout} />
         {minimap && (
           <MiniMap
             position="bottom-right"
@@ -1111,7 +1131,7 @@ export function ProcessDiagram({
             style={{ width: 168, height: 84, border: "1px solid #e4e4e7", borderRadius: 8 }}
           />
         )}
-        <ZoomControls />
+        <ZoomControls box={wrapRef} layout={layout} />
         <Legend coverage={coverage} />
       </ReactFlow>
     </div>

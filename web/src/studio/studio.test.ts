@@ -19,10 +19,14 @@ import {
   roleColor,
   toElkGraph,
 } from "./layout";
-import { EdgePill, edgeAnchor, EventShape, neighborIn, TaskCard } from "./diagram";
+import { EdgePill, edgeAnchor, EventShape, fitViewport, neighborIn, TaskCard } from "./diagram";
 import { structureProblems } from "./ProcessPanel";
 import { StudioShell, TopBar, pushUndo } from "./StudioShell";
+import ELK from "elkjs/lib/elk.bundled.js";
 import seedJson from "../../../internal/store/seed/example-process.json";
+import aiHomeJson from "./testdata/ai-home.json";
+import aiConstructionJson from "./testdata/ai-construction.json";
+import aiSmeJson from "./testdata/ai-sme.json";
 import type {
   NodeType,
   ProcessDefinition,
@@ -430,6 +434,23 @@ describe("pill placement", () => {
 // The seed process of the demo: the layout guard rows run on it.
 const seedDefinition = seedJson as ProcessDefinition;
 
+// Three real AI proposals (feedback item 0017).
+const aiHome = aiHomeJson as ProcessDefinition;
+const aiConstruction = aiConstructionJson as ProcessDefinition;
+const aiSme = aiSmeJson as ProcessDefinition;
+
+// The right edge of the widest row of a grid layout.
+function widestRow(grid: NonNullable<ReturnType<typeof gridLayout>>): number {
+  return Math.max(...[...grid.cells.values()].map((c) => c.cx + c.w / 2));
+}
+
+// A chain with one more task that the start never reaches: the grid
+// refuses it, so the ELK fallback draws it.
+function unreachedChain(steps: number): ProcessDefinition {
+  const def = chainDefinition(steps);
+  return { ...def, nodes: [...def.nodes, nodeCopy("entry", "lonely")] };
+}
+
 // A chain of one start, the given number of plain steps and one
 // approved end, for the wrap rows of gridLayout.
 function chainDefinition(steps: number): ProcessDefinition {
@@ -615,7 +636,7 @@ describe("diagram layout guard", () => {
     }
   });
 
-  test("48c: a main path of more than 7 steps wraps left to right", () => {
+  test("48c: a main path wider than the row budget wraps left to right", () => {
     const grid = gridLayout(chainDefinition(12))!;
     expect(grid).not.toBeNull();
     // Row 0 holds start to t7 and stops under the row budget.
@@ -696,6 +717,9 @@ describe("diagram layout guard", () => {
       proposalFamily(15, true),
       proposalFamily(15, false),
       proposalFamily(16, true),
+      aiHome,
+      aiConstruction,
+      aiSme,
     ];
     for (const def of fixtures) {
       expect(gridLayout(def), def.name).not.toBeNull();
@@ -817,6 +841,98 @@ describe("diagram layout guard", () => {
         expect(overlap, `boxes ${i} and ${j}`).toBe(false);
       }
     }
+  });
+
+  test("48j: the real home loan proposal takes the grid on five rows", () => {
+    const grid = gridLayout(aiHome)!;
+    expect(grid).not.toBeNull();
+    const rows: Record<string, number> = {
+      n_start: 0, n_assemble: 0, n_financial: 0, n_legal: 0, n_conditions: 0, g_amount: 0,
+      n_payment: 1, n_records: 1, n_branch: 1,
+      n_approved: 2, g_high: 2,
+      n_committee: 3,
+      n_refused: 4,
+    };
+    for (const [id, row] of Object.entries(rows)) {
+      expect(grid.cells.get(id)!.row, id).toBe(row);
+    }
+    expect(widestRow(grid)).toBeLessThanOrEqual(1360);
+    // The link to itself is a lane over its task: out of the top edge
+    // and back into the top edge, 32 px apart or more.
+    const task = grid.cells.get("n_assemble")!;
+    const pts = grid.points.get("e3")!;
+    const first = pts[0]!;
+    const last = pts[pts.length - 1]!;
+    expect(first.y).toBe(task.cy - task.h / 2);
+    expect(last.y).toBe(task.cy - task.h / 2);
+    expect(Math.abs(first.x - last.x)).toBeGreaterThanOrEqual(32);
+    expect(pts[1]!.y).toBeLessThan(first.y);
+    expect(pts[1]!.y).toBe(pts[2]!.y);
+    expect(grid.anchors.get("e3")).not.toBeNull();
+  });
+
+  test("48k: the real construction loan proposal wraps on the row budget", () => {
+    const grid = gridLayout(aiConstruction)!;
+    expect(grid).not.toBeNull();
+    expect(grid.cells.get("start")!.row).toBe(0);
+    expect(grid.cells.get("approval_gateway")!.row).toBe(1);
+    expect(widestRow(grid)).toBeLessThanOrEqual(1360);
+  });
+
+  test("48l: the real SME equipment loan proposal stays wrapped", () => {
+    const grid = gridLayout(aiSme)!;
+    expect(grid).not.toBeNull();
+    expect(widestRow(grid)).toBeLessThanOrEqual(1360);
+  });
+
+  test("48m: a link from a gateway to itself falls back on ELK", async () => {
+    const def: ProcessDefinition = {
+      ...miniDefinition,
+      edges: [
+        ...miniDefinition.edges,
+        { id: "self", from: "complete", to: "complete", label: null, decision: null, condition: null, is_default: false },
+      ],
+    };
+    expect(gridLayout(def)).toBeNull();
+    const { nodes } = await layoutProcess(def);
+    expect(nodes.map((n) => n.id).sort()).toEqual(def.nodes.map((n) => n.id).sort());
+  });
+
+  test("48n: a wide ELK fallback wraps under the row budget", async () => {
+    const def = unreachedChain(12);
+    expect(gridLayout(def)).toBeNull();
+    const { width } = await layoutProcess(def);
+    expect(width).toBeLessThanOrEqual(1360);
+    expect(width).toBeLessThan(2708);
+  });
+
+  test("48o: a 20-step ELK fallback wraps under the row budget", async () => {
+    const { width } = await layoutProcess(unreachedChain(20));
+    expect(width).toBeLessThanOrEqual(1360);
+  });
+
+  test("48p: a narrow ELK fallback keeps the first pass", async () => {
+    const lonely: ProcessDefinition = {
+      ...miniDefinition,
+      nodes: [...miniDefinition.nodes, nodeCopy("entry", "lonely")],
+    };
+    const first = await new ELK().layout(toElkGraph(lonely));
+    const { width } = await layoutProcess(lonely);
+    expect(width).toBe(first.width);
+  });
+
+  test("48q: the fit covers the full layout box of a wide proposal", () => {
+    const v = fitViewport({ width: 1150.8, height: 690 }, { width: 1366, height: 671 });
+    expect(v.zoom).toBeCloseTo(0.8855, 4);
+    expect(v.x).toBeCloseTo(173.479, 3);
+    expect(v.y).toBe(30);
+  });
+
+  test("48r: the fit of a small layout stops at 100 % and centers it", () => {
+    const v = fitViewport({ width: 600, height: 200 }, { width: 1366, height: 671 });
+    expect(v.zoom).toBe(1);
+    expect(v.x).toBe(383);
+    expect(v.y).toBe(235.5);
   });
 
   test("51: a definition with a node the start never reaches falls back on ELK", async () => {

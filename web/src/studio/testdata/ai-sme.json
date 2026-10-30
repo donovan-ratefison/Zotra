@@ -1,0 +1,905 @@
+{
+  "name": "SME equipment loan",
+  "edges": [
+    {
+      "id": "e_start",
+      "to": "n_assemble",
+      "from": "n_start",
+      "label": "Start file",
+      "decision": null,
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_assemble_complete",
+      "to": "n_valuation",
+      "from": "n_assemble",
+      "label": "File complete",
+      "decision": "complete",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_valuation_complete",
+      "to": "n_fincheck",
+      "from": "n_valuation",
+      "label": "Valuation complete",
+      "decision": null,
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_assemble_incomplete",
+      "to": "n_end_refused",
+      "from": "n_assemble",
+      "label": "File incomplete",
+      "decision": "incomplete",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_fin_confirm",
+      "to": "n_security",
+      "from": "n_fincheck",
+      "label": "Confirm",
+      "decision": "confirm",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_fin_return",
+      "to": "n_end_refused",
+      "from": "n_fincheck",
+      "label": "Return file",
+      "decision": "return",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_sec_clear",
+      "to": "n_prepare",
+      "from": "n_security",
+      "label": "Security clear",
+      "decision": "clear",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_sec_reject",
+      "to": "n_end_refused",
+      "from": "n_security",
+      "label": "Reject file",
+      "decision": "reject",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_prep_match",
+      "to": "n_control",
+      "from": "n_prepare",
+      "label": "Invoice matches",
+      "decision": "match",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_prep_return",
+      "to": "n_end_refused",
+      "from": "n_prepare",
+      "label": "Return to advisor",
+      "decision": "return",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_ctrl_approve",
+      "to": "g_approval_needed",
+      "from": "n_control",
+      "label": "Control approve",
+      "decision": "approve",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_ctrl_return",
+      "to": "n_end_refused",
+      "from": "n_control",
+      "label": "Return tranche",
+      "decision": "return",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_gate_to_approve",
+      "to": "n_approve",
+      "from": "g_approval_needed",
+      "label": "Above threshold",
+      "decision": null,
+      "condition": "first_tranche_amount > 150000.0",
+      "is_default": false
+    },
+    {
+      "id": "e_gate_to_pay",
+      "to": "n_pay1",
+      "from": "g_approval_needed",
+      "label": "Below threshold",
+      "decision": null,
+      "condition": null,
+      "is_default": true
+    },
+    {
+      "id": "e_approve_approve",
+      "to": "n_pay1",
+      "from": "n_approve",
+      "label": "Approve tranche",
+      "decision": "approve",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_approve_reject",
+      "to": "n_end_refused",
+      "from": "n_approve",
+      "label": "Reject tranche",
+      "decision": "reject",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_pay1_pay2",
+      "to": "n_pay2",
+      "from": "n_pay1",
+      "label": "Pay first tranche",
+      "decision": null,
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e_pay2_end",
+      "to": "n_end_approved",
+      "from": "n_pay2",
+      "label": "Pay second tranche",
+      "decision": null,
+      "condition": null,
+      "is_default": false
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n_start",
+      "name": "Start",
+      "role": null,
+      "type": "start",
+      "checks": [],
+      "citations": [
+        "p1-4"
+      ],
+      "decisions": [],
+      "documents": [],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": null,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_assemble",
+      "name": "File assembly",
+      "role": "sme_advisor",
+      "type": "task",
+      "checks": [
+        {
+          "id": "c_loan_amount",
+          "message": "Loan amount must be between 10000 EUR and 500000 EUR",
+          "citations": [
+            "p1-4"
+          ],
+          "expression": "loan_amount >= 10000.0 && loan_amount <= 500000.0",
+          "plain_text": "Loan amount must be between 10000 EUR and 500000 EUR"
+        },
+        {
+          "id": "c_term",
+          "message": "Loan term must be between 12 and 84 months",
+          "citations": [
+            "p1-4"
+          ],
+          "expression": "loan_term_months >= 12 && loan_term_months <= 84",
+          "plain_text": "Loan term must be between 12 and 84 months"
+        }
+      ],
+      "citations": [
+        "p1-6",
+        "p1-8"
+      ],
+      "decisions": [
+        "complete",
+        "incomplete"
+      ],
+      "documents": [
+        "supplier_invoice"
+      ],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 48,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_valuation",
+      "name": "Property valuation",
+      "role": "property_expert",
+      "type": "task",
+      "checks": [
+        {
+          "id": "c_ltv",
+          "message": "Loan amount must be at most 80 percent of property value",
+          "citations": [],
+          "expression": "loan_amount <= property_value * 0.8",
+          "plain_text": "Loan amount must be at most 80 percent of property value"
+        }
+      ],
+      "citations": [],
+      "decisions": [],
+      "documents": [
+        "valuation_report"
+      ],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 72,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_fincheck",
+      "name": "Financial check",
+      "role": "credit_analyst",
+      "type": "task",
+      "checks": [
+        {
+          "id": "c_dscr",
+          "message": "Debt service coverage ratio must be 1.25 or more",
+          "citations": [
+            "p2-3"
+          ],
+          "expression": "dscr >= 1.25",
+          "plain_text": "Debt service coverage ratio must be 1.25 or more"
+        },
+        {
+          "id": "c_own",
+          "message": "Own contribution must be 15 percent or more of equipment cost",
+          "citations": [
+            "p2-3"
+          ],
+          "expression": "own_contribution_rate >= 0.15",
+          "plain_text": "Own contribution must be 15 percent or more of equipment cost"
+        }
+      ],
+      "citations": [
+        "p1-6",
+        "p1-8",
+        "p2-3"
+      ],
+      "decisions": [
+        "confirm",
+        "return"
+      ],
+      "documents": [],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 24,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_security",
+      "name": "Security and pledge registration",
+      "role": "legal_officer",
+      "type": "task",
+      "checks": [
+        {
+          "id": "c_loan_signed",
+          "message": "Loan agreement must be signed by both parties",
+          "citations": [
+            "p2-3"
+          ],
+          "expression": "loan_agreement_signed == true",
+          "plain_text": "Loan agreement must be signed by both parties"
+        },
+        {
+          "id": "c_guar_signed",
+          "message": "Guarantee must be signed by both parties",
+          "citations": [
+            "p2-3"
+          ],
+          "expression": "guarantee_signed == true",
+          "plain_text": "Guarantee must be signed by both parties"
+        }
+      ],
+      "citations": [
+        "p1-6",
+        "p1-8"
+      ],
+      "decisions": [
+        "clear",
+        "reject"
+      ],
+      "documents": [],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 120,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_prepare",
+      "name": "Tranche preparation maker",
+      "role": "disbursement_officer",
+      "type": "task",
+      "checks": [
+        {
+          "id": "c_ref_match",
+          "message": "Invoice equipment reference must match purchase order",
+          "citations": [
+            "p2-3"
+          ],
+          "expression": "invoice_ref == purchase_order_ref",
+          "plain_text": "Invoice equipment reference must match purchase order"
+        },
+        {
+          "id": "c_invoice_amount",
+          "message": "Invoice amount must be equal to or more than the tranche",
+          "citations": [
+            "p2-3"
+          ],
+          "expression": "invoice_amount >= first_tranche_amount",
+          "plain_text": "Invoice amount must be equal to or more than the tranche"
+        }
+      ],
+      "citations": [
+        "p1-6",
+        "p1-8",
+        "p2-3"
+      ],
+      "decisions": [
+        "match",
+        "return"
+      ],
+      "documents": [],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 24,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_control",
+      "name": "Tranche control checker",
+      "role": "disbursement_officer",
+      "type": "task",
+      "checks": [
+        {
+          "id": "c_total",
+          "message": "Total paid tranches must not exceed loan amount",
+          "citations": [
+            "p2-3"
+          ],
+          "expression": "total_paid_tranches <= loan_amount",
+          "plain_text": "Total paid tranches must not exceed loan amount"
+        },
+        {
+          "id": "c_acct_conf",
+          "message": "Supplier account must be confirmed by test transfer",
+          "citations": [
+            "p2-3"
+          ],
+          "expression": "supplier_account_confirmed == true",
+          "plain_text": "Supplier account must be confirmed by test transfer"
+        },
+        {
+          "id": "c_acct_name",
+          "message": "Supplier account name must match invoice",
+          "citations": [
+            "p2-3"
+          ],
+          "expression": "supplier_account_name_matches == true",
+          "plain_text": "Supplier account name must match invoice"
+        },
+        {
+          "id": "c_offer_time",
+          "message": "First tranche must be within 30 days after offer acceptance",
+          "citations": [
+            "p2-3"
+          ],
+          "expression": "first_tranche_date >= offer_acceptance_date && (first_tranche_date - offer_acceptance_date) <= duration(\"720h\")",
+          "plain_text": "First tranche must be within 30 days after offer acceptance"
+        }
+      ],
+      "citations": [
+        "p1-6",
+        "p1-8",
+        "p2-3"
+      ],
+      "decisions": [
+        "approve",
+        "return"
+      ],
+      "documents": [],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 4,
+      "scope_overrides": []
+    },
+    {
+      "id": "g_approval_needed",
+      "name": "Branch director approval needed",
+      "role": null,
+      "type": "gateway",
+      "checks": [],
+      "citations": [
+        "p1-8",
+        "p2-4"
+      ],
+      "decisions": [],
+      "documents": [],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": null,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_approve",
+      "name": "Branch director approval",
+      "role": "branch_director",
+      "type": "task",
+      "checks": [],
+      "citations": [
+        "p1-6",
+        "p1-8",
+        "p2-4"
+      ],
+      "decisions": [
+        "approve",
+        "reject"
+      ],
+      "documents": [],
+      "signature": true,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 24,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_pay1",
+      "name": "First tranche payment",
+      "role": "disbursement_officer",
+      "type": "task",
+      "checks": [
+        {
+          "id": "c_pay1_docs",
+          "message": "First tranche requires supplier invoice",
+          "citations": [
+            "p2-2"
+          ],
+          "expression": "size(supplier_invoice) >= 1",
+          "plain_text": "First tranche requires supplier invoice"
+        }
+      ],
+      "citations": [
+        "p2-2"
+      ],
+      "decisions": [],
+      "documents": [
+        "supplier_invoice"
+      ],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 24,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_pay2",
+      "name": "Second tranche payment",
+      "role": "disbursement_officer",
+      "type": "task",
+      "checks": [
+        {
+          "id": "c_delivery",
+          "message": "Second tranche requires delivery note and final invoice",
+          "citations": [
+            "p2-2"
+          ],
+          "expression": "size(delivery_note) >= 1",
+          "plain_text": "Second tranche requires delivery note and final invoice"
+        },
+        {
+          "id": "c_insurance",
+          "message": "Insurance policy must be present within 10 days after delivery",
+          "citations": [
+            "p2-3"
+          ],
+          "expression": "insurance_date >= delivery_date && (insurance_date - delivery_date) <= duration(\"240h\")",
+          "plain_text": "Insurance policy must be present within 10 days after delivery"
+        }
+      ],
+      "citations": [
+        "p2-2",
+        "p2-3"
+      ],
+      "decisions": [],
+      "documents": [
+        "delivery_note"
+      ],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 24,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_end_approved",
+      "name": "Loan disbursed",
+      "role": null,
+      "type": "end",
+      "checks": [],
+      "citations": [
+        "p2-2"
+      ],
+      "decisions": [],
+      "documents": [],
+      "signature": false,
+      "end_result": "approved",
+      "source_ids": [],
+      "deadline_hours": null,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_end_refused",
+      "name": "File refused or returned",
+      "role": null,
+      "type": "end",
+      "checks": [],
+      "citations": [
+        "p1-8"
+      ],
+      "decisions": [],
+      "documents": [],
+      "signature": false,
+      "end_result": "refused",
+      "source_ids": [],
+      "deadline_hours": null,
+      "scope_overrides": []
+    }
+  ],
+  "roles": [
+    {
+      "id": "sme_advisor",
+      "name": "SME Client Advisor",
+      "department": "SME Banking"
+    },
+    {
+      "id": "credit_analyst",
+      "name": "Credit Analyst",
+      "department": "Credit"
+    },
+    {
+      "id": "legal_officer",
+      "name": "Legal Officer",
+      "department": "Legal"
+    },
+    {
+      "id": "risk_officer",
+      "name": "Risk Officer",
+      "department": "Risk"
+    },
+    {
+      "id": "branch_director",
+      "name": "Branch Director",
+      "department": "Branch"
+    },
+    {
+      "id": "disbursement_officer",
+      "name": "Disbursement Officer",
+      "department": "Operations"
+    },
+    {
+      "id": "property_expert",
+      "name": "Property Expert",
+      "department": "Risk"
+    }
+  ],
+  "scope": [
+    {
+      "role": "sme_advisor",
+      "field": "loan_amount",
+      "access": "write"
+    },
+    {
+      "role": "sme_advisor",
+      "field": "loan_term_months",
+      "access": "write"
+    },
+    {
+      "role": "credit_analyst",
+      "field": "dscr",
+      "access": "write"
+    },
+    {
+      "role": "credit_analyst",
+      "field": "own_contribution_rate",
+      "access": "write"
+    },
+    {
+      "role": "legal_officer",
+      "field": "loan_agreement_signed",
+      "access": "write"
+    },
+    {
+      "role": "legal_officer",
+      "field": "guarantee_signed",
+      "access": "write"
+    },
+    {
+      "role": "sme_advisor",
+      "field": "purchase_order_ref",
+      "access": "write"
+    },
+    {
+      "role": "sme_advisor",
+      "field": "invoice_ref",
+      "access": "write"
+    },
+    {
+      "role": "disbursement_officer",
+      "field": "invoice_amount",
+      "access": "write"
+    },
+    {
+      "role": "disbursement_officer",
+      "field": "first_tranche_amount",
+      "access": "read"
+    },
+    {
+      "role": "disbursement_officer",
+      "field": "second_tranche_amount",
+      "access": "read"
+    },
+    {
+      "role": "disbursement_officer",
+      "field": "total_paid_tranches",
+      "access": "write"
+    },
+    {
+      "role": "disbursement_officer",
+      "field": "supplier_account_confirmed",
+      "access": "write"
+    },
+    {
+      "role": "disbursement_officer",
+      "field": "supplier_account_name_matches",
+      "access": "write"
+    },
+    {
+      "role": "sme_advisor",
+      "field": "offer_acceptance_date",
+      "access": "write"
+    },
+    {
+      "role": "disbursement_officer",
+      "field": "first_tranche_date",
+      "access": "write"
+    },
+    {
+      "role": "sme_advisor",
+      "field": "delivery_date",
+      "access": "write"
+    },
+    {
+      "role": "sme_advisor",
+      "field": "insurance_date",
+      "access": "write"
+    },
+    {
+      "role": "sme_advisor",
+      "field": "supplier_invoice",
+      "access": "write"
+    },
+    {
+      "role": "sme_advisor",
+      "field": "delivery_note",
+      "access": "write"
+    },
+    {
+      "role": "risk_officer",
+      "field": "dscr",
+      "access": "read"
+    },
+    {
+      "role": "risk_officer",
+      "field": "total_paid_tranches",
+      "access": "read"
+    },
+    {
+      "role": "branch_director",
+      "field": "loan_amount",
+      "access": "read"
+    },
+    {
+      "role": "property_expert",
+      "field": "property_value",
+      "access": "write"
+    },
+    {
+      "role": "property_expert",
+      "field": "valuation_report",
+      "access": "write"
+    }
+  ],
+  "theme": {
+    "logo_url": null,
+    "brand_name": "Banque Ravina",
+    "primary_color": "#0f4c45"
+  },
+  "fields": [
+    {
+      "name": "loan_amount",
+      "type": "money",
+      "label": "Loan amount",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "loan_term_months",
+      "type": "integer",
+      "label": "Loan term in months",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "dscr",
+      "type": "number",
+      "label": "Debt service coverage ratio",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "own_contribution_rate",
+      "type": "number",
+      "label": "Own contribution rate",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "loan_agreement_signed",
+      "type": "boolean",
+      "label": "Loan agreement signed",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "guarantee_signed",
+      "type": "boolean",
+      "label": "Guarantee signed",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "purchase_order_ref",
+      "type": "string",
+      "label": "Purchase order reference",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "invoice_ref",
+      "type": "string",
+      "label": "Supplier invoice reference",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "invoice_amount",
+      "type": "money",
+      "label": "Supplier invoice amount",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "first_tranche_amount",
+      "type": "money",
+      "label": "First tranche amount",
+      "options": [],
+      "computed": "loan_amount * 0.6"
+    },
+    {
+      "name": "second_tranche_amount",
+      "type": "money",
+      "label": "Second tranche amount",
+      "options": [],
+      "computed": "loan_amount * 0.4"
+    },
+    {
+      "name": "total_paid_tranches",
+      "type": "money",
+      "label": "Total paid tranches",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "supplier_account_confirmed",
+      "type": "boolean",
+      "label": "Supplier account confirmed",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "supplier_account_name_matches",
+      "type": "boolean",
+      "label": "Supplier account name matches invoice",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "offer_acceptance_date",
+      "type": "date",
+      "label": "Offer acceptance date",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "first_tranche_date",
+      "type": "date",
+      "label": "First tranche date",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "delivery_date",
+      "type": "date",
+      "label": "Delivery date",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "insurance_date",
+      "type": "date",
+      "label": "Insurance policy date",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "supplier_invoice",
+      "type": "document",
+      "label": "Supplier invoice documents",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "delivery_note",
+      "type": "document",
+      "label": "Delivery note documents",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "property_value",
+      "type": "money",
+      "label": "Property value",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "valuation_report",
+      "type": "document",
+      "label": "Valuation report",
+      "options": [],
+      "computed": null
+    }
+  ],
+  "sources": [],
+  "currency": "EUR",
+  "schema_version": "1",
+  "policy_document_id": "CP-PE-021"
+}

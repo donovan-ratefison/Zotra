@@ -1,0 +1,727 @@
+{
+  "name": "Home loan disbursement",
+  "edges": [
+    {
+      "id": "e1",
+      "to": "n_assemble",
+      "from": "n_start",
+      "label": "Start",
+      "decision": null,
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e2",
+      "to": "n_financial",
+      "from": "n_assemble",
+      "label": "File complete",
+      "decision": "complete",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e3",
+      "to": "n_assemble",
+      "from": "n_assemble",
+      "label": "Request missing documents",
+      "decision": "request_missing",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e4",
+      "to": "n_legal",
+      "from": "n_financial",
+      "label": "Confirm",
+      "decision": "confirm",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e5",
+      "to": "n_assemble",
+      "from": "n_financial",
+      "label": "Return file",
+      "decision": "return",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e6",
+      "to": "n_conditions",
+      "from": "n_legal",
+      "label": "Clear",
+      "decision": "clear",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e7",
+      "to": "n_refused",
+      "from": "n_legal",
+      "label": "Reject",
+      "decision": "reject",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e8",
+      "to": "g_amount",
+      "from": "n_conditions",
+      "label": "Approve checklist",
+      "decision": "approve",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e9",
+      "to": "n_assemble",
+      "from": "n_conditions",
+      "label": "Return file",
+      "decision": "return",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e10",
+      "to": "n_branch",
+      "from": "g_amount",
+      "label": "Above 300000 EUR",
+      "decision": null,
+      "condition": "loan_amount > 300000.0",
+      "is_default": false
+    },
+    {
+      "id": "e11",
+      "to": "n_payment",
+      "from": "g_amount",
+      "label": "300000 EUR or below",
+      "decision": null,
+      "condition": null,
+      "is_default": true
+    },
+    {
+      "id": "e12",
+      "to": "g_high",
+      "from": "n_branch",
+      "label": "Approve",
+      "decision": "approve",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e13",
+      "to": "n_refused",
+      "from": "n_branch",
+      "label": "Reject",
+      "decision": "reject",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e14",
+      "to": "n_committee",
+      "from": "g_high",
+      "label": "Above 600000 EUR",
+      "decision": null,
+      "condition": "loan_amount > 600000.0",
+      "is_default": false
+    },
+    {
+      "id": "e15",
+      "to": "n_payment",
+      "from": "g_high",
+      "label": "600000 EUR or below",
+      "decision": null,
+      "condition": null,
+      "is_default": true
+    },
+    {
+      "id": "e16",
+      "to": "n_payment",
+      "from": "n_committee",
+      "label": "Approve",
+      "decision": "approve",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e17",
+      "to": "n_refused",
+      "from": "n_committee",
+      "label": "Reject",
+      "decision": "reject",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e18",
+      "to": "n_records",
+      "from": "n_payment",
+      "label": "Pay",
+      "decision": "pay",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e19",
+      "to": "n_refused",
+      "from": "n_payment",
+      "label": "Hold",
+      "decision": "hold",
+      "condition": null,
+      "is_default": false
+    },
+    {
+      "id": "e20",
+      "to": "n_approved",
+      "from": "n_records",
+      "label": "Recorded",
+      "decision": null,
+      "condition": null,
+      "is_default": false
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n_start",
+      "name": "Start",
+      "role": null,
+      "type": "start",
+      "checks": [],
+      "citations": [
+        "p1-3"
+      ],
+      "decisions": [],
+      "documents": [],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": null,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_assemble",
+      "name": "Assemble disbursement file",
+      "role": "r_advisor",
+      "type": "task",
+      "checks": [
+        {
+          "id": "c_scope",
+          "message": "Home loan must be 50,000 EUR or more",
+          "citations": [
+            "p1-3"
+          ],
+          "expression": "loan_amount >= 50000.0",
+          "plain_text": "Loan of 50,000 EUR or more"
+        }
+      ],
+      "citations": [
+        "p1-5"
+      ],
+      "decisions": [
+        "complete",
+        "request_missing"
+      ],
+      "documents": [
+        "signed loan agreement",
+        "draft deed of sale",
+        "insurance certificate",
+        "completion statement"
+      ],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 72,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_financial",
+      "name": "Financial check",
+      "role": "r_analyst",
+      "type": "task",
+      "checks": [],
+      "citations": [
+        "p1-5"
+      ],
+      "decisions": [
+        "confirm",
+        "return"
+      ],
+      "documents": [
+        "payslips",
+        "bank statements"
+      ],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 24,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_legal",
+      "name": "Legal check",
+      "role": "r_legal",
+      "type": "task",
+      "checks": [],
+      "citations": [
+        "p1-5"
+      ],
+      "decisions": [
+        "clear",
+        "reject"
+      ],
+      "documents": [
+        "deed of sale",
+        "mortgage registration",
+        "insurance certificate"
+      ],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 72,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_conditions",
+      "name": "Check conditions precedent and sign checklist",
+      "role": "r_risk",
+      "type": "task",
+      "checks": [
+        {
+          "id": "c_dti",
+          "message": "Debt-to-income ratio must be 33% or less",
+          "citations": [
+            "p2-3"
+          ],
+          "expression": "debt_to_income_ratio <= 0.33",
+          "plain_text": "Debt-to-income ratio 33% or less"
+        },
+        {
+          "id": "c_down",
+          "message": "Down payment must be 20% or more of purchase price",
+          "citations": [
+            "p2-3"
+          ],
+          "expression": "down_payment_amount >= purchase_price * 0.2",
+          "plain_text": "Down payment 20% or more"
+        },
+        {
+          "id": "c_sign",
+          "message": "Both parties must have signed the loan agreement",
+          "citations": [
+            "p2-3"
+          ],
+          "expression": "loan_agreement_signed == true",
+          "plain_text": "Both parties signed loan agreement"
+        },
+        {
+          "id": "c_ins",
+          "message": "Insurance certificate must be present and cover must start not later than payment date",
+          "citations": [
+            "p2-3"
+          ],
+          "expression": "size(insurance_certificate) >= 1 && insurance_start_date <= payment_date",
+          "plain_text": "Insurance present and starts not later than payment"
+        },
+        {
+          "id": "c_mort",
+          "message": "First rank mortgage must be registered before payment date",
+          "citations": [
+            "p2-3"
+          ],
+          "expression": "mortgage_first_rank == true && mortgage_registration_date < payment_date",
+          "plain_text": "First rank mortgage registered before payment"
+        },
+        {
+          "id": "c_offer",
+          "message": "Loan offer must not be older than 4 months on payment date",
+          "citations": [
+            "p2-3"
+          ],
+          "expression": "loan_offer_date <= payment_date && (payment_date - loan_offer_date) <= duration(\"2880h\")",
+          "plain_text": "Loan offer not older than 4 months"
+        },
+        {
+          "id": "c_val",
+          "message": "Valuation must be 100% or more of purchase price",
+          "citations": [
+            "p2-3"
+          ],
+          "expression": "valuation_amount >= purchase_price",
+          "plain_text": "Valuation 100% or more of purchase price"
+        },
+        {
+          "id": "c_comp",
+          "message": "Completion statement must name the bank, client and loan reference",
+          "citations": [
+            "p2-3"
+          ],
+          "expression": "completion_statement_valid == true",
+          "plain_text": "Completion statement names bank, client and reference"
+        }
+      ],
+      "citations": [
+        "p1-5",
+        "p2-3"
+      ],
+      "decisions": [
+        "approve",
+        "return"
+      ],
+      "documents": [
+        "conditions precedent checklist"
+      ],
+      "signature": true,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 24,
+      "scope_overrides": []
+    },
+    {
+      "id": "g_amount",
+      "name": "Above 300,000 EUR?",
+      "role": null,
+      "type": "gateway",
+      "checks": [],
+      "citations": [
+        "p2-4"
+      ],
+      "decisions": [],
+      "documents": [],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": null,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_branch",
+      "name": "Branch director approval",
+      "role": "r_director",
+      "type": "task",
+      "checks": [],
+      "citations": [
+        "p1-5",
+        "p2-4"
+      ],
+      "decisions": [
+        "approve",
+        "reject"
+      ],
+      "documents": [],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 48,
+      "scope_overrides": []
+    },
+    {
+      "id": "g_high",
+      "name": "Above 600,000 EUR?",
+      "role": null,
+      "type": "gateway",
+      "checks": [],
+      "citations": [
+        "p2-4"
+      ],
+      "decisions": [],
+      "documents": [],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": null,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_committee",
+      "name": "Credit committee approval",
+      "role": "r_committee",
+      "type": "task",
+      "checks": [],
+      "citations": [
+        "p2-4"
+      ],
+      "decisions": [
+        "approve",
+        "reject"
+      ],
+      "documents": [],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 48,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_payment",
+      "name": "Pay to notary",
+      "role": "r_disbursement",
+      "type": "task",
+      "checks": [
+        {
+          "id": "c_checklist",
+          "message": "Payment requires signed conditions precedent checklist",
+          "citations": [
+            "p2-4"
+          ],
+          "expression": "checklist_signed == true",
+          "plain_text": "Signed checklist required before payment"
+        }
+      ],
+      "citations": [
+        "p1-5",
+        "p2-4"
+      ],
+      "decisions": [
+        "pay",
+        "hold"
+      ],
+      "documents": [
+        "payment order",
+        "signed checklist"
+      ],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 24,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_records",
+      "name": "Record and archive file",
+      "role": "r_disbursement",
+      "type": "task",
+      "checks": [],
+      "citations": [
+        "p2-2",
+        "p2-5"
+      ],
+      "decisions": [],
+      "documents": [
+        "complete file"
+      ],
+      "signature": false,
+      "end_result": null,
+      "source_ids": [],
+      "deadline_hours": 120,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_approved",
+      "name": "Disbursed",
+      "role": null,
+      "type": "end",
+      "checks": [],
+      "citations": [
+        "p1-5"
+      ],
+      "decisions": [],
+      "documents": [],
+      "signature": false,
+      "end_result": "approved",
+      "source_ids": [],
+      "deadline_hours": null,
+      "scope_overrides": []
+    },
+    {
+      "id": "n_refused",
+      "name": "Refused",
+      "role": null,
+      "type": "end",
+      "checks": [],
+      "citations": [
+        "p1-5"
+      ],
+      "decisions": [],
+      "documents": [],
+      "signature": false,
+      "end_result": "refused",
+      "source_ids": [],
+      "deadline_hours": null,
+      "scope_overrides": []
+    }
+  ],
+  "roles": [
+    {
+      "id": "r_advisor",
+      "name": "Client Advisor",
+      "department": "Retail Banking"
+    },
+    {
+      "id": "r_analyst",
+      "name": "Credit Analyst",
+      "department": "Credit"
+    },
+    {
+      "id": "r_legal",
+      "name": "Legal Officer",
+      "department": "Legal"
+    },
+    {
+      "id": "r_risk",
+      "name": "Risk Officer",
+      "department": "Risk"
+    },
+    {
+      "id": "r_director",
+      "name": "Branch Director",
+      "department": "Branch"
+    },
+    {
+      "id": "r_disbursement",
+      "name": "Disbursement Officer",
+      "department": "Back Office"
+    },
+    {
+      "id": "r_committee",
+      "name": "Credit Committee",
+      "department": "Credit"
+    }
+  ],
+  "scope": [
+    {
+      "role": "r_advisor",
+      "field": "loan_amount",
+      "access": "write"
+    },
+    {
+      "role": "r_analyst",
+      "field": "loan_amount",
+      "access": "read"
+    },
+    {
+      "role": "r_risk",
+      "field": "checklist_signed",
+      "access": "write"
+    },
+    {
+      "role": "r_disbursement",
+      "field": "checklist_signed",
+      "access": "read"
+    }
+  ],
+  "theme": {
+    "logo_url": null,
+    "brand_name": "Banque Ravina",
+    "primary_color": "#0f4c45"
+  },
+  "fields": [
+    {
+      "name": "loan_amount",
+      "type": "money",
+      "label": "Loan amount",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "purchase_price",
+      "type": "money",
+      "label": "Purchase price",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "down_payment_amount",
+      "type": "money",
+      "label": "Down payment amount",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "household_monthly_income",
+      "type": "money",
+      "label": "Household monthly income",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "monthly_debt_payment",
+      "type": "money",
+      "label": "Monthly debt payment",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "debt_to_income_ratio",
+      "type": "number",
+      "label": "Debt-to-income ratio",
+      "options": [],
+      "computed": "monthly_debt_payment / household_monthly_income"
+    },
+    {
+      "name": "valuation_amount",
+      "type": "money",
+      "label": "Valuation amount",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "loan_agreement_signed",
+      "type": "boolean",
+      "label": "Loan agreement signed by both parties",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "insurance_certificate",
+      "type": "document",
+      "label": "Insurance certificate",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "insurance_start_date",
+      "type": "date",
+      "label": "Insurance cover start date",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "payment_date",
+      "type": "date",
+      "label": "Payment date",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "mortgage_first_rank",
+      "type": "boolean",
+      "label": "First rank mortgage",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "mortgage_registration_date",
+      "type": "date",
+      "label": "Mortgage registration date",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "loan_offer_date",
+      "type": "date",
+      "label": "Loan offer date",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "completion_statement_valid",
+      "type": "boolean",
+      "label": "Completion statement names bank, client and loan reference",
+      "options": [],
+      "computed": null
+    },
+    {
+      "name": "checklist_signed",
+      "type": "boolean",
+      "label": "Conditions precedent checklist signed",
+      "options": [],
+      "computed": null
+    }
+  ],
+  "sources": [],
+  "currency": "EUR",
+  "schema_version": "1",
+  "policy_document_id": "CP-HL-012"
+}

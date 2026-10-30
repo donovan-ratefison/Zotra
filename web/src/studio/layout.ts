@@ -377,6 +377,12 @@ function port(c: Cell, side: Side, offset: number): DiagramPoint {
   }
 }
 
+// The offset key of one end of a link. The two ends of a link to
+// itself sit on the same side, so they need two keys.
+function portKey(e: ProcessEdge, end: "from" | "to"): string {
+  return `${e.id}:${e[end]}${end === "to" && e.from === e.to ? ":in" : ""}`;
+}
+
 function boxOf(c: Cell): Box {
   return { x: c.cx - c.w / 2, y: c.cy - c.h / 2, w: c.w, h: c.h };
 }
@@ -413,6 +419,11 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
     return null;
   }
   const byId = new Map(def.nodes.map((n) => [n.id, n]));
+  // A link to itself is drawn only on a task; the fallback draws the
+  // other ones.
+  if (def.edges.some((e) => e.from === e.to && byId.get(e.from)?.type !== "task")) {
+    return null;
+  }
   const { order, back } = walk(def, spine[0]!);
   if (order.length !== def.nodes.length) {
     return null;
@@ -425,13 +436,11 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
     return text === null ? 0 : labelWidth(text) + 12;
   };
 
-  // 1. The main path. A path of 8 steps or fewer runs on row 0, as
-  // in the mockup. A longer path wraps (decision 17): a row holds
-  // spine nodes until the next node would push the row right edge
-  // past ROW_BUDGET, and the rest continues on the row below, again
-  // from the left, so every row reads left to right. The gap between
-  // two nodes still holds the text of their link.
-  const steps = spine.length - 2;
+  // 1. The main path. A row holds spine nodes until the next node
+  // would push the row right edge past ROW_BUDGET, and the rest
+  // continues on the row below, again from the left, so every row
+  // reads left to right. The gap between two nodes still holds the
+  // text of their link.
   let x = 0;
   let row = 0;
   spine.forEach((id, i) => {
@@ -441,7 +450,7 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
     } else {
       const p = cells.get(spine[i - 1]!)!;
       const next = p.cx + p.w / 2 + Math.max(GRID_GAP, labelOf(spine[i - 1]!, id)) + s.width / 2;
-      if (steps > 7 && next + s.width / 2 > ROW_BUDGET) {
+      if (next + s.width / 2 > ROW_BUDGET) {
         row++;
         x = s.width / 2;
       } else {
@@ -551,9 +560,9 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
   const offsets = new Map<string, number>();
   const attach = new Map<string, Array<{ key: string; dir: number; depth: number }>>();
   for (const r of routes) {
-    for (const [end, side, other] of [
-      [r.edge.from, r.from, r.edge.to],
-      [r.edge.to, r.to, r.edge.from],
+    for (const [end, side, other, which] of [
+      [r.edge.from, r.from, r.edge.to, "from"],
+      [r.edge.to, r.to, r.edge.from, "to"],
     ] as const) {
       if (side !== "N" && side !== "S") {
         continue;
@@ -562,7 +571,7 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
       const o = cells.get(other)!;
       const dir = Math.abs(o.cx - c.cx) < 1 ? 0 : Math.sign(o.cx - c.cx);
       const list = attach.get(`${end}:${side}`) ?? [];
-      list.push({ key: `${r.edge.id}:${end}`, dir, depth: Math.abs(o.row - c.row) });
+      list.push({ key: portKey(r.edge, which), dir, depth: Math.abs(o.row - c.row) });
       attach.set(`${end}:${side}`, list);
     }
   }
@@ -701,7 +710,7 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
     if (far !== near) {
       r.corridor2 = ys.get(far)!.get(r)!;
       const a = port(s, r.from, offsets.get(`${r.edge.id}:${r.edge.from}`) ?? 0);
-      const b = port(t, r.to, offsets.get(`${r.edge.id}:${r.edge.to}`) ?? 0);
+      const b = port(t, r.to, offsets.get(portKey(r.edge, "to")) ?? 0);
       const useLeft = a.x + b.x <= margin.left + margin.right;
       r.marginX = useLeft ? margin.left - 12 * weaves : margin.right + 12 * weaves;
       weaves++;
@@ -717,7 +726,10 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
     const s = cells.get(r.edge.from)!;
     const t = cells.get(r.edge.to)!;
     const a = port(s, r.from, offsets.get(`${r.edge.id}:${r.edge.from}`) ?? 0);
-    const b = port(t, r.to, offsets.get(`${r.edge.id}:${r.edge.to}`) ?? 0);
+    const b = port(t, r.to, offsets.get(portKey(r.edge, "to")) ?? 0);
+    if (r.edge.from === r.edge.to && Math.abs(a.x - b.x) < 32) {
+      return null;
+    }
     const lane = laneOrder.indexOf(r.edge);
     if (r.corridor !== undefined) {
       if (r.corridor2 === undefined) {
@@ -781,6 +793,12 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
     const w = labelWidth(text);
     const pts = points.get(r.edge.id)!;
     const tries: Box[] = [];
+    if (r.edge.from === r.edge.to) {
+      // The text of a link to itself sits over the middle of its lane.
+      const p = pts[1]!;
+      const q = pts[2]!;
+      tries.push({ x: (p.x + q.x) / 2 - w / 2, y: p.y - 4 - LABEL_H, w, h: LABEL_H });
+    }
     for (let i = 1; i < pts.length; i++) {
       const p = pts[i - 1]!;
       const q = pts[i]!;
@@ -1006,7 +1024,19 @@ export async function layoutProcess(def: ProcessDefinition): Promise<{
     return fromGrid(def, grid);
   }
   const graph = toElkGraph(def);
-  const laidOut = await new ELK().layout(graph);
+  let laidOut = await new ELK().layout(graph);
+  if ((laidOut.width ?? 0) > ROW_BUDGET) {
+    // A wide fallback wraps into several bands, so that it never draws
+    // one band wider than the canvas (feedback item 0017).
+    laidOut = await new ELK().layout({
+      ...graph,
+      layoutOptions: {
+        ...graph.layoutOptions,
+        "elk.layered.wrapping.strategy": "MULTI_EDGE",
+        "elk.aspectRatio": "2.0",
+      },
+    });
+  }
   const byId = new Map(def.nodes.map((node) => [node.id, node]));
   const boxes: Box[] = (laidOut.children ?? []).map((child) => ({
     x: child.x ?? 0,
