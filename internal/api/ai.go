@@ -83,7 +83,7 @@ func (d apiDeps) policyToProcess(w http.ResponseWriter, r *http.Request) {
 	}
 	messages := []ai.Message{
 		{Role: "system", Content: ai.PolicyToProcessSystem},
-		{Role: "user", Content: ai.PolicyToProcessUser(body.Name, paragraphs)},
+		{Role: "user", Content: ai.PolicyToProcessUser(paragraphs)},
 	}
 	// 5. The repair loop, at most 3 attempts. lastErrs feeds the 422
 	// details when every attempt failed.
@@ -97,6 +97,7 @@ func (d apiDeps) policyToProcess(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var errs []process.Error
+		var named string
 		content, ok := answerContent(ansBody)
 		if ok && content != "" {
 			var reason string
@@ -111,14 +112,15 @@ func (d apiDeps) policyToProcess(w http.ResponseWriter, r *http.Request) {
 		case !ok || content == "":
 			errs = []process.Error{{Path: "", Message: msgNoContent}}
 		default:
-			errs = rules.ValidateDocument([]byte(content))
+			named = withName(content, body.Name)
+			errs = rules.ValidateDocument([]byte(named))
 		}
 		if len(errs) == 0 {
-			errs = checkCitations(content, seen)
+			errs = checkCitations(named, seen)
 		}
 		if len(errs) == 0 {
 			writeJSON(w, http.StatusOK, map[string]any{
-				"definition": json.RawMessage(content),
+				"definition": json.RawMessage(named),
 				"attempts":   attempt,
 			})
 			return
@@ -175,6 +177,22 @@ func splitReason(content string) (reason string, rest string) {
 		reason = strings.TrimSpace(s)
 	}
 	return reason, string(b)
+}
+
+// withName sets the key "name" of one answer object to name. The
+// request name is not in the prompt, so the server writes it here.
+// Content that is not an object comes back unchanged.
+func withName(content, name string) string {
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(content), &obj); err != nil || obj == nil {
+		return content
+	}
+	obj["name"] = name
+	b, err := json.Marshal(obj)
+	if err != nil {
+		return content
+	}
+	return string(b)
 }
 
 // aiErrorText maps one AI call error to the message of the 503

@@ -118,12 +118,11 @@ const ProcessFormatRules = `Format rules that the server checks:
 - "computed" is null for a value that a person enters. Else it is a CEL expression over other fields.
 - CEL types: money and number fields are doubles, so write their literals with a decimal point (50000.0, 0.33). Integer fields use integer literals (300). Document fields are lists of strings (size(documents) >= 4). Date fields are timestamps (release_date >= now).`
 
-// PolicyToProcessUser formats the process name and the numbered
-// paragraphs as the user message: the name line, one blank line, then
-// one line per paragraph, in the given order.
-func PolicyToProcessUser(name string, paragraphs []PolicyParagraph) string {
+// PolicyToProcessUser formats the numbered paragraphs as the user
+// message: one line per paragraph, in the given order. The message has
+// no process name, so the cache key depends on the paragraphs only.
+func PolicyToProcessUser(paragraphs []PolicyParagraph) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Process name: %s.\n\n", name)
 	for i, p := range paragraphs {
 		if i > 0 {
 			b.WriteString("\n")

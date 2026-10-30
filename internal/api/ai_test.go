@@ -3,6 +3,7 @@
 // and the cache dir is one fresh temp dir, so no stub answer reaches
 // the repository cache and the request counts stay exact. Row 7 runs
 // in mode off. Rows 9 to 15 are the refusals: no AI call happens.
+// Rows K1 to K3 run in mode cache, with one fresh cache dir.
 
 package api
 
@@ -131,6 +132,13 @@ func seedWithoutName(t *testing.T) []byte {
 	return seedVariant(t, func(doc map[string]any) { delete(doc, "name") })
 }
 
+// seedWithoutCurrency drops the currency: the schema refuses the
+// result. The server sets the name, so a missing name is no failure.
+func seedWithoutCurrency(t *testing.T) []byte {
+	t.Helper()
+	return seedVariant(t, func(doc map[string]any) { delete(doc, "currency") })
+}
+
 // seedWithUnknownCitation adds p9-9, an id the request does not
 // carry, to the citations of the first node.
 func seedWithUnknownCitation(t *testing.T) []byte {
@@ -215,7 +223,7 @@ func TestPolicySeedFirstTry(t *testing.T) {
 // 2.
 func TestPolicyRepairsOnce(t *testing.T) {
 	srv, count := aiLiveStub(t, []string{
-		chatEnvelope(string(seedWithoutName(t))),
+		chatEnvelope(string(seedWithoutCurrency(t))),
 		chatEnvelope(string(seedBytes(t))),
 	})
 	aiLive(t, srv.URL)
@@ -237,7 +245,7 @@ func TestPolicyRepairsOnce(t *testing.T) {
 
 // 3.
 func TestPolicyThreeFailures(t *testing.T) {
-	srv, count := aiLiveStub(t, []string{chatEnvelope(string(seedWithoutName(t)))})
+	srv, count := aiLiveStub(t, []string{chatEnvelope(string(seedWithoutCurrency(t)))})
 	aiLive(t, srv.URL)
 	newTestAPI(t)
 
@@ -833,5 +841,101 @@ func TestPolicySplitReason(t *testing.T) {
 			t.Errorf("splitReason(%q) = (%q, %q), want (%q, %q)",
 				tc.in, reason, rest, tc.reason, tc.rest)
 		}
+	}
+}
+
+// aiCacheStub starts one stub server in mode cache, with one fresh
+// cache dir. It answers the seed to each request, and records the
+// number of requests and the last request body.
+func aiCacheStub(t *testing.T) (count *int, last *string) {
+	t.Helper()
+	count, last = new(int), new(string)
+	seed := chatEnvelope(string(seedBytes(t)))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		*count++
+		*last = string(b)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(seed))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("ZOTRA_AI_MODE", "cache")
+	t.Setenv("ZOTRA_AI_BASE_URL", srv.URL)
+	t.Setenv("ZOTRA_AI_CACHE_DIR", t.TempDir())
+	return count, last
+}
+
+// definitionName returns definition.name of one 200 answer.
+func definitionName(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	checkOK(t, rec)
+	var got struct {
+		Definition struct {
+			Name string `json:"name"`
+		} `json:"definition"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("body is not a policy answer: %v", err)
+	}
+	return got.Definition.Name
+}
+
+// K1: the same paragraphs with another name hit the cache.
+func TestPolicyCacheOtherName(t *testing.T) {
+	count, _ := aiCacheStub(t)
+	newTestAPI(t)
+
+	if got := definitionName(t, postPolicy(t, fixtureRequest())); got != "Home loan" {
+		t.Errorf("first name = %q, want %q", got, "Home loan")
+	}
+	rec := postPolicy(t, policyRequestBody("Home loan v2", fixtureParagraphs()))
+	if got := definitionName(t, rec); got != "Home loan v2" {
+		t.Errorf("second name = %q, want %q", got, "Home loan v2")
+	}
+	if *count != 1 {
+		t.Errorf("requests = %d, want 1", *count)
+	}
+}
+
+// K2: other paragraphs still call the AI.
+func TestPolicyCacheOtherParagraphs(t *testing.T) {
+	count, _ := aiCacheStub(t)
+	newTestAPI(t)
+
+	checkOK(t, postPolicy(t, fixtureRequest()))
+	paras := append(fixtureParagraphs(), policyReqPara{ID: "p3-1", Text: "The bank pays."})
+	checkOK(t, postPolicy(t, policyRequestBody("Home loan v2", paras)))
+	if *count != 2 {
+		t.Errorf("requests = %d, want 2", *count)
+	}
+}
+
+// K3: the process name is not in the AI request.
+func TestPolicyNameNotInRequest(t *testing.T) {
+	_, last := aiCacheStub(t)
+	newTestAPI(t)
+
+	checkOK(t, postPolicy(t, policyRequestBody("Secret name", fixtureParagraphs())))
+	if *last == "" {
+		t.Fatal("the stub saw no request")
+	}
+	if strings.Contains(*last, "Secret name") {
+		t.Errorf("request body holds the name: %s", *last)
+	}
+}
+
+// K4: withName rows.
+func TestPolicyWithName(t *testing.T) {
+	for _, in := range []string{`[1]`, `null`} {
+		if got := withName(in, "B"); got != in {
+			t.Errorf("withName(%q) = %q, want it unchanged", in, got)
+		}
+	}
+	var have map[string]any
+	if err := json.Unmarshal([]byte(withName(`{"name":"A","x":1}`, "B")), &have); err != nil {
+		t.Fatal(err)
+	}
+	if want := map[string]any{"name": "B", "x": 1.0}; !reflect.DeepEqual(have, want) {
+		t.Errorf("withName = %v, want %v", have, want)
 	}
 }
