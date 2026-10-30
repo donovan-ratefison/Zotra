@@ -491,7 +491,7 @@ func explainCompileError(t *testing.T, expression string) string {
 	if err != nil {
 		t.Fatalf("decode seed: %v", err)
 	}
-	env, err := rules.NewEnv(def.Fields)
+	env, err := rules.NewEnv(def.Fields, nil)
 	if err != nil {
 		t.Fatalf("new env: %v", err)
 	}

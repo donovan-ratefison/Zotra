@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -73,19 +74,55 @@ func actorOf(cmd Command) string {
 	return ""
 }
 
+// SourceFetcher returns the values of one source. The api layer
+// owns the case context (a test case serves the simulated values)
+// through the closure.
+type SourceFetcher func(ctx context.Context, src process.Source) (map[string]any, error)
+
+// SourceFetchError is the error of a fetcher, with the id of the
+// source. The caller maps it to its own answer.
+type SourceFetchError struct {
+	SourceID string
+	Err      error
+}
+
+func (e *SourceFetchError) Error() string {
+	return "source " + e.SourceID + ": " + e.Err.Error()
+}
+
+func (e *SourceFetchError) Unwrap() error { return e.Err }
+
 // Handle validates a command against the state and returns the new
 // events, with their hashes. It does not write anything and it does
-// not modify st or st.Data. It trusts a definition that passed
-// rules.ValidateDocument. On error it returns no event.
+// not modify st, st.Data or st.Sources. It trusts a definition that
+// passed rules.ValidateDocument. On error it returns no event. It
+// fetches no source.
 func Handle(def process.Definition, st State, cmd Command, at time.Time) ([]Event, error) {
+	return HandleWithSources(context.Background(), def, st, cmd, at, nil)
+}
+
+// HandleWithSources runs Handle with a source fetcher: when the walk
+// enters a task node whose source_ids list sources, the engine calls
+// the fetcher once per source, in source_ids order, and emits one
+// source_fetched event after step_entered (the values as given, the
+// actor "system"). A nil fetcher fetches nothing. A fetcher error
+// aborts the command: no event of the command is kept, and the error
+// is a *SourceFetchError.
+func HandleWithSources(ctx context.Context, def process.Definition,
+	st State, cmd Command, at time.Time, fetch SourceFetcher,
+) ([]Event, error) {
 	env, err := newEnv(def)
 	if err != nil {
 		return nil, err
 	}
-	// The working state chains the events of this command. Data is a
-	// fresh copy, so the caller map is never modified.
+	// The working state chains the events of this command. Data and
+	// Sources are fresh copies, so the caller maps are never modified.
 	ws := st
 	ws.Data = copyData(st.Data)
+	ws.Sources = make(map[string]map[string]any, len(st.Sources))
+	for id, values := range st.Sources {
+		ws.Sources[id] = values
+	}
 	var events []Event
 	emit := func(actor, typ string, payload any) {
 		ev := newEvent(ws, at, actor, typ, payload)
@@ -103,7 +140,7 @@ func Handle(def process.Definition, st State, cmd Command, at time.Time) ([]Even
 			if err != nil {
 				return false, err
 			}
-			result, err := prg.EvalBool(ws.Data, at, decision)
+			result, err := prg.EvalBool(activation(def, ws), at, decision)
 			if err != nil {
 				text := err.Error()
 				emit(actor, EventCheckEvaluated, CheckEvaluatedPayload{
@@ -127,8 +164,8 @@ func Handle(def process.Definition, st State, cmd Command, at time.Time) ([]Even
 	}
 
 	// advance takes one edge: it emits edge_taken and step_entered,
-	// resets the assignee, and closes the case on an end node. It
-	// returns the target node.
+	// fetches the sources of a task node, resets the assignee, and
+	// closes the case on an end node. It returns the target node.
 	advance := func(edge process.Edge) (process.Node, error) {
 		target, err := findNode(def, edge.To)
 		if err != nil {
@@ -138,6 +175,25 @@ func Handle(def process.Definition, st State, cmd Command, at time.Time) ([]Even
 		emit("system", EventStepEntered, StepEnteredPayload{NodeID: target.ID})
 		ws.NodeID = target.ID
 		ws.Assignee = ""
+		if fetch != nil && target.Type == "task" {
+			for _, id := range target.SourceIDs {
+				src, err := findSource(def, id)
+				if err != nil {
+					return process.Node{}, err
+				}
+				values, err := fetch(ctx, src)
+				if err != nil {
+					return process.Node{}, &SourceFetchError{SourceID: id, Err: err}
+				}
+				if values == nil {
+					values = map[string]any{}
+				}
+				emit("system", EventSourceFetched, SourceFetchedPayload{
+					NodeID: target.ID, SourceID: id, Values: values,
+				})
+				ws.Sources[id] = values
+			}
+		}
 		if target.Type == "end" {
 			result := ""
 			if target.EndResult != nil {
@@ -178,7 +234,7 @@ func Handle(def process.Definition, st State, cmd Command, at time.Time) ([]Even
 		var deft *process.Edge
 		for _, e := range outgoing(def, node.ID) {
 			if e.Condition != nil {
-				ok, err := evalCondition(env, e, ws.Data, at)
+				ok, err := evalCondition(env, e, activation(def, ws), at)
 				if err != nil {
 					return process.Edge{}, fmt.Errorf("edge %s: condition: %w", e.ID, err)
 				}
@@ -268,7 +324,7 @@ func Handle(def process.Definition, st State, cmd Command, at time.Time) ([]Even
 			VersionID: c.VersionID,
 			Data:      copyData(c.Data),
 		})
-		if err := recomputeFields(def, env, ws.Data, at); err != nil {
+		if err := recomputeFields(def, env, &ws, at); err != nil {
 			return nil, err
 		}
 		if err := walk(start); err != nil {
@@ -304,7 +360,7 @@ func Handle(def process.Definition, st State, cmd Command, at time.Time) ([]Even
 		}
 		emit(c.Actor, EventDataSubmitted, DataSubmittedPayload{NodeID: node.ID, Values: c.Values})
 		mergeValues(def, ws.Data, c.Values)
-		if err := recomputeFields(def, env, ws.Data, at); err != nil {
+		if err := recomputeFields(def, env, &ws, at); err != nil {
 			return nil, err
 		}
 		if len(node.Decisions) > 0 {
@@ -390,7 +446,32 @@ func Handle(def process.Definition, st State, cmd Command, at time.Time) ([]Even
 
 // newEnv returns the CEL environment of the definition.
 func newEnv(def process.Definition) (*rules.Env, error) {
-	return rules.NewEnv(def.Fields)
+	return rules.NewEnv(def.Fields, def.Sources)
+}
+
+// findSource returns the source with this id.
+func findSource(def process.Definition, id string) (process.Source, error) {
+	for _, src := range def.Sources {
+		if src.ID == id {
+			return src, nil
+		}
+	}
+	return process.Source{}, fmt.Errorf("source %s does not exist", id)
+}
+
+// activation returns the CEL values of the state: a copy of the data,
+// plus one entry per source of the definition, with the last fetched
+// values, or an empty map before the first fetch.
+func activation(def process.Definition, st State) map[string]any {
+	vars := copyData(st.Data)
+	for _, src := range def.Sources {
+		values, ok := st.Sources[src.ID]
+		if !ok {
+			values = map[string]any{}
+		}
+		vars[src.ID] = values
+	}
+	return vars
 }
 
 // findNode returns the node with this id.
@@ -435,16 +516,18 @@ func evalCondition(env *rules.Env, edge process.Edge, data map[string]any, at ti
 }
 
 // recomputeFields walks the computed fields in dependency order and
-// evaluates each expression. The values are the case data, now is at,
-// decision is "". A success stores the value. A failure removes the
-// field from the data and the walk continues. No event, no error,
-// unless the definition has a cycle (impossible after
-// rules.ValidateDocument).
-func recomputeFields(def process.Definition, env *rules.Env, data map[string]any, at time.Time) error {
+// evaluates each expression. The values are the activation of the
+// state (the case data and the sources), now is at, decision is "". A
+// success stores the value in st.Data. A failure removes the field
+// from st.Data and the walk continues. No event, no error, unless the
+// definition has a cycle (impossible after rules.ValidateDocument).
+func recomputeFields(def process.Definition, env *rules.Env, st *State, at time.Time) error {
 	names, err := rules.ComputedOrder(def)
 	if err != nil {
 		return err
 	}
+	data := st.Data
+	vars := activation(def, *st)
 	fields := fieldByName(def)
 	for _, name := range names {
 		f := fields[name]
@@ -456,12 +539,14 @@ func recomputeFields(def process.Definition, env *rules.Env, data map[string]any
 		if err != nil {
 			return err
 		}
-		value, err := prg.Eval(data, at, "")
+		value, err := prg.Eval(vars, at, "")
 		if err != nil {
 			delete(data, name)
+			delete(vars, name)
 			continue
 		}
 		data[name] = value
+		vars[name] = value
 	}
 	return nil
 }

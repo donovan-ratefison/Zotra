@@ -348,7 +348,7 @@ func (d apiDeps) explainCheck(w http.ResponseWriter, r *http.Request) {
 	}
 	// 7. The environment that checks the proposal. It cannot fail on
 	// a folded definition; the store mapping gives 500 internal.
-	env, err := rules.NewEnv(def.Fields)
+	env, err := rules.NewEnv(def.Fields, def.Sources)
 	if err != nil {
 		writeStoreError(w, err)
 		return

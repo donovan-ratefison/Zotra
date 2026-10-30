@@ -10,8 +10,7 @@ import (
 	"time"
 )
 
-// Types of the events of the case log. source_fetched comes with the
-// external sources and is not defined here.
+// Types of the events of the case log.
 const (
 	EventCaseCreated    = "case_created"
 	EventStepEntered    = "step_entered"
@@ -22,6 +21,7 @@ const (
 	EventDecisionMade   = "decision_made"
 	EventSignatureAdded = "signature_added"
 	EventCaseClosed     = "case_closed"
+	EventSourceFetched  = "source_fetched"
 )
 
 // Event is one entry of the append-only case log. The field order
@@ -84,6 +84,12 @@ type SignatureAddedPayload struct {
 type CaseClosedPayload struct {
 	NodeID string `json:"node_id"`
 	Result string `json:"result"`
+}
+
+type SourceFetchedPayload struct {
+	NodeID   string         `json:"node_id"`
+	SourceID string         `json:"source_id"`
+	Values   map[string]any `json:"values"`
 }
 
 // ZeroHash is the prev_hash of the first event.

@@ -3,6 +3,7 @@ package rules
 import (
 	"fmt"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,7 +38,7 @@ func exampleFields() []process.Field {
 
 func testEnv(t *testing.T) *Env {
 	t.Helper()
-	env, err := NewEnv(exampleFields())
+	env, err := NewEnv(exampleFields(), nil)
 	if err != nil {
 		t.Fatalf("NewEnv: %v", err)
 	}
@@ -77,7 +78,7 @@ func TestFieldType(t *testing.T) {
 
 func TestNewEnvUnknownType(t *testing.T) {
 	bad := process.Field{Name: "f", Label: "f", Type: "vector", Options: []string{}, Computed: nil}
-	if _, err := NewEnv([]process.Field{bad}); err == nil {
+	if _, err := NewEnv([]process.Field{bad}, nil); err == nil {
 		t.Error("NewEnv with unknown type gave no error, want one")
 	}
 	if _, err := FieldType(bad); err == nil {
@@ -234,5 +235,22 @@ func TestCompileRefusals(t *testing.T) {
 				t.Errorf("Compile(%q) gave no error, want one", tt.expression)
 			}
 		})
+	}
+}
+
+// R1, R2.
+func TestSourceVariables(t *testing.T) {
+	env, err := NewEnv(exampleFields(), []process.Source{{ID: "blacklist"}})
+	if err != nil {
+		t.Fatalf("NewEnv: %v", err)
+	}
+	for _, expr := range []string{"blacklist.listed == false", "size(blacklist) >= 0"} {
+		if _, err := env.Compile(expr, cel.BoolType); err != nil {
+			t.Errorf("Compile(%q): %v", expr, err)
+		}
+	}
+	_, err = env.Compile("ghost_listed.x == true", cel.BoolType)
+	if err == nil || !strings.Contains(err.Error(), "undeclared reference") {
+		t.Errorf("Compile(ghost_listed) error = %v, want an undeclared reference", err)
 	}
 }

@@ -77,18 +77,22 @@ func (d apiDeps) changeProcess(w http.ResponseWriter, r *http.Request) {
 		}
 		var errs []process.Error
 		content, ok := answerContent(ansBody)
+		// merged is the answer with the sources of the current
+		// definition: the AI never writes sources.
+		merged := content
 		switch {
 		case !ok || content == "":
 			errs = []process.Error{{Path: "", Message: msgNoContent}}
 		default:
-			errs = rules.ValidateDocument([]byte(content))
+			merged = withSources(content, v.Definition)
+			errs = rules.ValidateDocument([]byte(merged))
 		}
 		if len(errs) == 0 {
-			errs = checkCitations(content, ids)
+			errs = checkCitations(merged, ids)
 		}
 		if len(errs) == 0 {
 			writeJSON(w, http.StatusOK, map[string]any{
-				"definition": json.RawMessage(content),
+				"definition": json.RawMessage(merged),
 				"attempts":   attempt,
 			})
 			return
@@ -102,6 +106,32 @@ func (d apiDeps) changeProcess(w http.ResponseWriter, r *http.Request) {
 	}
 	writeErrorDetails(w, http.StatusUnprocessableEntity, "invalid_output",
 		msgExplainFailed, lastErrs)
+}
+
+// withSources returns the AI answer with the sources array of the
+// current definition. The strict AI schema closes the sources array,
+// so the model cannot keep the hand-defined sources. The answer stays
+// as it is when it is not a JSON object, or when the current
+// definition has no sources key (a draft can be any JSON object).
+func withSources(content string, current []byte) string {
+	var answer map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(content), &answer); err != nil || answer == nil {
+		return content
+	}
+	var cur map[string]json.RawMessage
+	if err := json.Unmarshal(current, &cur); err != nil {
+		return content
+	}
+	src, ok := cur["sources"]
+	if !ok {
+		return content
+	}
+	answer["sources"] = src
+	out, err := json.Marshal(answer)
+	if err != nil {
+		return content
+	}
+	return string(out)
 }
 
 // changeRequest reads the body of a chat request and runs the checks

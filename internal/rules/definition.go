@@ -20,7 +20,7 @@ import (
 // cycles (field order). A valid definition gives an empty slice.
 func CheckDefinition(def process.Definition) []process.Error {
 	errors := []process.Error{}
-	e, err := NewEnv(def.Fields)
+	e, err := NewEnv(def.Fields, def.Sources)
 	if err != nil {
 		return append(errors, process.Error{Path: "/fields", Message: err.Error()})
 	}
@@ -84,7 +84,7 @@ func CheckDefinition(def process.Definition) []process.Error {
 // expression does not compile or if there is a cycle. A definition
 // with no computed field gives an empty slice, not nil.
 func ComputedOrder(def process.Definition) ([]string, error) {
-	e, err := NewEnv(def.Fields)
+	e, err := NewEnv(def.Fields, def.Sources)
 	if err != nil {
 		return nil, err
 	}

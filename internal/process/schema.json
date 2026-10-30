@@ -26,7 +26,20 @@
     "scope": { "type": "array", "items": { "$ref": "#/$defs/scope" } },
     "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } },
     "edges": { "type": "array", "items": { "$ref": "#/$defs/edge" } },
-    "sources": { "type": "array", "items": false }
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "url", "test_values"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "url": { "type": "string" },
+          "test_values": { "type": "object" }
+        }
+      }
+    }
   },
   "$defs": {
     "theme": {

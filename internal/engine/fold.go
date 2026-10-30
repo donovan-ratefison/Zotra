@@ -18,15 +18,16 @@ const (
 // State is the state of one case, after the events that Fold
 // replayed.
 type State struct {
-	CaseID    string         `json:"case_id"`
-	VersionID string         `json:"version_id"`
-	Status    string         `json:"status"`
-	Result    string         `json:"result"`
-	NodeID    string         `json:"node_id"`
-	Data      map[string]any `json:"data"`
-	Assignee  string         `json:"assignee"`
-	Seq       int            `json:"seq"`
-	PrevHash  string         `json:"prev_hash"`
+	CaseID    string                    `json:"case_id"`
+	VersionID string                    `json:"version_id"`
+	Status    string                    `json:"status"`
+	Result    string                    `json:"result"`
+	NodeID    string                    `json:"node_id"`
+	Data      map[string]any            `json:"data"`
+	Sources   map[string]map[string]any `json:"sources"`
+	Assignee  string                    `json:"assignee"`
+	Seq       int                       `json:"seq"`
+	PrevHash  string                    `json:"prev_hash"`
 }
 
 // Fold rebuilds the state from events. Replay to N =
@@ -55,7 +56,11 @@ func Fold(def process.Definition, events []Event) (State, error) {
 	if err != nil {
 		return State{}, err
 	}
-	ws := State{Data: map[string]any{}}
+	sourceIDs := map[string]bool{}
+	for _, src := range def.Sources {
+		sourceIDs[src.ID] = true
+	}
+	ws := State{Data: map[string]any{}, Sources: map[string]map[string]any{}}
 	for i, e := range events {
 		if i == 0 && e.Type != EventCaseCreated {
 			return State{}, errors.New("event 1: first event must be case_created")
@@ -77,7 +82,7 @@ func Fold(def process.Definition, events []Event) (State, error) {
 			ws.Data = map[string]any{}
 			mergeValues(def, ws.Data, p.Data)
 			ws.Status = StatusOpen
-			if err := recomputeFields(def, env, ws.Data, e.At); err != nil {
+			if err := recomputeFields(def, env, &ws, e.At); err != nil {
 				return State{}, err
 			}
 		case EventStepEntered:
@@ -116,7 +121,7 @@ func Fold(def process.Definition, events []Event) (State, error) {
 				return State{}, fmt.Errorf("event %d: node %s does not exist", e.Seq, p.NodeID)
 			}
 			mergeValues(def, ws.Data, p.Values)
-			if err := recomputeFields(def, env, ws.Data, e.At); err != nil {
+			if err := recomputeFields(def, env, &ws, e.At); err != nil {
 				return State{}, err
 			}
 		case EventCheckEvaluated:
@@ -162,6 +167,18 @@ func Fold(def process.Definition, events []Event) (State, error) {
 			ws.Status = StatusClosed
 			ws.Result = p.Result
 			ws.NodeID = p.NodeID
+		case EventSourceFetched:
+			var p SourceFetchedPayload
+			if err := json.Unmarshal(e.Payload, &p); err != nil {
+				return State{}, fmt.Errorf("event %d: payload: %w", e.Seq, err)
+			}
+			if _, ok := nodeByID[p.NodeID]; !ok {
+				return State{}, fmt.Errorf("event %d: node %s does not exist", e.Seq, p.NodeID)
+			}
+			if !sourceIDs[p.SourceID] {
+				return State{}, fmt.Errorf("event %d: source %s does not exist", e.Seq, p.SourceID)
+			}
+			ws.Sources[p.SourceID] = p.Values
 		default:
 			return State{}, fmt.Errorf("event %d: unknown type %s", e.Seq, e.Type)
 		}

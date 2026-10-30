@@ -5,6 +5,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/donovan-ratefison/zotra/internal/engine"
 	"github.com/donovan-ratefison/zotra/internal/process"
+	"github.com/donovan-ratefison/zotra/internal/sources"
 	"github.com/donovan-ratefison/zotra/internal/store"
 )
 
@@ -60,6 +62,7 @@ func zeroState(c store.Case) engine.State {
 		CaseID:   c.ID,
 		Status:   engine.StatusOpen,
 		Data:     map[string]any{},
+		Sources:  map[string]map[string]any{},
 		PrevHash: engine.ZeroHash,
 	}
 }
@@ -267,9 +270,21 @@ func (d apiDeps) runCommand(w http.ResponseWriter, r *http.Request) {
 	}
 	// 6. The event time. The store keeps microseconds.
 	at := time.Now().UTC().Truncate(time.Microsecond)
-	// 7. The engine.
-	newEvents, err := engine.Handle(def, st, cmd, at)
+	// 7. The engine. A test case reads the simulated values of the
+	// sources, a real case reads the network.
+	fetch := func(ctx context.Context, src process.Source) (map[string]any, error) {
+		if c.IsTest {
+			return sources.Simulated(src), nil
+		}
+		return sources.Fetch(ctx, src)
+	}
+	newEvents, err := engine.HandleWithSources(r.Context(), def, st, cmd, at, fetch)
 	if err != nil {
+		var fe *engine.SourceFetchError
+		if errors.As(err, &fe) {
+			writeError(w, http.StatusBadGateway, "source_unavailable", err.Error())
+			return
+		}
 		writeError(w, http.StatusConflict, "conflict", err.Error())
 		return
 	}

@@ -51,12 +51,13 @@ func FieldType(field process.Field) (*cel.Type, error) {
 	}
 }
 
-// NewEnv returns the environment of the fields: one variable per
-// field name, with the CEL type of its field type, plus now
+// NewEnv returns the environment of the fields and the sources: one
+// variable per field name, with the CEL type of its field type, one
+// variable per source id, with the CEL type map(string, dyn), plus now
 // (google.protobuf.Timestamp) and decision (string). It enables the
 // math extension of cel-go, and declares pow, so that the computed
 // fields can use pow. It returns an error for an unknown field type.
-func NewEnv(fields []process.Field) (*Env, error) {
+func NewEnv(fields []process.Field, sources []process.Source) (*Env, error) {
 	opts := []cel.EnvOption{ext.Math()}
 	for _, field := range fields {
 		t, err := FieldType(field)
@@ -64,6 +65,9 @@ func NewEnv(fields []process.Field) (*Env, error) {
 			return nil, fmt.Errorf("field %s: %w", field.Name, err)
 		}
 		opts = append(opts, cel.Variable(field.Name, t))
+	}
+	for _, src := range sources {
+		opts = append(opts, cel.Variable(src.ID, cel.MapType(cel.StringType, cel.DynType)))
 	}
 	opts = append(opts,
 		cel.Variable("now", cel.TimestampType),

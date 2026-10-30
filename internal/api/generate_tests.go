@@ -6,6 +6,7 @@ package api
 // cases in the store.
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"github.com/donovan-ratefison/zotra/internal/coverage"
 	"github.com/donovan-ratefison/zotra/internal/engine"
 	"github.com/donovan-ratefison/zotra/internal/process"
+	"github.com/donovan-ratefison/zotra/internal/sources"
 	"github.com/donovan-ratefison/zotra/internal/store"
 )
 
@@ -350,6 +352,12 @@ func (d apiDeps) generateTests(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// simulatedSource serves the test values of a source: each generated
+// case is a test case.
+var simulatedSource engine.SourceFetcher = func(_ context.Context, src process.Source) (map[string]any, error) {
+	return sources.Simulated(src), nil
+}
+
 // genTestStart is the fixed start time of the simulated commands.
 // One minute per command follows; the generator needs no wall times.
 var genTestStart = time.Date(2026, 10, 27, 8, 0, 0, 0, time.UTC)
@@ -372,9 +380,9 @@ func simulateGenerated(def process.Definition, c store.Case,
 	}
 	// The start command, with the real case id.
 	at := t0
-	events, err := engine.Handle(def, engine.State{}, engine.Start{
+	events, err := engine.HandleWithSources(context.Background(), def, engine.State{}, engine.Start{
 		CaseID: c.ID, VersionID: c.VersionID, Actor: "system", Data: data,
-	}, at)
+	}, at, simulatedSource)
 	if err != nil {
 		return drop("case %d: %s", i, err)
 	}
@@ -409,7 +417,7 @@ func simulateGenerated(def process.Definition, c store.Case,
 		default:
 			return drop("case %d: step %d: unknown step type %s", i, j+1, s.Type)
 		}
-		events, err := engine.Handle(def, st, cmd, at)
+		events, err := engine.HandleWithSources(context.Background(), def, st, cmd, at, simulatedSource)
 		if err != nil {
 			return drop("case %d: step %d: %s", i, j+1, err)
 		}

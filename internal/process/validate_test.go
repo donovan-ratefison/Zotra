@@ -3,6 +3,7 @@ package process
 import (
 	"encoding/json"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -378,6 +379,169 @@ func TestValidateInvalid(t *testing.T) {
 			}
 			if tt.wantInMsg != "" && !strings.Contains(errs[0].Message, tt.wantInMsg) {
 				t.Errorf("first error message = %q, want it to contain %q", errs[0].Message, tt.wantInMsg)
+			}
+		})
+	}
+}
+
+// sourcesDefinition is the base fixture of the source rows: one task
+// node entry that lists the two sources and one check that reads one.
+const sourcesDefinition = `{
+  "schema_version": "1",
+  "name": "Sources",
+  "currency": "EUR",
+  "policy_document_id": null,
+  "theme": {"brand_name": "Sources", "primary_color": "#111111", "logo_url": null},
+  "roles": [{"id": "advisor", "name": "Advisor", "department": "Branch"}],
+  "fields": [{"name": "amount", "label": "Amount", "type": "money", "options": [], "computed": null}],
+  "scope": [{"field": "amount", "role": "advisor", "access": "write"}],
+  "nodes": [
+    {"id": "start", "type": "start", "name": "Start", "role": null, "deadline_hours": null,
+     "documents": [], "signature": false, "checks": [], "decisions": [], "end_result": null,
+     "scope_overrides": [], "source_ids": [], "citations": []},
+    {"id": "entry", "type": "task", "name": "Entry", "role": "advisor", "deadline_hours": null,
+     "documents": [], "signature": false,
+     "checks": [{"id": "c1", "expression": "blacklist.listed == false",
+       "message": "The client is on the blacklist.", "plain_text": null, "citations": []}],
+     "decisions": [], "end_result": null,
+     "scope_overrides": [], "source_ids": ["blacklist", "loans"], "citations": []},
+    {"id": "end", "type": "end", "name": "End", "role": null, "deadline_hours": null,
+     "documents": [], "signature": false, "checks": [], "decisions": [], "end_result": "approved",
+     "scope_overrides": [], "source_ids": [], "citations": []}
+  ],
+  "edges": [
+    {"id": "e1", "from": "start", "to": "entry", "label": null, "decision": null, "condition": null, "is_default": false},
+    {"id": "e2", "from": "entry", "to": "end", "label": null, "decision": null, "condition": null, "is_default": false}
+  ],
+  "sources": [
+    {"id": "blacklist", "name": "Credit blacklist", "url": "http://core.example/api/blacklist",
+     "test_values": {"listed": false}},
+    {"id": "loans", "name": "Existing loans", "url": "http://core.example/api/loans",
+     "test_values": {"monthly_total": 0}}
+  ]
+}`
+
+// sourcesDoc applies one mutation to the sources fixture and returns
+// the bytes.
+func sourcesDoc(t *testing.T, mutate func(doc map[string]any)) []byte {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(sourcesDefinition), &doc); err != nil {
+		t.Fatalf("unmarshal sources fixture: %v", err)
+	}
+	mutate(doc)
+	data, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("marshal mutated doc: %v", err)
+	}
+	return data
+}
+
+// P1.
+func TestSourcesDecode(t *testing.T) {
+	def, err := Decode([]byte(sourcesDefinition))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if len(def.Sources) != 2 {
+		t.Fatalf("sources = %d, want 2", len(def.Sources))
+	}
+	src := def.Sources[0]
+	if src.ID != "blacklist" || src.Name != "Credit blacklist" ||
+		src.URL != "http://core.example/api/blacklist" || src.TestValues["listed"] != false {
+		t.Errorf("source 0 = %+v, want the blacklist source", src)
+	}
+	null := sourcesDoc(t, func(doc map[string]any) { doc["sources"] = nil })
+	def, err = Decode(null)
+	if err != nil {
+		t.Fatalf("Decode with null sources: %v", err)
+	}
+	if def.Sources == nil || len(def.Sources) != 0 {
+		t.Errorf("sources = %#v, want an empty slice", def.Sources)
+	}
+}
+
+// P1b.
+func TestJSONSchemaClosesSources(t *testing.T) {
+	sources := JSONSchema()["properties"].(map[string]any)["sources"].(map[string]any)
+	if sources["items"] != false {
+		t.Errorf("AI schema sources items = %v, want false", sources["items"])
+	}
+	var file map[string]any
+	if err := json.Unmarshal(schemaJSON, &file); err != nil {
+		t.Fatal(err)
+	}
+	item, ok := file["properties"].(map[string]any)["sources"].(map[string]any)["items"].(map[string]any)
+	if !ok {
+		t.Fatal("schema file sources items is not an object")
+	}
+	if _, ok := item["properties"].(map[string]any)["test_values"]; !ok {
+		t.Error("schema file sources item has no test_values")
+	}
+}
+
+// P2.
+func TestValidateSources(t *testing.T) {
+	if errs := Validate([]byte(sourcesDefinition)); len(errs) != 0 {
+		t.Fatalf("base fixture gave %d errors: %+v", len(errs), errs)
+	}
+	source := func(doc map[string]any, i int) map[string]any {
+		return doc["sources"].([]any)[i].(map[string]any)
+	}
+	node := func(doc map[string]any, i int) map[string]any {
+		return doc["nodes"].([]any)[i].(map[string]any)
+	}
+	tests := []struct {
+		name   string
+		mutate func(doc map[string]any)
+		want   []Error
+	}{
+		{"duplicate id", func(doc map[string]any) { source(doc, 1)["id"] = "blacklist" }, []Error{
+			{"/sources/1/id", "duplicate source id blacklist"},
+			{"/nodes/1/source_ids/1", "node references unknown source loans"},
+		}},
+		{"bad id", func(doc map[string]any) { source(doc, 0)["id"] = "1st" }, []Error{
+			{"/sources/0/id", "source id 1st must match ^[a-z][a-z0-9_]*$"},
+			{"/nodes/1/source_ids/0", "node references unknown source blacklist"},
+		}},
+		{"field name", func(doc map[string]any) { source(doc, 0)["id"] = "amount" }, []Error{
+			{"/sources/0/id", "source id amount is already a field name"},
+			{"/nodes/1/source_ids/0", "node references unknown source blacklist"},
+		}},
+		{"reserved name", func(doc map[string]any) { source(doc, 0)["id"] = "now" }, []Error{
+			{"/sources/0/id", "source id now is a reserved name"},
+			{"/nodes/1/source_ids/0", "node references unknown source blacklist"},
+		}},
+		{"ftp url", func(doc map[string]any) { source(doc, 0)["url"] = "ftp://x" }, []Error{
+			{"/sources/0/url", "source url must have an http or https scheme and a host"},
+		}},
+		{"url does not parse", func(doc map[string]any) { source(doc, 0)["url"] = "://x" }, []Error{
+			{"/sources/0/url", `invalid source url: parse "://x": missing protocol scheme`},
+		}},
+		{"empty host", func(doc map[string]any) { source(doc, 0)["url"] = "http://" }, []Error{
+			{"/sources/0/url", "source url must have an http or https scheme and a host"},
+		}},
+		{"unknown entry", func(doc map[string]any) {
+			node(doc, 1)["source_ids"] = []any{"ghost", "loans"}
+		}, []Error{
+			{"/nodes/1/source_ids/0", "node references unknown source ghost"},
+		}},
+		{"duplicate entry", func(doc map[string]any) {
+			node(doc, 1)["source_ids"] = []any{"blacklist", "blacklist"}
+		}, []Error{
+			{"/nodes/1/source_ids/1", "duplicate source blacklist in source_ids"},
+		}},
+		{"entry on start", func(doc map[string]any) {
+			node(doc, 0)["source_ids"] = []any{"blacklist"}
+		}, []Error{
+			{"/nodes/0/source_ids", "only a task node can list sources"},
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Validate(sourcesDoc(t, tt.mutate))
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("errors = %+v, want %+v", got, tt.want)
 			}
 		})
 	}

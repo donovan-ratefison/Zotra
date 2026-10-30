@@ -1,7 +1,10 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"maps"
 	"math"
 	"os"
 	"reflect"
@@ -790,4 +793,246 @@ func TestFoldErrors(t *testing.T) {
 			}
 		})
 	}
+}
+
+// sourcesJSON is the base fixture of the source rows: the task entry
+// lists the sources blacklist and loans, and its check c1 reads
+// blacklist.
+const sourcesJSON = `{
+  "schema_version": "1", "name": "Sources", "currency": "EUR", "policy_document_id": null,
+  "theme": {"brand_name": "Sources", "primary_color": "#111111", "logo_url": null},
+  "roles": [{"id": "advisor", "name": "Advisor", "department": "Branch"}],
+  "fields": [{"name": "amount", "label": "Amount", "type": "money", "options": [], "computed": null}],
+  "scope": [{"field": "amount", "role": "advisor", "access": "write"}],
+  "nodes": [
+    {"id": "start", "type": "start", "name": "Start", "role": null, "deadline_hours": null,
+     "documents": [], "signature": false, "checks": [], "decisions": [], "end_result": null,
+     "scope_overrides": [], "source_ids": [], "citations": []},
+    {"id": "entry", "type": "task", "name": "Entry", "role": "advisor", "deadline_hours": null,
+     "documents": [], "signature": false,
+     "checks": [{"id": "c1", "expression": "blacklist.listed == false",
+       "message": "The client is on the blacklist.", "plain_text": null, "citations": []}],
+     "decisions": [], "end_result": null,
+     "scope_overrides": [], "source_ids": ["blacklist", "loans"], "citations": []},
+    {"id": "end", "type": "end", "name": "End", "role": null, "deadline_hours": null,
+     "documents": [], "signature": false, "checks": [], "decisions": [], "end_result": "approved",
+     "scope_overrides": [], "source_ids": [], "citations": []}
+  ],
+  "edges": [
+    {"id": "e1", "from": "start", "to": "entry", "label": null, "decision": null, "condition": null, "is_default": false},
+    {"id": "e2", "from": "entry", "to": "end", "label": null, "decision": null, "condition": null, "is_default": false}
+  ],
+  "sources": [
+    {"id": "blacklist", "name": "Credit blacklist", "url": "http://core.example/api/blacklist",
+     "test_values": {"listed": false}},
+    {"id": "loans", "name": "Existing loans", "url": "http://core.example/api/loans",
+     "test_values": {"monthly_total": 0}}
+  ]
+}`
+
+// sourcesDefinition decodes the base fixture.
+func sourcesDefinition(t *testing.T) process.Definition {
+	t.Helper()
+	def, err := process.Decode([]byte(sourcesJSON))
+	if err != nil {
+		t.Fatalf("decode sources fixture: %v", err)
+	}
+	return def
+}
+
+// oneSourceDefinition is the base fixture with the blacklist source
+// only, on the source list of entry.
+func oneSourceDefinition(t *testing.T) process.Definition {
+	t.Helper()
+	def := sourcesDefinition(t)
+	def.Sources = def.Sources[:1]
+	def.Nodes[1].SourceIDs = []string{"blacklist"}
+	return def
+}
+
+// testValuesFetcher serves a copy of the test_values, as a test case
+// does.
+func testValuesFetcher(_ context.Context, src process.Source) (map[string]any, error) {
+	return maps.Clone(src.TestValues), nil
+}
+
+// sourceSteps runs start, take and submit on the fixture with the
+// fetcher. Each command gets the state folded from the events so far.
+func sourceSteps(t *testing.T, def process.Definition, fetch SourceFetcher) []Event {
+	t.Helper()
+	cmds := []Command{
+		Start{CaseID: caseID, VersionID: versionID, Actor: "u-advisor",
+			Data: map[string]any{"amount": 240000.0}},
+		Take{Actor: "u-advisor"},
+		Submit{Actor: "u-advisor", Values: map[string]any{}},
+	}
+	var all []Event
+	for i, cmd := range cmds {
+		st := foldEvents(t, def, all)
+		evs, err := HandleWithSources(context.Background(), def, st, cmd, commandAt(9, i), fetch)
+		if err != nil {
+			t.Fatalf("command %d: %v", i+1, err)
+		}
+		all = append(all, evs...)
+	}
+	return all
+}
+
+// lastCheck returns the payload of the last check_evaluated event.
+func lastCheck(t *testing.T, events []Event) CheckEvaluatedPayload {
+	t.Helper()
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Type == EventCheckEvaluated {
+			var p CheckEvaluatedPayload
+			if err := json.Unmarshal(events[i].Payload, &p); err != nil {
+				t.Fatal(err)
+			}
+			return p
+		}
+	}
+	t.Fatal("no check_evaluated event")
+	return CheckEvaluatedPayload{}
+}
+
+// eventTypes returns the type of each event.
+func eventTypes(events []Event) []string {
+	types := make([]string, len(events))
+	for i, e := range events {
+		types[i] = e.Type
+	}
+	return types
+}
+
+// R1b.
+func TestSourceChecks(t *testing.T) {
+	t.Run("fetched values pass the check", func(t *testing.T) {
+		def := sourcesDefinition(t)
+		events := sourceSteps(t, def, testValuesFetcher)
+		if p := lastCheck(t, events); !p.Result || p.Error != nil {
+			t.Errorf("check = %+v, want result true", p)
+		}
+		st := foldEvents(t, def, events)
+		if st.Status != StatusClosed || st.Result != "approved" {
+			t.Errorf("state = %s %s, want closed approved", st.Status, st.Result)
+		}
+	})
+	t.Run("listed true fails the check", func(t *testing.T) {
+		def := sourcesDefinition(t)
+		def.Sources[0].TestValues = map[string]any{"listed": true}
+		events := sourceSteps(t, def, testValuesFetcher)
+		if p := lastCheck(t, events); p.Result || p.Error != nil {
+			t.Errorf("check = %+v, want result false", p)
+		}
+		st := foldEvents(t, def, events)
+		if st.Status != StatusOpen || st.NodeID != "entry" {
+			t.Errorf("state = %s on %s, want open on entry", st.Status, st.NodeID)
+		}
+	})
+	t.Run("nil fetcher errors the check", func(t *testing.T) {
+		def := sourcesDefinition(t)
+		events := sourceSteps(t, def, nil)
+		p := lastCheck(t, events)
+		want := `eval "blacklist.listed == false": no such key: listed`
+		if p.Result || p.Error == nil || !strings.Contains(*p.Error, want) {
+			t.Errorf("check = %+v, want an error with %s", p, want)
+		}
+	})
+}
+
+// E1 to E4.
+func TestHandleWithSources(t *testing.T) {
+	start := Start{CaseID: caseID, VersionID: versionID, Actor: "u-advisor",
+		Data: map[string]any{"amount": 240000.0}}
+	at := commandAt(9, 0)
+	sourcePayloads := func(t *testing.T, events []Event) []map[string]any {
+		t.Helper()
+		var out []map[string]any
+		for _, e := range events {
+			if e.Type == EventSourceFetched {
+				if e.Actor != "system" {
+					t.Errorf("source_fetched actor = %s, want system", e.Actor)
+				}
+				out = append(out, wantPayload(t, e.Payload))
+			}
+		}
+		return out
+	}
+	t.Run("E1 one source", func(t *testing.T) {
+		def := oneSourceDefinition(t)
+		events, err := HandleWithSources(context.Background(), def, State{}, start, at, testValuesFetcher)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []string{EventCaseCreated, EventEdgeTaken, EventStepEntered, EventSourceFetched}
+		if got := eventTypes(events); !slices.Equal(got, want) {
+			t.Fatalf("types = %v, want %v", got, want)
+		}
+		wantP := []map[string]any{{"node_id": "entry", "source_id": "blacklist",
+			"values": map[string]any{"listed": false}}}
+		if got := sourcePayloads(t, events); !reflect.DeepEqual(got, wantP) {
+			t.Errorf("payloads = %v, want %v", got, wantP)
+		}
+		if bad := Verify(events); bad != 0 {
+			t.Errorf("Verify = %d, want 0", bad)
+		}
+	})
+	t.Run("E1 empty test values", func(t *testing.T) {
+		def := oneSourceDefinition(t)
+		def.Sources[0].TestValues = map[string]any{}
+		events, err := HandleWithSources(context.Background(), def, State{}, start, at, testValuesFetcher)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantP := []map[string]any{{"node_id": "entry", "source_id": "blacklist",
+			"values": map[string]any{}}}
+		if got := sourcePayloads(t, events); !reflect.DeepEqual(got, wantP) {
+			t.Errorf("payloads = %v, want %v", got, wantP)
+		}
+		st := foldEvents(t, def, events)
+		if want := map[string]map[string]any{"blacklist": {}}; !reflect.DeepEqual(st.Sources, want) {
+			t.Errorf("Sources = %v, want %v", st.Sources, want)
+		}
+	})
+	t.Run("E2 fetcher error", func(t *testing.T) {
+		def := oneSourceDefinition(t)
+		failing := func(context.Context, process.Source) (map[string]any, error) {
+			return nil, errors.New("timeout")
+		}
+		events, err := HandleWithSources(context.Background(), def, State{}, start, at, failing)
+		var fe *SourceFetchError
+		if !errors.As(err, &fe) || fe.SourceID != "blacklist" {
+			t.Fatalf("error = %v, want a *SourceFetchError of blacklist", err)
+		}
+		if err.Error() != "source blacklist: timeout" {
+			t.Errorf("error = %q, want source blacklist: timeout", err.Error())
+		}
+		if events != nil {
+			t.Errorf("events = %v, want none", events)
+		}
+	})
+	t.Run("E3 two sources in order", func(t *testing.T) {
+		def := sourcesDefinition(t)
+		events, err := HandleWithSources(context.Background(), def, State{}, start, at, testValuesFetcher)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := sourcePayloads(t, events)
+		if len(got) != 2 || got[0]["source_id"] != "blacklist" || got[1]["source_id"] != "loans" {
+			t.Errorf("payloads = %v, want blacklist then loans", got)
+		}
+		if !reflect.DeepEqual(got[1]["values"], map[string]any{"monthly_total": 0.0}) {
+			t.Errorf("loans values = %v, want monthly_total 0", got[1]["values"])
+		}
+	})
+	t.Run("E4 nil fetcher", func(t *testing.T) {
+		def := oneSourceDefinition(t)
+		events, err := Handle(def, State{}, start, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []string{EventCaseCreated, EventEdgeTaken, EventStepEntered}
+		if got := eventTypes(events); !slices.Equal(got, want) {
+			t.Errorf("types = %v, want %v", got, want)
+		}
+	})
 }

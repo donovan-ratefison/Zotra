@@ -4,6 +4,8 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -103,16 +105,21 @@ func Validate(data []byte) []Error {
 	errors = append(errors, checkReachability(&def)...)
 	errors = append(errors, checkIdentifiers(&def)...)
 	errors = append(errors, checkReferences(&def)...)
+	errors = append(errors, checkSources(&def)...)
 	return errors
 }
 
 // schemaObject decodes the embedded schema once, for callers that
-// send it to the AI provider as a response format.
+// send it to the AI provider as a response format. The sources item
+// becomes false: the AI never writes sources, and a strict-mode
+// provider refuses the free keys of test_values.
 var schemaObject = sync.OnceValue(func() map[string]any {
 	var raw map[string]any
 	if err := json.Unmarshal(schemaJSON, &raw); err != nil {
 		panic(fmt.Sprintf("process: embedded schema: %v", err))
 	}
+	properties := raw["properties"].(map[string]any)
+	properties["sources"].(map[string]any)["items"] = false
 	return raw
 })
 
@@ -579,5 +586,74 @@ func checkReferences(def *Definition) []Error {
 		}
 	}
 
+	return errors
+}
+
+// sourceID is the pattern of a source id: a CEL identifier.
+var sourceID = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+// checkSources checks the sources and the source_ids of the nodes.
+// Each source id is a CEL variable, so it must be a valid identifier,
+// unique, and different from the field names, now and decision. Each
+// url is an http or https url with a host. Only a task node lists
+// sources, and each entry names one source, once.
+func checkSources(def *Definition) []Error {
+	var errors []Error
+	fieldNames := make(map[string]bool, len(def.Fields))
+	for _, field := range def.Fields {
+		fieldNames[field.Name] = true
+	}
+	ids := make(map[string]bool, len(def.Sources))
+	for i, src := range def.Sources {
+		idPath := fmt.Sprintf("/sources/%d/id", i)
+		switch {
+		case !sourceID.MatchString(src.ID):
+			errors = append(errors, Error{Path: idPath,
+				Message: fmt.Sprintf("source id %s must match ^[a-z][a-z0-9_]*$", src.ID)})
+		case ids[src.ID]:
+			errors = append(errors, Error{Path: idPath,
+				Message: fmt.Sprintf("duplicate source id %s", src.ID)})
+		case fieldNames[src.ID]:
+			errors = append(errors, Error{Path: idPath,
+				Message: fmt.Sprintf("source id %s is already a field name", src.ID)})
+		case src.ID == "now" || src.ID == "decision":
+			errors = append(errors, Error{Path: idPath,
+				Message: fmt.Sprintf("source id %s is a reserved name", src.ID)})
+		}
+		ids[src.ID] = true
+		urlPath := fmt.Sprintf("/sources/%d/url", i)
+		u, err := url.Parse(src.URL)
+		switch {
+		case err != nil:
+			errors = append(errors, Error{Path: urlPath,
+				Message: fmt.Sprintf("invalid source url: %v", err)})
+		case (u.Scheme != "http" && u.Scheme != "https") || u.Host == "":
+			errors = append(errors, Error{Path: urlPath,
+				Message: "source url must have an http or https scheme and a host"})
+		}
+	}
+	for i, node := range def.Nodes {
+		if len(node.SourceIDs) == 0 {
+			continue
+		}
+		if node.Type != "task" {
+			errors = append(errors, Error{Path: nodePath(def, i) + "/source_ids",
+				Message: "only a task node can list sources"})
+			continue
+		}
+		seen := make(map[string]bool, len(node.SourceIDs))
+		for j, id := range node.SourceIDs {
+			path := fmt.Sprintf("%s/source_ids/%d", nodePath(def, i), j)
+			switch {
+			case seen[id]:
+				errors = append(errors, Error{Path: path,
+					Message: fmt.Sprintf("duplicate source %s in source_ids", id)})
+			case !ids[id]:
+				errors = append(errors, Error{Path: path,
+					Message: fmt.Sprintf("node references unknown source %s", id)})
+			}
+			seen[id] = true
+		}
+	}
 	return errors
 }

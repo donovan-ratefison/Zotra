@@ -2,22 +2,30 @@
 // and validation.
 package process
 
-import "encoding/json"
-
 // Definition is one process version: one JSON document. The same JSON
 // Schema validates the import, the AI output and the editor.
 type Definition struct {
-	SchemaVersion    string            `json:"schema_version"`
-	Name             string            `json:"name"`
-	Currency         string            `json:"currency"`
-	PolicyDocumentID *string           `json:"policy_document_id"`
-	Theme            Theme             `json:"theme"`
-	Roles            []Role            `json:"roles"`
-	Fields           []Field           `json:"fields"`
-	Scope            []Scope           `json:"scope"`
-	Nodes            []Node            `json:"nodes"`
-	Edges            []Edge            `json:"edges"`
-	Sources          []json.RawMessage `json:"sources"`
+	SchemaVersion    string   `json:"schema_version"`
+	Name             string   `json:"name"`
+	Currency         string   `json:"currency"`
+	PolicyDocumentID *string  `json:"policy_document_id"`
+	Theme            Theme    `json:"theme"`
+	Roles            []Role   `json:"roles"`
+	Fields           []Field  `json:"fields"`
+	Scope            []Scope  `json:"scope"`
+	Nodes            []Node   `json:"nodes"`
+	Edges            []Edge   `json:"edges"`
+	Sources          []Source `json:"sources"`
+}
+
+// Source is one external HTTP JSON source. The engine fetches it when
+// a case enters a task node that lists its id. A test case reads
+// TestValues in place of the network.
+type Source struct {
+	ID         string         `json:"id"`
+	Name       string         `json:"name"`
+	URL        string         `json:"url"`
+	TestValues map[string]any `json:"test_values"`
 }
 
 // Theme carries the brand of the delivered app.
@@ -98,7 +106,7 @@ func normalize(def *Definition) {
 		return s
 	}
 	if def.Sources == nil {
-		def.Sources = []json.RawMessage{}
+		def.Sources = []Source{}
 	}
 	if def.Roles == nil {
 		def.Roles = []Role{}

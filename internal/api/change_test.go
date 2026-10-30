@@ -481,3 +481,70 @@ func TestRestateRefusals(t *testing.T) {
 		})
 	}
 }
+
+// sourcesOf returns the parsed sources value of a definition.
+func sourcesOf(t *testing.T, definition []byte) any {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(definition, &doc); err != nil {
+		t.Fatalf("definition does not parse: %v", err)
+	}
+	return doc["sources"]
+}
+
+// postChangeOnce posts one change on the draft, expects 200 after one
+// attempt and one request, and returns the answer definition.
+func postChangeOnce(t *testing.T, draftID string, count *int) json.RawMessage {
+	t.Helper()
+	rec := postChange(t, changeReq(draftID, "Add a 12 h deadline to the advisor."))
+	checkOK(t, rec)
+	var got changeAnswer
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("body is not a change answer: %v", err)
+	}
+	if got.Attempts != 1 || *count != 1 {
+		t.Errorf("attempts = %d, requests = %d, want 1 and 1", got.Attempts, *count)
+	}
+	return got.Definition
+}
+
+// C1: the AI answers an empty sources array; the answer keeps the
+// sources of the draft.
+func TestChangeKeepsSources(t *testing.T) {
+	draft := sourcesDoc(t, oneSource)
+	answer := sourcesDoc(t, func(doc map[string]any) {
+		oneSource(doc)
+		doc["sources"] = []any{}
+	})
+	srv, count, _ := changeLiveStub(t, []string{chatEnvelope(string(answer))})
+	aiLive(t, srv.URL)
+	newTestAPI(t)
+	draftID := createProcessVersion(t, draft, "Sources")
+
+	definition := postChangeOnce(t, draftID, count)
+	if got, want := sourcesOf(t, definition), sourcesOf(t, draft); !reflect.DeepEqual(got, want) {
+		t.Errorf("sources = %v, want %v", got, want)
+	}
+}
+
+// C2: a draft stored with no sources key; the AI sources array stays.
+func TestChangeDraftWithoutSources(t *testing.T) {
+	var doc map[string]any
+	if err := json.Unmarshal(seedBytes(t), &doc); err != nil {
+		t.Fatal(err)
+	}
+	delete(doc, "sources")
+	draft, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, count, _ := changeLiveStub(t, []string{chatEnvelope(string(seedBytes(t)))})
+	aiLive(t, srv.URL)
+	newTestAPI(t)
+	draftID := createProcessVersion(t, draft, "No sources")
+
+	definition := postChangeOnce(t, draftID, count)
+	if got := sourcesOf(t, definition); !reflect.DeepEqual(got, []any{}) {
+		t.Errorf("sources = %v, want []", got)
+	}
+}
