@@ -20,9 +20,14 @@ import {
   X,
 } from "lucide-react";
 import { ApiError, updateDraft } from "./api";
-import { changeProcess, restateChange } from "./ai-api";
+import {
+  changeProcess,
+  restateChange,
+  type RestateQuestion,
+} from "./ai-api";
 import { diffChips, diffDefinitions, type DiffRow } from "./diff";
 import { Button } from "@/ui/button";
+import { Checkbox } from "@/ui/checkbox";
 import { Switch } from "@/ui/switch";
 import type { ProcessDefinition, Version } from "./types";
 
@@ -54,6 +59,9 @@ const REPHRASE_TEXT = "Rephrase your request below.";
 const RESTATE_TITLE =
   "The assistant restates your request and waits for your OK before it changes the draft.";
 const RESTATE_KEY = "zotra.chat.restateFirst";
+const CHOICES_TEXT = "Make the change with these choices";
+const INPUT_CLASS =
+  "min-w-0 flex-1 rounded-md border bg-transparent px-3 text-[13px] outline-none";
 
 // ChatTurn is one message of the thread: the user text, or the main
 // text of one AI state, with the diff of a proposal and the details
@@ -66,6 +74,90 @@ export interface ChatTurn {
   chips: string[];
   rows: DiffRow[];
   details: string[];
+  questions?: RestateQuestion[];
+}
+
+// QuestionAnswer is the choice of the designer for one question.
+// other is null while the Other choice is not ticked.
+export interface QuestionAnswer {
+  picked: string[];
+  other: string | null;
+}
+
+// Answers holds one answer for each question id.
+export type Answers = Record<string, QuestionAnswer>;
+
+// defaultAnswers ticks the default options of each question.
+export function defaultAnswers(qs: RestateQuestion[]): Answers {
+  const answers: Answers = {};
+  for (const q of qs) {
+    answers[q.id] = {
+      picked: q.options.filter((o) => o.default).map((o) => o.label),
+      other: null,
+    };
+  }
+  return answers;
+}
+
+function answerOf(answers: Answers, q: RestateQuestion): QuestionAnswer {
+  return answers[q.id] ?? { picked: [], other: null };
+}
+
+// pickOption ticks (on) or unticks one option. A single question
+// keeps only this option, and on plays no role.
+export function pickOption(
+  answers: Answers,
+  q: RestateQuestion,
+  label: string,
+  on: boolean,
+): Answers {
+  if (q.kind === "single") {
+    return { ...answers, [q.id]: { picked: [label], other: null } };
+  }
+  const a = answerOf(answers, q);
+  const picked = q.options
+    .map((o) => o.label)
+    .filter((l) => (l === label ? on : a.picked.includes(l)));
+  return { ...answers, [q.id]: { picked, other: a.other } };
+}
+
+// pickOther sets the Other answer; null unticks it. In a single
+// question, Other replaces the picked option.
+export function pickOther(
+  answers: Answers,
+  q: RestateQuestion,
+  text: string | null,
+): Answers {
+  const picked = q.kind === "single" ? [] : answerOf(answers, q).picked;
+  return { ...answers, [q.id]: { picked, other: text } };
+}
+
+// answerLabels lists the chosen labels in option order, then the
+// Other text when it is not empty.
+export function answerLabels(q: RestateQuestion, a: QuestionAnswer): string[] {
+  const labels = q.options.map((o) => o.label).filter((l) => a.picked.includes(l));
+  const other = a.other?.trim() ?? "";
+  return other === "" ? labels : [...labels, other];
+}
+
+// answersReady tells if each question has one label or more.
+export function answersReady(qs: RestateQuestion[], answers: Answers): boolean {
+  return qs.every((q) => answerLabels(q, answerOf(answers, q)).length > 0);
+}
+
+// answerLines gives one line for each question: the text, then the
+// chosen labels.
+function answerLines(qs: RestateQuestion[], answers: Answers): string[] {
+  return qs.map((q) => `${q.text}: ${answerLabels(q, answerOf(answers, q)).join(", ")}`);
+}
+
+// composeMessage is the change request with one line for each answer.
+export function composeMessage(
+  request: string,
+  qs: RestateQuestion[],
+  answers: Answers,
+): string {
+  return [request, ...answerLines(qs, answers)].join("\n");
 }
 
 export interface ChatState {
@@ -81,8 +173,8 @@ export type ChatEvent =
   | { type: "accept-stale" }
   | { type: "save-failed" }
   | { type: "reject" }
-  | { type: "restated"; text: string }
-  | { type: "confirm" }
+  | { type: "restated"; text: string; questions: RestateQuestion[] }
+  | { type: "confirm"; text?: string }
   | { type: "rephrase" };
 
 // chatEvent is the pure transition of the thread. It returns the new
@@ -110,7 +202,14 @@ export function chatEvent(state: ChatState, event: ChatEvent): ChatState {
         notice: null,
         turns: [
           ...withoutLast,
-          { kind: "restate", text: event.text, chips: [], rows: [], details: [] },
+          {
+            kind: "restate",
+            text: event.text,
+            chips: [],
+            rows: [],
+            details: [],
+            ...(event.questions.length > 0 ? { questions: event.questions } : {}),
+          },
         ],
       };
     case "confirm":
@@ -121,7 +220,13 @@ export function chatEvent(state: ChatState, event: ChatEvent): ChatState {
         notice: null,
         turns: [
           ...state.turns,
-          { kind: "user", text: CONFIRM_TEXT, chips: [], rows: [], details: [] },
+          {
+            kind: "user",
+            text: event.text ?? CONFIRM_TEXT,
+            chips: [],
+            rows: [],
+            details: [],
+          },
           { kind: "waiting", text: WAITING_TEXT, chips: [], rows: [], details: [] },
         ],
       };
@@ -219,11 +324,14 @@ export function chatEvent(state: ChatState, event: ChatEvent): ChatState {
 // ChatTurnView renders one thread message. An AI message sits left,
 // with a round violet avatar and its content in a card with border.
 function ChatTurnView({
-  turn, isLast, accepting, onAccept, onReject, onConfirm, onRephrase,
+  turn, isLast, accepting, answers, onAnswersChange, onAccept, onReject, onConfirm,
+  onRephrase,
 }: {
   turn: ChatTurn;
   isLast: boolean;
   accepting: boolean;
+  answers?: Answers;
+  onAnswersChange?: (a: Answers) => void;
   onAccept?: () => void;
   onReject?: () => void;
   onConfirm?: () => void;
@@ -232,7 +340,7 @@ function ChatTurnView({
   if (turn.kind === "user") {
     return (
       <div className="flex items-start justify-end gap-2">
-        <div className="max-w-[80%] rounded-lg bg-zinc-100 px-3 py-1.5 text-[13px] text-zinc-800">
+        <div className="max-w-[80%] whitespace-pre-line rounded-lg bg-zinc-100 px-3 py-1.5 text-[13px] text-zinc-800">
           {turn.text}
         </div>
         <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-[10px] font-bold text-zinc-600">
@@ -256,7 +364,28 @@ function ChatTurnView({
             {turn.text}
           </p>
         )}
-        {turn.kind === "restate" && (
+        {turn.kind === "restate" && turn.questions !== undefined && (
+          <>
+            <p>{turn.text}</p>
+            {isLast ? (
+              <QuestionForm
+                questions={turn.questions}
+                answers={answers ?? defaultAnswers(turn.questions)}
+                onAnswersChange={onAnswersChange}
+                onConfirm={onConfirm}
+                onRephrase={onRephrase}
+              />
+            ) : (
+              turn.questions.map((q) => (
+                <p key={q.id} className="mt-1 text-[12px] text-zinc-600">
+                  {q.text}{" "}
+                  {q.options.filter((o) => o.default).map((o) => o.label).join(", ")}
+                </p>
+              ))
+            )}
+          </>
+        )}
+        {turn.kind === "restate" && turn.questions === undefined && (
           <>
             <p>{turn.text}</p>
             {isLast && (
@@ -332,6 +461,92 @@ function ChatTurnView({
   );
 }
 
+// QuestionForm renders the questions of the last restate turn: one
+// fieldset for each question, the defaults ticked, and the two
+// buttons.
+function QuestionForm({
+  questions, answers, onAnswersChange, onConfirm, onRephrase,
+}: {
+  questions: RestateQuestion[];
+  answers: Answers;
+  onAnswersChange?: (a: Answers) => void;
+  onConfirm?: () => void;
+  onRephrase?: () => void;
+}) {
+  const change = (next: Answers) => onAnswersChange?.(next);
+  return (
+    <>
+      {questions.map((q) => {
+        const a = answerOf(answers, q);
+        // The row label wraps the control, so the control needs no name.
+        const control = (checked: boolean, onPick: (on: boolean) => void) =>
+          q.kind === "single" ? (
+            <input
+              type="radio"
+              name={`q-${q.id}`}
+              checked={checked}
+              onChange={() => onPick(true)}
+              className="size-4 accent-primary"
+            />
+          ) : (
+            <Checkbox
+              checked={checked}
+              onCheckedChange={(v) => onPick(v === true)}
+            />
+          );
+        return (
+          <fieldset key={q.id} className="mt-2">
+            <legend className="text-[13px] font-medium">{q.text}</legend>
+            {q.options.map((o) => (
+              <label key={o.label} className="flex items-center gap-1.5 text-[13px]">
+                {control(
+                  a.picked.includes(o.label),
+                  (on) => change(pickOption(answers, q, o.label, on)),
+                )}
+                {o.label}
+                {o.default && o.reason !== "" && (
+                  <span className="text-[12px] text-zinc-500">{o.reason}</span>
+                )}
+              </label>
+            ))}
+            {q.other && (
+              <div className="flex items-center gap-1.5 text-[13px]">
+                <label className="flex items-center gap-1.5">
+                  {control(
+                    a.other !== null,
+                    (on) => change(pickOther(answers, q, on ? "" : null)),
+                  )}
+                  Other
+                </label>
+                <input
+                  type="text"
+                  aria-label={`Other answer: ${q.text}`}
+                  disabled={a.other === null}
+                  value={a.other ?? ""}
+                  onChange={(e) => change(pickOther(answers, q, e.target.value))}
+                  className={`h-8 ${INPUT_CLASS}`}
+                />
+              </div>
+            )}
+          </fieldset>
+        );
+      })}
+      <div className="mt-2 flex gap-2">
+        <Button
+          size="xs"
+          disabled={!answersReady(questions, answers)}
+          onClick={() => onConfirm?.()}
+        >
+          {CHOICES_TEXT}
+        </Button>
+        <Button variant="outline" size="xs" onClick={() => onRephrase?.()}>
+          Rephrase
+        </Button>
+      </div>
+    </>
+  );
+}
+
 // DiffRows is the toggle and the rows of one proposal. The open flag
 // is a view concern, so it stays local to the view.
 function DiffRows({ rows }: { rows: DiffRow[] }) {
@@ -381,6 +596,8 @@ export function ChatPanelView(props: {
   onReject?: () => void;
   onConfirm?: () => void;
   onRephrase?: () => void;
+  answers?: Answers;
+  onAnswersChange?: (a: Answers) => void;
   accepting?: boolean;
 }): ReactElement {
   const { state, version, collapsed, listHeight = 220 } = props;
@@ -388,13 +605,15 @@ export function ChatPanelView(props: {
   const pending = last !== null && last.kind === "proposal";
   const waiting = last !== null && last.kind === "waiting";
   const threadRef = useRef<HTMLDivElement | null>(null);
-  // After each new message, the thread shows the last message.
+  // After each new message, the thread shows the last message. An
+  // answer replaces the waiting turn, so the kind of the last turn is
+  // a key too.
   useEffect(() => {
     const el = threadRef.current;
     if (el !== null) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [state.turns.length]);
+  }, [state.turns.length, last?.kind]);
   const disabled = version.status !== "draft" || pending || waiting;
   const title =
     version.status !== "draft"
@@ -461,6 +680,8 @@ export function ChatPanelView(props: {
                 turn={turn}
                 isLast={i === state.turns.length - 1}
                 accepting={props.accepting ?? false}
+                answers={props.answers}
+                onAnswersChange={props.onAnswersChange}
                 onAccept={props.onAccept}
                 onReject={props.onReject}
                 onConfirm={props.onConfirm}
@@ -481,7 +702,7 @@ export function ChatPanelView(props: {
                   props.onSend?.();
                 }
               }}
-              className="h-9 min-w-0 flex-1 rounded-md border bg-transparent px-3 text-[13px] outline-none"
+              className={`h-9 ${INPUT_CLASS}`}
             />
             <Button
               size="icon-sm"
@@ -529,7 +750,7 @@ export async function requestRestate(opts: {
 }): Promise<ChatEvent> {
   try {
     const answer = await opts.restate(opts.version.id, opts.text);
-    return { type: "restated", text: answer.restatement };
+    return { type: "restated", text: answer.restatement, questions: answer.questions };
   } catch (err) {
     return errorEvent(err);
   }
@@ -606,6 +827,7 @@ export function AssistantChat({
     proposal: ProcessDefinition;
   } | null>(null);
   const [pendingRequest, setPendingRequest] = useState("");
+  const [answers, setAnswers] = useState<Answers>({});
   const [restateFirst, setRestateFirst] = useState(() => {
     if (typeof localStorage === "undefined") {
       return true;
@@ -638,14 +860,25 @@ export function AssistantChat({
       return;
     }
     setPendingRequest(text);
-    void requestRestate({ version, text, restate: restateChange }).then((event) =>
-      setState((current) => chatEvent(current, event)),
-    );
+    void requestRestate({ version, text, restate: restateChange }).then((event) => {
+      setState((current) => chatEvent(current, event));
+      if (event.type === "restated") {
+        setAnswers(defaultAnswers(event.questions));
+      }
+    });
   }
 
   function confirm() {
-    setState((current) => chatEvent(current, { type: "confirm" }));
-    runChange(pendingRequest);
+    const last = state.turns[state.turns.length - 1];
+    const questions = last?.kind === "restate" ? (last.questions ?? []) : [];
+    if (questions.length === 0) {
+      setState((current) => chatEvent(current, { type: "confirm" }));
+      runChange(pendingRequest);
+      return;
+    }
+    const text = answerLines(questions, answers).join("\n");
+    setState((current) => chatEvent(current, { type: "confirm", text }));
+    runChange(composeMessage(pendingRequest, questions, answers));
   }
 
   function rephrase() {
@@ -730,6 +963,8 @@ export function AssistantChat({
       onReject={reject}
       onConfirm={confirm}
       onRephrase={rephrase}
+      answers={answers}
+      onAnswersChange={setAnswers}
       accepting={accepting}
     />
   );

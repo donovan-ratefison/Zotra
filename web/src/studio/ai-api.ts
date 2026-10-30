@@ -116,12 +116,31 @@ export async function changeProcess(
   return (await res.json()) as ChangeAnswer;
 }
 
+// RestateOption is one ready answer of a restate question. ref names
+// an element of the definition; reason is set on a default only.
+export interface RestateOption {
+  label: string;
+  ref: string;
+  default: boolean;
+  reason: string;
+}
+
+// RestateQuestion is one clarifying question of the restate step.
+export interface RestateQuestion {
+  id: string;
+  text: string;
+  kind: "single" | "multi";
+  options: RestateOption[];
+  other: boolean;
+}
+
 // restateChange asks the AI to restate one request of the designer,
-// before any change of the draft.
+// before any change of the draft. questions is empty when the request
+// is clear.
 export async function restateChange(
   versionId: string,
   message: string,
-): Promise<{ restatement: string }> {
+): Promise<{ restatement: string; questions: RestateQuestion[] }> {
   const res = await fetch("/api/ai/restate-change", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -130,5 +149,8 @@ export async function restateChange(
   if (!res.ok) {
     throw await apiError(res);
   }
-  return (await res.json()) as { restatement: string };
+  return (await res.json()) as {
+    restatement: string;
+    questions: RestateQuestion[];
+  };
 }

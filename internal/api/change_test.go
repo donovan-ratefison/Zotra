@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/donovan-ratefison/zotra/internal/ai"
+	"github.com/donovan-ratefison/zotra/internal/process"
 )
 
 // changeSeedVersionID is the seeded published version of the store.
@@ -309,8 +310,8 @@ func TestChangeRefusals(t *testing.T) {
 			http.StatusBadRequest, "invalid_json", msgInvalidJSON},
 		{"10: message of spaces", changeReq(changeSeedVersionID, "   "),
 			http.StatusBadRequest, "invalid_message", msgChangeInvalidMessage},
-		{"11: message of 1001 characters",
-			changeReq(changeSeedVersionID, strings.Repeat("a", 1001)),
+		{"11: message of 2001 characters",
+			changeReq(changeSeedVersionID, strings.Repeat("a", 2001)),
 			http.StatusBadRequest, "invalid_message", msgChangeInvalidMessage},
 		{"12: unknown version",
 			changeReq("00000000-0000-0000-0000-000000000009", "Add a deadline."),
@@ -463,8 +464,8 @@ func TestRestateRefusals(t *testing.T) {
 			http.StatusBadRequest, "invalid_json", msgInvalidJSON},
 		{"R7: empty message", changeReq(changeSeedVersionID, ""),
 			http.StatusBadRequest, "invalid_message", msgChangeInvalidMessage},
-		{"R7: message of 1001 characters",
-			changeReq(changeSeedVersionID, strings.Repeat("a", 1001)),
+		{"R7: message of 2001 characters",
+			changeReq(changeSeedVersionID, strings.Repeat("a", 2001)),
 			http.StatusBadRequest, "invalid_message", msgChangeInvalidMessage},
 		{"R8: unknown version",
 			changeReq("00000000-0000-0000-0000-000000000009", "Add a deadline."),
@@ -478,6 +479,251 @@ func TestRestateRefusals(t *testing.T) {
 			aiRefusalEnv(t)
 			newTestAPI(t)
 			checkError(t, postRestate(t, row.body), row.status, row.code, row.msg)
+		})
+	}
+}
+
+// The rows of the clarifying questions: G1 to G14.
+
+// restateAnswer is the body of a 200 restate answer.
+type restateAnswer struct {
+	Restatement string            `json:"restatement"`
+	Questions   []restateQuestion `json:"questions"`
+}
+
+// postRestateLive posts one restate request on a new draft, with a
+// stub that gives content, and decodes the 200 answer.
+func postRestateLive(t *testing.T, content string) restateAnswer {
+	t.Helper()
+	srv, _, _ := changeLiveStub(t, []string{chatEnvelope(content)})
+	aiLive(t, srv.URL)
+	newTestAPI(t)
+	rec := postRestate(t, changeReq(chatDraft(t), "Add a validation step."))
+	checkOK(t, rec)
+	var got restateAnswer
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("body is not a restate answer: %v", err)
+	}
+	return got
+}
+
+// G1.
+func TestRestateNoQuestions(t *testing.T) {
+	got := postRestateLive(t, `{"restatement":"You want to X.","questions":[]}`)
+	if got.Restatement != "You want to X." || got.Questions == nil || len(got.Questions) != 0 {
+		t.Errorf("answer = %+v, want questions []", got)
+	}
+}
+
+// G2.
+func TestRestateQuestionKept(t *testing.T) {
+	got := postRestateLive(t, `{"restatement":"You want to X.","questions":[`+
+		`{"id":"who","text":"Who validates?","kind":"single","other":false,"options":[`+
+		`{"label":"Legal officer","ref":"role:legal","default":true,"reason":"four-eyes rule"},`+
+		`{"label":"Analyst","ref":"role:analyst","default":false,"reason":""}]}]}`)
+	want := []restateQuestion{{ID: "who", Text: "Who validates?", Kind: "single", Options: []restateOption{
+		{Label: "Legal officer", Ref: "role:legal", Default: true, Reason: "four-eyes rule"},
+		{Label: "Analyst", Ref: "role:analyst"},
+	}}}
+	if !reflect.DeepEqual(got.Questions, want) {
+		t.Errorf("questions = %+v", got.Questions)
+	}
+}
+
+// seedDef decodes the seed definition: roles advisor, analyst,
+// director, legal, backoffice; document "Loan offer"; fields amount
+// and client_name.
+func seedDef(t *testing.T) process.Definition {
+	t.Helper()
+	def, err := process.Decode(seedBytes(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return def
+}
+
+// opt builds one option with the label of its ref.
+func opt(ref string, def bool, reason string) restateOption {
+	return restateOption{Label: ref, Ref: ref, Default: def, Reason: reason}
+}
+
+// question builds one valid question.
+func question(id, kind string, options ...restateOption) restateQuestion {
+	return restateQuestion{ID: id, Text: "Question " + id, Kind: kind, Options: options}
+}
+
+// refsOf returns the refs of the options of q.
+func refsOf(q restateQuestion) []string {
+	refs := []string{}
+	for _, o := range q.Options {
+		refs = append(refs, o.Ref)
+	}
+	return refs
+}
+
+// G3 to G12.
+func TestRestateCheckQuestions(t *testing.T) {
+	def := seedDef(t)
+	t.Run("G3: unknown role dropped", func(t *testing.T) {
+		got := checkQuestions(def, []restateQuestion{question("q", "single",
+			opt("role:legal", true, ""), opt("role:nobody", false, ""), opt("role:analyst", false, ""))})
+		if len(got) != 1 || !reflect.DeepEqual(refsOf(got[0]), []string{"role:legal", "role:analyst"}) {
+			t.Errorf("got %+v", got)
+		}
+	})
+	t.Run("G4: wrong refs dropped", func(t *testing.T) {
+		for _, ref := range []string{"document:Passport", "deadline:0", "deadline:012",
+			"deadline:-5", "team:x", "legal"} {
+			if validRef(def, ref) {
+				t.Errorf("validRef(%q) = true", ref)
+			}
+		}
+		got := checkQuestions(def, []restateQuestion{question("q", "multi",
+			opt("role:legal", true, ""), opt("role:analyst", false, ""),
+			opt("document:Passport", false, ""), opt("deadline:0", false, ""),
+			opt("deadline:012", false, ""), opt("deadline:-5", false, ""),
+			opt("team:x", false, ""), opt("legal", false, ""))})
+		if len(got) != 1 || !reflect.DeepEqual(refsOf(got[0]), []string{"role:legal", "role:analyst"}) {
+			t.Errorf("got %+v", got)
+		}
+	})
+	t.Run("G5: known refs kept", func(t *testing.T) {
+		refs := []string{"document:Loan offer", "deadline:24", "field:amount", "new:Compliance officer"}
+		var options []restateOption
+		for _, ref := range refs {
+			if !validRef(def, ref) {
+				t.Errorf("validRef(%q) = false", ref)
+			}
+			options = append(options, opt(ref, false, ""))
+		}
+		got := checkQuestions(def, []restateQuestion{question("q", "multi", options...)})
+		if len(got) != 1 || !reflect.DeepEqual(refsOf(got[0]), refs) {
+			t.Errorf("got %+v", got)
+		}
+	})
+	t.Run("G6: question with 1 valid option dropped", func(t *testing.T) {
+		got := checkQuestions(def, []restateQuestion{question("q", "single",
+			opt("role:legal", true, ""), opt("role:nobody", false, ""))})
+		if got == nil || len(got) != 0 {
+			t.Errorf("got %+v, want []", got)
+		}
+	})
+	t.Run("G7: single keeps the first default", func(t *testing.T) {
+		got := checkQuestions(def, []restateQuestion{question("q", "single",
+			opt("role:legal", false, ""), opt("role:analyst", true, "a"), opt("role:director", true, "d"))})
+		o := got[0].Options
+		if o[0].Default || !o[1].Default || o[2].Default || o[1].Reason != "a" || o[2].Reason != "" {
+			t.Errorf("options = %+v", o)
+		}
+	})
+	t.Run("G8: multi with no default", func(t *testing.T) {
+		got := checkQuestions(def, []restateQuestion{question("q", "multi",
+			opt("role:legal", false, ""), opt("role:analyst", false, ""))})
+		o := got[0].Options
+		if !o[0].Default || o[1].Default {
+			t.Errorf("options = %+v", o)
+		}
+	})
+	t.Run("G9: non-default reason cleared", func(t *testing.T) {
+		got := checkQuestions(def, []restateQuestion{question("q", "single",
+			opt("role:legal", true, "  four-eyes rule  "), opt("role:analyst", false, "x"))})
+		o := got[0].Options
+		if o[0].Reason != "four-eyes rule" || o[1].Reason != "" {
+			t.Errorf("options = %+v", o)
+		}
+	})
+	t.Run("G10: 3 questions, 5 options", func(t *testing.T) {
+		six := question("a", "multi", opt("role:advisor", true, ""), opt("role:analyst", false, ""),
+			opt("role:director", false, ""), opt("role:legal", false, ""),
+			opt("role:backoffice", false, ""), opt("new:Clerk", false, ""))
+		two := func(id string) restateQuestion {
+			return question(id, "single", opt("role:legal", true, ""), opt("role:analyst", false, ""))
+		}
+		got := checkQuestions(def, []restateQuestion{six, two("b"), two("c"), two("d")})
+		if len(got) != 3 || got[2].ID != "c" || len(got[0].Options) != 5 || got[0].Options[4].Ref != "role:backoffice" {
+			t.Errorf("got %+v", got)
+		}
+	})
+	t.Run("G11: wrong questions dropped", func(t *testing.T) {
+		ok := question("q", "single", opt("role:legal", true, ""), opt("role:analyst", false, ""))
+		text := ok
+		text.Kind = "text"
+		empty := ok
+		empty.Text = "  "
+		got := checkQuestions(def, []restateQuestion{ok, text, empty, ok})
+		if len(got) != 1 {
+			t.Errorf("got %d questions, want 1", len(got))
+		}
+		got = checkQuestions(def, []restateQuestion{text, empty})
+		if got == nil || len(got) != 0 {
+			t.Errorf("got %+v, want []", got)
+		}
+	})
+	t.Run("G12: empty label dropped", func(t *testing.T) {
+		blank := opt("field:client_name", false, "")
+		blank.Label = "  "
+		got := checkQuestions(def, []restateQuestion{question("q", "multi",
+			opt("role:legal", true, ""), blank, opt("role:analyst", false, ""))})
+		if len(got) != 1 || !reflect.DeepEqual(refsOf(got[0]), []string{"role:legal", "role:analyst"}) {
+			t.Errorf("got %+v", got)
+		}
+	})
+}
+
+// G13: each object of the strict schema closes its keys and requires
+// all of them.
+func TestRestateSchemaStrict(t *testing.T) {
+	objects := 0
+	var walk func(path string, node map[string]any)
+	walk = func(path string, node map[string]any) {
+		if node["type"] == "object" {
+			objects++
+			props, _ := node["properties"].(map[string]any)
+			required, _ := node["required"].([]string)
+			if node["additionalProperties"] != false {
+				t.Errorf("%s: additionalProperties is not false", path)
+			}
+			have := map[string]bool{}
+			for _, key := range required {
+				have[key] = true
+			}
+			for key := range props {
+				if !have[key] {
+					t.Errorf("%s: key %s is not required", path, key)
+				}
+			}
+			if len(required) != len(props) {
+				t.Errorf("%s: required has %d keys, properties %d", path, len(required), len(props))
+			}
+			for key, child := range props {
+				walk(path+"/"+key, child.(map[string]any))
+			}
+		}
+		if items, ok := node["items"].(map[string]any); ok {
+			walk(path+"/items", items)
+		}
+	}
+	walk("", restateSchema)
+	if objects != 3 {
+		t.Errorf("objects = %d, want 3", objects)
+	}
+}
+
+// G14: both chat routes take 2000 characters and refuse 2001. The
+// 2000 rows reach the draft check, so the message check passed.
+func TestChangeMessageLimit(t *testing.T) {
+	if msgChangeInvalidMessage != "message is required, 2000 characters at most" {
+		t.Errorf("message text = %q", msgChangeInvalidMessage)
+	}
+	for _, route := range []string{"/api/ai/change-process", "/api/ai/restate-change"} {
+		t.Run(route, func(t *testing.T) {
+			aiRefusalEnv(t)
+			newTestAPI(t)
+			rec := do(t, "POST", route, changeReq(changeSeedVersionID, strings.Repeat("a", 2001)), "")
+			checkError(t, rec, http.StatusBadRequest, "invalid_message", msgChangeInvalidMessage)
+			rec = do(t, "POST", route, changeReq(changeSeedVersionID, strings.Repeat("a", 2000)), "")
+			checkError(t, rec, http.StatusConflict, "conflict",
+				fmt.Sprintf("version %s is not a draft", changeSeedVersionID))
 		})
 	}
 }

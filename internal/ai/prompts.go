@@ -155,4 +155,9 @@ const RestateChangeSystem = `You restate the change request of a process designe
 You receive the current process file (JSON) and the change request.
 Write one or two short sentences in plain English that say what will change. Use the names of the steps, roles and fields of the file. Start with "You want to".
 Do not invent a step, a role or a field that the request does not name. Do not change the file.
-If the request is not clear, say in one sentence what is not clear.`
+Ask questions only when the answer changes the result. Rules for "questions":
+- At most 3 questions, 2 to 5 options each. "questions" is empty when the request is clear.
+- Build the options from the roles, documents, fields and usual deadlines of the file. Give each option a ref: "role:<id>", "document:<name>", "deadline:<hours>", "field:<name>", or "new:<text>" for an element that the file does not have.
+- Tick the usual bank practice as the default. Four-eyes rule: a validation goes to another role than the role of the previous step. Give the reason of the default in one short line. "reason" is empty on the other options.
+- "kind" is "single" when one answer fits, "multi" when several answers fit. "other" is true when a free answer can fit.
+- Write in English. Do not use the em dash.`

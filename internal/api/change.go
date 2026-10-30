@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -23,7 +24,7 @@ import (
 
 // msgChangeInvalidMessage is the message of every invalid_message
 // answer of the assistant chat.
-const msgChangeInvalidMessage = "message is required, 1000 characters at most"
+const msgChangeInvalidMessage = "message is required, 2000 characters at most"
 
 // changeBody is the request body of the assistant chat.
 type changeBody struct {
@@ -144,9 +145,10 @@ func (d apiDeps) changeRequest(w http.ResponseWriter, r *http.Request) (v store.
 		writeError(w, http.StatusBadRequest, "invalid_json", msgInvalidJSON)
 		return v, "", false
 	}
-	// 2. The message, in characters.
+	// 2. The message, in characters. The limit holds a request of
+	// 1000 characters plus the answer lines of the restate questions.
 	message = strings.TrimSpace(body.Message)
-	if message == "" || utf8.RuneCountInString(message) > 1000 {
+	if message == "" || utf8.RuneCountInString(message) > 2000 {
 		writeError(w, http.StatusBadRequest, "invalid_message", msgChangeInvalidMessage)
 		return v, "", false
 	}
@@ -166,22 +168,171 @@ func (d apiDeps) changeRequest(w http.ResponseWriter, r *http.Request) (v store.
 	return v, message, true
 }
 
-// restateSchema is the response schema of the restate step.
+// restateOption is one ready answer of a restate question. ref
+// names an element of the definition (see validRef).
+type restateOption struct {
+	Label   string `json:"label"`
+	Ref     string `json:"ref"`
+	Default bool   `json:"default"`
+	Reason  string `json:"reason"`
+}
+
+// restateQuestion is one clarifying question of the restate step.
+type restateQuestion struct {
+	ID      string          `json:"id"`
+	Text    string          `json:"text"`
+	Kind    string          `json:"kind"`
+	Options []restateOption `json:"options"`
+	Other   bool            `json:"other"`
+}
+
+// restateSchema is the strict response schema of the restate step.
+// The server applies the counts, so the schema has no minItems or
+// maxItems.
 var restateSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
 		"restatement": map[string]any{"type": "string"},
+		"questions": map[string]any{
+			"type": "array",
+			"items": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"id":   map[string]any{"type": "string"},
+					"text": map[string]any{"type": "string"},
+					"kind": map[string]any{"type": "string", "enum": []string{"single", "multi"}},
+					"options": map[string]any{
+						"type": "array",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"label":   map[string]any{"type": "string"},
+								"ref":     map[string]any{"type": "string"},
+								"default": map[string]any{"type": "boolean"},
+								"reason":  map[string]any{"type": "string"},
+							},
+							"required":             []string{"label", "ref", "default", "reason"},
+							"additionalProperties": false,
+						},
+					},
+					"other": map[string]any{"type": "boolean"},
+				},
+				"required":             []string{"id", "text", "kind", "options", "other"},
+				"additionalProperties": false,
+			},
+		},
 	},
-	"required":             []string{"restatement"},
+	"required":             []string{"restatement", "questions"},
 	"additionalProperties": false,
 }
 
+// validRef tells if ref names an element of def: role:<id>,
+// document:<name>, deadline:<hours>, field:<name>, or new:<text> for
+// an element that the file does not have.
+func validRef(def process.Definition, ref string) bool {
+	prefix, rest, ok := strings.Cut(ref, ":")
+	if !ok {
+		return false
+	}
+	switch prefix {
+	case "role":
+		for _, role := range def.Roles {
+			if role.ID == rest {
+				return true
+			}
+		}
+	case "document":
+		for _, node := range def.Nodes {
+			for _, doc := range node.Documents {
+				if doc == rest {
+					return true
+				}
+			}
+		}
+	case "deadline":
+		// Digits only: no sign, no leading 0.
+		n, err := strconv.Atoi(rest)
+		return err == nil && n > 0 && strconv.Itoa(n) == rest
+	case "field":
+		for _, field := range def.Fields {
+			if field.Name == rest {
+				return true
+			}
+		}
+	case "new":
+		return strings.TrimSpace(rest) != ""
+	}
+	return false
+}
+
+// checkQuestions returns the questions of the AI answer that the
+// client can show, never nil. It drops a wrong question or option,
+// sets the defaults, and applies the counts: at most 3 questions,
+// 2 to 5 options each.
+func checkQuestions(def process.Definition, qs []restateQuestion) []restateQuestion {
+	kept := []restateQuestion{}
+	ids := map[string]bool{}
+	for _, q := range qs {
+		q.ID = strings.TrimSpace(q.ID)
+		q.Text = strings.TrimSpace(q.Text)
+		if q.ID == "" || ids[q.ID] || q.Text == "" || (q.Kind != "single" && q.Kind != "multi") {
+			continue
+		}
+		options := []restateOption{}
+		labels := map[string]bool{}
+		for _, o := range q.Options {
+			o.Label = strings.TrimSpace(o.Label)
+			o.Reason = strings.TrimSpace(o.Reason)
+			if o.Label == "" || labels[o.Label] || !validRef(def, o.Ref) {
+				continue
+			}
+			labels[o.Label] = true
+			options = append(options, o)
+		}
+		if len(options) > 5 {
+			options = options[:5]
+		}
+		if len(options) < 2 {
+			continue
+		}
+		hasDefault := false
+		for i := range options {
+			if options[i].Default && q.Kind == "single" && hasDefault {
+				options[i].Default = false
+			}
+			hasDefault = hasDefault || options[i].Default
+		}
+		if !hasDefault {
+			options[0].Default = true
+		}
+		for i := range options {
+			if !options[i].Default {
+				options[i].Reason = ""
+			}
+		}
+		q.Options = options
+		ids[q.ID] = true
+		kept = append(kept, q)
+	}
+	if len(kept) > 3 {
+		kept = kept[:3]
+	}
+	return kept
+}
+
 // restateChange restates one request of the designer in one or two
-// sentences, before any change. The answer is {"restatement": <text>}.
-// It makes one AI call, with no repair loop.
+// sentences, before any change, and asks the clarifying questions.
+// The answer is {"restatement": <text>, "questions": [...]}. It makes
+// one AI call, with no repair loop.
 func (d apiDeps) restateChange(w http.ResponseWriter, r *http.Request) {
 	v, message, ok := d.changeRequest(w, r)
 	if !ok {
+		return
+	}
+	def, err := process.Decode(v.Definition)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal",
+			"cannot complete the request")
 		return
 	}
 	messages := []ai.Message{
@@ -194,7 +345,8 @@ func (d apiDeps) restateChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var answer struct {
-		Restatement string `json:"restatement"`
+		Restatement string            `json:"restatement"`
+		Questions   []restateQuestion `json:"questions"`
 	}
 	content, ok := answerContent(ansBody)
 	if ok {
@@ -205,5 +357,8 @@ func (d apiDeps) restateChange(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "invalid_output", msgNoContent)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"restatement": text})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"restatement": text,
+		"questions":   checkQuestions(def, answer.Questions),
+	})
 }
