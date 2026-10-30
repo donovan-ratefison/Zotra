@@ -25,6 +25,8 @@ import {
 import { readCase, type CaseDTO, type CaseState } from "./case-api";
 import { Button } from "@/ui/button";
 import { cn } from "@/lib/utils";
+import { compareUrl } from "./compare";
+import { CompareScreen } from "./CompareScreen";
 import { changedIds, diffDefinitions } from "./diff";
 import { PolicyPanel } from "./PolicyPanel";
 import { ProcessDiagram } from "./diagram";
@@ -203,6 +205,14 @@ export function StudioShell() {
     typeof location === "undefined"
       ? null
       : new URLSearchParams(location.search).get("version"),
+  );
+  // The base version of the compare screen, or null when the screen
+  // is closed. Read once at mount from the URL, like the version.
+  const [compareBase, setCompareBase] = useState<string | null>(
+    (): string | null =>
+      typeof location === "undefined"
+        ? null
+        : new URLSearchParams(location.search).get("compare"),
   );
 
   // URL parameters, read once at mount. The tab parameter applies
@@ -493,6 +503,7 @@ export function StudioShell() {
   // the version query needs it.
   function onSelectVersion(id: string) {
     setVersionOverride(id);
+    setCompareBase(null);
     // A version switch closes the open test case: the case view
     // always shows the version of its case.
     setTestCaseId(null);
@@ -500,6 +511,23 @@ export function StudioShell() {
       null,
       "",
       `/?process=${encodeURIComponent(processId!)}&version=${encodeURIComponent(id)}`,
+    );
+  }
+
+  // openCompare and closeCompare write the compare base into the URL,
+  // so a reload reopens the same screen. They run in stage 3 only,
+  // where the process and the version are set.
+  function openCompare(id: string) {
+    setCompareBase(id);
+    window.history.replaceState(null, "", compareUrl(processId!, versionId!, id));
+  }
+
+  function closeCompare() {
+    setCompareBase(null);
+    window.history.replaceState(
+      null,
+      "",
+      `/?process=${encodeURIComponent(processId!)}&version=${encodeURIComponent(versionId!)}`,
     );
   }
 
@@ -734,11 +762,21 @@ export function StudioShell() {
             queryClient.invalidateQueries({ queryKey: ["versions", processId] })
           }
           onSelectVersion={onSelectVersion}
+          onCompareVersion={openCompare}
           onUndo={() => void undo()}
           canUndo={undoStack.length > 0 && version.status === "draft"}
         />
         <main ref={mainRef} className="flex min-h-0 flex-1">
-          {mode === "test" ? (
+          {compareBase !== null ? (
+            // The key resets the pair when History opens another compare.
+            <CompareScreen
+              key={compareBase}
+              versions={q2.data ?? []}
+              openId={version.id}
+              baseId={compareBase}
+              onClose={closeCompare}
+            />
+          ) : mode === "test" ? (
             <TestScreen def={loaded.definition} version={version} />
           ) : (
             <>
@@ -872,6 +910,7 @@ export function TopBar({
   versionsPending = false,
   onVersionsChanged = () => {},
   onSelectVersion,
+  onCompareVersion,
   onUndo,
   canUndo = false,
 }: {
@@ -888,6 +927,7 @@ export function TopBar({
   versionsPending?: boolean;
   onVersionsChanged?: () => void;
   onSelectVersion?: (id: string) => void;
+  onCompareVersion?: (id: string) => void;
   onUndo?: () => void;
   canUndo?: boolean;
 }) {
@@ -1030,6 +1070,7 @@ export function TopBar({
             versionsPending={versionsPending}
             onVersionsChanged={onVersionsChanged}
             onOpenVersion={onSelectVersion}
+            onCompareVersion={onCompareVersion}
           />
         </div>
       )}

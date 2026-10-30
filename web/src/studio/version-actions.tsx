@@ -6,7 +6,7 @@
 // screen, props down).
 
 import { useState } from "react";
-import { Download, GitBranch, History, Lock, Upload } from "lucide-react";
+import { Download, GitBranch, GitCompareArrows, History, Lock, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError, freezeVersion, forkVersion, publishVersion } from "./api";
 import { Button } from "@/ui/button";
@@ -168,11 +168,12 @@ export function dateText(iso: string): string {
 // HistoryBody is the version history: one card per version, newest
 // first, on a vertical line. Each card carries the actions its status
 // allows. The opened version carries the Shown badge.
-export function HistoryBody({ def, version, versions, onOpen, onAction }: {
+export function HistoryBody({ def, version, versions, onOpen, onCompare, onAction }: {
   def: ProcessDefinition;
   version: VersionSummary;
   versions: VersionSummary[];
   onOpen?: (id: string) => void;
+  onCompare?: (id: string) => void;
   onAction: (kind: "freeze" | "publish" | "newdraft", target: VersionSummary) => void;
 }) {
   const rows = [...versions].sort((a, b) => b.number - a.number);
@@ -229,6 +230,18 @@ export function HistoryBody({ def, version, versions, onOpen, onAction }: {
                       Open
                     </Button>
                   )}
+                  {!shown && onCompare !== undefined && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7"
+                      aria-label={`Compare v${row.number} with the shown version`}
+                      onClick={() => onCompare(row.id)}
+                    >
+                      <GitCompareArrows aria-hidden="true" />
+                      Compare
+                    </Button>
+                  )}
                   {row.status === "draft" && (
                     <Button variant="outline" size="sm" className="h-7" onClick={() => onAction("freeze", row)}>
                       <Lock aria-hidden="true" />
@@ -262,13 +275,14 @@ export function HistoryBody({ def, version, versions, onOpen, onAction }: {
 }
 
 export function VersionActions({ def, version, versions,
-  versionsPending, onVersionsChanged, onOpenVersion }: {
+  versionsPending, onVersionsChanged, onOpenVersion, onCompareVersion }: {
   def: ProcessDefinition;
   version: VersionSummary;
   versions: VersionSummary[];
   versionsPending: boolean;
   onVersionsChanged: () => void;
   onOpenVersion?: (id: string) => void;
+  onCompareVersion?: (id: string) => void;
 }) {
   const [dialog, setDialog] = useState<
     "freeze" | "publish" | "newdraft" | null
@@ -418,6 +432,14 @@ export function VersionActions({ def, version, versions,
                 : (id) => {
                     onOpenVersion(id);
                     setHistoryOpen(false);
+                  }
+            }
+            onCompare={
+              onCompareVersion === undefined
+                ? undefined
+                : (id) => {
+                    setHistoryOpen(false);
+                    onCompareVersion(id);
                   }
             }
             onAction={act}
