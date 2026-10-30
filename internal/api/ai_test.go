@@ -9,10 +9,12 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -672,5 +674,164 @@ func TestExplainNonBoolExpression(t *testing.T) {
 	explainAnswerOf(t, rec)
 	if *count != 2 {
 		t.Errorf("requests = %d, want 2", *count)
+	}
+}
+
+// seedWithReason returns the seed definition with the key
+// not_a_policy_reason set to value.
+func seedWithReason(t *testing.T, value any) []byte {
+	t.Helper()
+	return seedVariant(t, func(doc map[string]any) { doc["not_a_policy_reason"] = value })
+}
+
+// checkSeedAnswer asserts a 200 answer, 1 attempt, and a definition
+// equal to the seed (so with no not_a_policy_reason key).
+func checkSeedAnswer(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	checkOK(t, rec)
+	var got policyAnswer
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("body is not a policy answer: %v", err)
+	}
+	var want, have any
+	if err := json.Unmarshal(seedBytes(t), &want); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(got.Definition, &have); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(want, have) {
+		t.Errorf("definition differs from the seed document: %s", got.Definition)
+	}
+	if got.Attempts != 1 {
+		t.Errorf("attempts = %d, want 1", got.Attempts)
+	}
+}
+
+// N1, N3, N4: a null, blank or non-string reason is no reason.
+func TestPolicyReasonIgnored(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value any
+	}{{"N1 null", nil}, {"N3 blank", "   "}, {"N4 number", 5}} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, count := aiLiveStub(t, []string{chatEnvelope(string(seedWithReason(t, tc.value)))})
+			aiLive(t, srv.URL)
+			newTestAPI(t)
+
+			checkSeedAnswer(t, postPolicy(t, fixtureRequest()))
+			if *count != 1 {
+				t.Errorf("requests = %d, want 1", *count)
+			}
+		})
+	}
+}
+
+// N2: a reason answers 422 not_a_policy at once, with no validation.
+func TestPolicyNotAPolicy(t *testing.T) {
+	srv, count := aiLiveStub(t, []string{
+		chatEnvelope(`{"name":"X","not_a_policy_reason":"The text is a cooking recipe."}`),
+	})
+	aiLive(t, srv.URL)
+	newTestAPI(t)
+
+	rec := postPolicy(t, fixtureRequest())
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+			Details []any  `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body is not an error body: %v", err)
+	}
+	if body.Error.Code != "not_a_policy" {
+		t.Errorf("code = %q, want not_a_policy", body.Error.Code)
+	}
+	want := "This file is not a credit policy. The text is a cooking recipe."
+	if body.Error.Message != want {
+		t.Errorf("message = %q, want %q", body.Error.Message, want)
+	}
+	if len(body.Error.Details) != 0 {
+		t.Errorf("details = %v, want none", body.Error.Details)
+	}
+	if *count != 1 {
+		t.Errorf("requests = %d, want 1", *count)
+	}
+}
+
+// N5, N6: the request schema has not_a_policy_reason, and the shared
+// process schema does not change.
+func TestPolicySchemaReason(t *testing.T) {
+	before, err := json.Marshal(process.JSONSchema())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reqBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		reqBody = b
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(chatEnvelope(string(seedBytes(t)))))
+	}))
+	t.Cleanup(srv.Close)
+	aiLive(t, srv.URL)
+	newTestAPI(t)
+
+	checkOK(t, postPolicy(t, fixtureRequest()))
+
+	var sent struct {
+		ResponseFormat struct {
+			JSONSchema struct {
+				Schema struct {
+					Properties map[string]struct {
+						Type any `json:"type"`
+					} `json:"properties"`
+					Required []string `json:"required"`
+				} `json:"schema"`
+			} `json:"json_schema"`
+		} `json:"response_format"`
+	}
+	if err := json.Unmarshal(reqBody, &sent); err != nil {
+		t.Fatalf("request body: %v: %s", err, reqBody)
+	}
+	schema := sent.ResponseFormat.JSONSchema.Schema
+	prop, found := schema.Properties["not_a_policy_reason"]
+	if !found || !reflect.DeepEqual(prop.Type, []any{"string", "null"}) {
+		t.Errorf("not_a_policy_reason type = %v, want [string null]", prop.Type)
+	}
+	if !slices.Contains(schema.Required, "not_a_policy_reason") {
+		t.Errorf("required = %v, want not_a_policy_reason in it", schema.Required)
+	}
+	after, err := json.Marshal(process.JSONSchema())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Error("the shared process schema changed")
+	}
+	if _, found := process.JSONSchema()["properties"].(map[string]any)["not_a_policy_reason"]; found {
+		t.Error("the shared process schema has not_a_policy_reason")
+	}
+}
+
+// N7: splitReason rows.
+func TestPolicySplitReason(t *testing.T) {
+	for _, tc := range []struct{ in, reason, rest string }{
+		{`[1]`, "", `[1]`},
+		{`null`, "", `null`},
+		{`{"a":1}`, "", `{"a":1}`},
+		{`{ "a" : 1 }`, "", `{ "a" : 1 }`},
+		{`{"a":1,"not_a_policy_reason":"x"}`, "x", `{"a":1}`},
+	} {
+		reason, rest := splitReason(tc.in)
+		if reason != tc.reason || rest != tc.rest {
+			t.Errorf("splitReason(%q) = (%q, %q), want (%q, %q)",
+				tc.in, reason, rest, tc.reason, tc.rest)
+		}
 	}
 }

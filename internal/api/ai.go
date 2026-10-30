@@ -90,7 +90,7 @@ func (d apiDeps) policyToProcess(w http.ResponseWriter, r *http.Request) {
 	var lastErrs []process.Error
 	for attempt := 1; attempt <= 3; attempt++ {
 		ansBody, err := d.ai.ChatCompletion(r.Context(), messages,
-			"process", process.JSONSchema())
+			"process", policySchema())
 		if err != nil {
 			writeError(w, http.StatusServiceUnavailable, "ai_unavailable",
 				aiErrorText(err))
@@ -98,6 +98,15 @@ func (d apiDeps) policyToProcess(w http.ResponseWriter, r *http.Request) {
 		}
 		var errs []process.Error
 		content, ok := answerContent(ansBody)
+		if ok && content != "" {
+			var reason string
+			reason, content = splitReason(content)
+			if reason != "" {
+				writeError(w, http.StatusUnprocessableEntity, "not_a_policy",
+					"This file is not a credit policy. "+reason)
+				return
+			}
+		}
 		switch {
 		case !ok || content == "":
 			errs = []process.Error{{Path: "", Message: msgNoContent}}
@@ -123,6 +132,49 @@ func (d apiDeps) policyToProcess(w http.ResponseWriter, r *http.Request) {
 	}
 	writeErrorDetails(w, http.StatusUnprocessableEntity, "invalid_output",
 		"The AI output did not pass validation after 3 attempts.", lastErrs)
+}
+
+// policySchema returns a deep copy of the process schema with one more
+// property, not_a_policy_reason. The copy keeps the shared schema
+// unchanged. Strict mode needs each property in required.
+func policySchema() map[string]any {
+	b, err := json.Marshal(process.JSONSchema())
+	if err != nil {
+		panic(fmt.Sprintf("marshal process schema: %v", err))
+	}
+	var schema map[string]any
+	if err := json.Unmarshal(b, &schema); err != nil {
+		panic(fmt.Sprintf("unmarshal process schema: %v", err))
+	}
+	schema["properties"].(map[string]any)["not_a_policy_reason"] =
+		map[string]any{"type": []any{"string", "null"}}
+	schema["required"] = append(schema["required"].([]any), "not_a_policy_reason")
+	return schema
+}
+
+// splitReason removes the key not_a_policy_reason from one answer
+// object. reason is the trimmed value when it is a string, else "".
+// Content that is not an object, or an object without the key, comes
+// back unchanged.
+func splitReason(content string) (reason string, rest string) {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(content), &obj); err != nil || obj == nil {
+		return "", content
+	}
+	raw, found := obj["not_a_policy_reason"]
+	if !found {
+		return "", content
+	}
+	delete(obj, "not_a_policy_reason")
+	b, err := json.Marshal(obj)
+	if err != nil {
+		return "", content
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		reason = strings.TrimSpace(s)
+	}
+	return reason, string(b)
 }
 
 // aiErrorText maps one AI call error to the message of the 503

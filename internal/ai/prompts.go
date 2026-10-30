@@ -102,6 +102,8 @@ Return one JSON document that satisfies the given schema. Rules:
 - Each check expression is a CEL boolean expression over the fields of the data model.
 - Put the id of the paragraph that justifies an element in the citations of that node or check.
 - Cite only paragraph ids you received. schema_version is "1".
+- Set not_a_policy_reason to null when the text is a bank credit policy.
+- When the text is not a bank credit policy, set not_a_policy_reason to one short sentence that says what the text is, and return the smallest valid process: one start node, one end node with end_result "refused", and one edge.
 ` + ProcessFormatRules
 
 // ProcessFormatRules states the semantic rules that the server checks
