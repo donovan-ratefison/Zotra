@@ -75,15 +75,16 @@ export function brandVars(theme: Theme): Record<string, string> {
   };
 }
 
-// pickProcess takes the earliest process, then the lowest id (the
-// StudioShell rule).
+// pickProcess takes the earliest process that is not archived, then
+// the lowest id (the StudioShell rule).
 function pickProcess(
   rows: ProcessSummary[] | undefined,
 ): ProcessSummary | null {
-  if (!rows || rows.length === 0) {
+  const active = rows?.filter((row) => row.archived_at == null) ?? [];
+  if (active.length === 0) {
     return null;
   }
-  return [...rows].sort(
+  return active.sort(
     (a, b) =>
       a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
   )[0]!;

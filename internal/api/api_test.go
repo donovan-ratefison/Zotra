@@ -793,3 +793,37 @@ func TestMoreRefusals(t *testing.T) {
 	rec = do(t, "POST", "/api/cases", `{bad`, "")
 	checkError(t, rec, http.StatusBadRequest, "invalid_json", msgInvalidJSON)
 }
+
+// TestArchiveProcess covers rows A1 to A3.
+func TestArchiveProcess(t *testing.T) {
+	newTestAPI(t)
+
+	// A1: archive answers the process with archived_at, and the list
+	// still holds it.
+	body := mustCreate(t, "POST", "/api/processes/"+seedProcessID+"/archive", "", http.StatusOK)
+	if _, ok := body["process"].(map[string]any)["archived_at"].(string); !ok {
+		t.Fatalf("archived_at is not a string: %v", body)
+	}
+	rec := do(t, "GET", "/api/processes", "", "")
+	list := decode(t, rec)["processes"].([]any)
+	if len(list) != 1 {
+		t.Fatalf("processes = %d, want 1", len(list))
+	}
+	if _, ok := list[0].(map[string]any)["archived_at"].(string); !ok {
+		t.Fatalf("listed archived_at is not a string: %v", list[0])
+	}
+
+	// A2: restore answers archived_at null.
+	body = mustCreate(t, "POST", "/api/processes/"+seedProcessID+"/restore", "", http.StatusOK)
+	process := body["process"].(map[string]any)
+	if v, ok := process["archived_at"]; !ok || v != nil {
+		t.Fatalf("archived_at = %v (present %v), want null", v, ok)
+	}
+
+	// A3: an unknown id answers 404 on both routes.
+	ghost := "00000000-0000-0000-0000-0000000000ff"
+	for _, action := range []string{"archive", "restore"} {
+		rec = do(t, "POST", "/api/processes/"+ghost+"/"+action, "", "")
+		checkError(t, rec, http.StatusNotFound, "not_found", "no process "+ghost)
+	}
+}

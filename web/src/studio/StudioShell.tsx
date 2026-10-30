@@ -90,11 +90,14 @@ function resolveCitations(
     .filter((p): p is Paragraph => p !== undefined);
 }
 
+// pickProcess skips the archived processes. A ?process=<id> URL still
+// opens an archived one.
 function pickProcess(rows: ProcessSummary[] | undefined): ProcessSummary | null {
-  if (!rows || rows.length === 0) {
+  const active = rows?.filter((row) => row.archived_at == null) ?? [];
+  if (active.length === 0) {
     return null;
   }
-  return [...rows].sort(
+  return active.sort(
     (a, b) =>
       a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id),
   )[0]!;

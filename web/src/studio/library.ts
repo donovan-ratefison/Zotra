@@ -6,11 +6,13 @@ import type { layoutProcess } from "./layout";
 import type { ProcessSummary, Version } from "./types";
 
 export type LibraryStatus = "published" | "frozen" | "draft" | "empty";
+export type LibraryFilter = LibraryStatus | "all" | "archived";
 
 export interface LibraryRow {
   id: string;
   name: string;
   createdAt: string;
+  archived: boolean;
   // null: the versions are not loaded.
   status: LibraryStatus | null;
   // true: the versions query failed.
@@ -37,6 +39,7 @@ export function libraryRow(
     id: p.id,
     name: p.name,
     createdAt: p.created_at,
+    archived: p.archived_at != null,
     status: null,
     failed,
     published: null,
@@ -62,15 +65,20 @@ export function libraryRow(
   };
 }
 
+// The "archived" filter keeps only the archived rows. Every other
+// filter drops them first.
 export function filterRows(
   rows: LibraryRow[],
   query: string,
-  status: LibraryStatus | "all",
+  filter: LibraryFilter,
 ): LibraryRow[] {
   const q = query.trim().toLowerCase();
   return rows.filter(
     (row) =>
-      row.name.toLowerCase().includes(q) && (status === "all" || row.status === status),
+      row.name.toLowerCase().includes(q) &&
+      (filter === "archived"
+        ? row.archived
+        : !row.archived && (filter === "all" || row.status === filter)),
   );
 }
 

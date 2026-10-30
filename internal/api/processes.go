@@ -15,6 +15,8 @@ type processDTO struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
+	// ArchivedAt is null while the process is not archived.
+	ArchivedAt *time.Time `json:"archived_at"`
 }
 
 // versionDTO is the JSON shape of one version. Definition embeds the
@@ -33,7 +35,7 @@ type versionDTO struct {
 }
 
 func toProcessDTO(p store.Process) processDTO {
-	return processDTO{ID: p.ID, Name: p.Name, CreatedAt: p.CreatedAt}
+	return processDTO{ID: p.ID, Name: p.Name, CreatedAt: p.CreatedAt, ArchivedAt: p.ArchivedAt}
 }
 
 func toVersionDTO(v store.Version) versionDTO {
@@ -83,6 +85,25 @@ func (d apiDeps) createProcess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"process": toProcessDTO(p)})
+}
+
+// archiveProcess and restoreProcess read no body and answer 200
+// {"process":{...}}. An unknown id answers 404 not_found.
+func (d apiDeps) archiveProcess(w http.ResponseWriter, r *http.Request) {
+	d.setArchived(w, r, true)
+}
+
+func (d apiDeps) restoreProcess(w http.ResponseWriter, r *http.Request) {
+	d.setArchived(w, r, false)
+}
+
+func (d apiDeps) setArchived(w http.ResponseWriter, r *http.Request, archived bool) {
+	p, err := d.st.SetProcessArchived(r.Context(), r.PathValue("id"), archived)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"process": toProcessDTO(p)})
 }
 
 // listVersions answers {"versions":[...]} in number order. It checks

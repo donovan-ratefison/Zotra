@@ -593,3 +593,53 @@ func TestSeedFileSync(t *testing.T) {
 		t.Fatal("seed/example-process.json is not a byte copy of examples/home-loan/process.json")
 	}
 }
+
+// TestArchiveProcess covers rows S1 to S3: archive, archive again,
+// restore, and the refused ids.
+func TestArchiveProcess(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+
+	// S1: the archived process stays in the list, with archived_at.
+	first, err := s.SetProcessArchived(ctx, seedProcessID, true)
+	if err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	if first.ArchivedAt == nil {
+		t.Fatal("ArchivedAt is nil after archive")
+	}
+	processes, err := s.ListProcesses(ctx)
+	if err != nil {
+		t.Fatalf("ListProcesses: %v", err)
+	}
+	if len(processes) != 1 || processes[0].ID != seedProcessID || processes[0].ArchivedAt == nil {
+		t.Fatalf("list = %+v, want the seed process with ArchivedAt", processes)
+	}
+
+	// S2: a second archive keeps the first archived_at.
+	second, err := s.SetProcessArchived(ctx, seedProcessID, true)
+	if err != nil {
+		t.Fatalf("archive again: %v", err)
+	}
+	if second.ArchivedAt == nil || !second.ArchivedAt.Equal(*first.ArchivedAt) {
+		t.Fatalf("second ArchivedAt = %v, want %v", second.ArchivedAt, first.ArchivedAt)
+	}
+
+	// S3: restore clears it; unknown and non-UUID ids are refused.
+	restored, err := s.SetProcessArchived(ctx, seedProcessID, false)
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if restored.ArchivedAt != nil {
+		t.Fatalf("ArchivedAt = %v after restore, want nil", restored.ArchivedAt)
+	}
+	byID, err := s.ProcessByID(ctx, seedProcessID)
+	if err != nil || byID.ArchivedAt != nil {
+		t.Fatalf("ProcessByID = %+v, %v; want ArchivedAt nil", byID, err)
+	}
+	ghost := "00000000-0000-0000-0000-0000000000ff"
+	_, err = s.SetProcessArchived(ctx, ghost, true)
+	wantErr(t, err, "process "+ghost+" does not exist")
+	_, err = s.SetProcessArchived(ctx, "x", false)
+	wantErr(t, err, "process x does not exist")
+}

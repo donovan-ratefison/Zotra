@@ -1,4 +1,4 @@
-// The test rows 53a to 53q of the process library. The environment is
+// The test rows 53a to 53q and L1 to L6 of the process library. The environment is
 // node: direct calls of the pure functions, and renderToString of the
 // stateless view (one query client for the thumbnail query).
 
@@ -14,10 +14,11 @@ import {
   sortRows,
   thumbnailShapes,
   type LibraryRow,
+  type LibraryFilter,
   type LibrarySort,
   type LibraryStatus,
 } from "./library";
-import { LibraryView } from "./ProcessLibrary";
+import { LibraryView, STATUS_OPTIONS } from "./ProcessLibrary";
 import type { ProcessDefinition, ProcessSummary, Version, VersionStatus } from "./types";
 
 const seed = seedJson as ProcessDefinition;
@@ -43,6 +44,7 @@ function row(over: Partial<LibraryRow>): LibraryRow {
     id: "r",
     name: "Row",
     createdAt: "2026-10-01T00:00:00Z",
+    archived: false,
     status: "draft",
     failed: false,
     published: null,
@@ -151,7 +153,7 @@ describe("thumbnailShapes", () => {
   });
 });
 
-function view(viewRows: LibraryRow[], over: { query?: string; status?: LibraryStatus | "all"; view?: "table" | "cards" } = {}) {
+function view(viewRows: LibraryRow[], over: { query?: string; status?: LibraryFilter; view?: "table" | "cards" } = {}) {
   const noop = () => {};
   return renderToString(
     createElement(
@@ -167,6 +169,7 @@ function view(viewRows: LibraryRow[], over: { query?: string; status?: LibrarySt
         onStatus: noop,
         onSort: noop,
         onView: noop,
+        onArchive: noop,
       }),
     ),
   );
@@ -215,5 +218,46 @@ describe("LibraryView", () => {
     expect(view([libraryRow(p, undefined, false)])).toContain("Loading");
     expect(view([libraryRow(p, undefined, true)])).toContain("Not loaded");
     expect(view([libraryRow(p, [], false)])).toContain("No version");
+  });
+});
+
+describe("archive", () => {
+  test("L1: archived_at gives archived", () => {
+    expect(libraryRow({ ...p, archived_at: "2026-10-30T10:00:00Z" }, undefined, false).archived).toBe(true);
+    expect(libraryRow({ ...p, archived_at: null }, undefined, false).archived).toBe(false);
+    expect(libraryRow(p, undefined, false).archived).toBe(false);
+  });
+
+  const pair = [
+    row({ id: "old", name: "Old loan", status: "draft", archived: true }),
+    row({ id: "new", name: "New loan", status: "draft" }),
+  ];
+
+  test("L2: all drops the archived row", () => {
+    expect(filterRows(pair, "", "all").map((r) => r.id)).toEqual(["new"]);
+  });
+
+  test("L3: archived keeps only the archived row", () => {
+    expect(filterRows(pair, "", "archived").map((r) => r.id)).toEqual(["old"]);
+  });
+
+  test("L4: draft drops the archived row", () => {
+    expect(filterRows(pair, "", "draft").map((r) => r.id)).toEqual(["new"]);
+  });
+
+  test("L5: the archived filter shows Restore", () => {
+    const html = view(pair, { status: "archived" });
+    expect(html).toContain('aria-label="Restore Old loan"');
+    expect(html).not.toContain("Archive Old loan");
+    expect(html).not.toContain("New loan");
+    expect(html).toContain("1 process<");
+  });
+
+  test("L6: all shows Archive; the filter list has Archived", () => {
+    const html = view(pair, { status: "all" });
+    expect(html).toContain('aria-label="Archive New loan"');
+    expect(html).toContain('title="Archive"');
+    expect(html).not.toContain("Old loan");
+    expect(STATUS_OPTIONS.at(-1)).toEqual(["archived", "Archived"]);
   });
 });

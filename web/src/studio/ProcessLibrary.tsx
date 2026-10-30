@@ -1,20 +1,23 @@
 // The process library page (/processes): every process of the studio,
 // as a table or as cards with a diagram thumbnail. The user searches,
-// filters, sorts and opens a process in the studio.
+// filters, sorts and opens a process in the studio. An archived
+// process leaves the list; the "Archived" filter shows it with a
+// Restore button.
 
 import { useState } from "react";
-import { useQueries, useQuery } from "@tanstack/react-query";
-import { ChevronRight, LayoutGrid, List, Search, Upload } from "lucide-react";
-import { listProcesses, listVersions } from "./api";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Archive, ChevronRight, LayoutGrid, List, Search, Upload } from "lucide-react";
+import { toast } from "sonner";
+import { archiveProcess, listProcesses, listVersions, restoreProcess } from "./api";
 import { layoutProcess } from "./layout";
 import {
   filterRows,
   libraryRow,
   sortRows,
   thumbnailShapes,
+  type LibraryFilter,
   type LibraryRow,
   type LibrarySort,
-  type LibraryStatus,
 } from "./library";
 import { STATUS_BADGE, dateText } from "./version-actions";
 import type { Version } from "./types";
@@ -32,12 +35,13 @@ import { cn } from "@/lib/utils";
 
 type LibraryViewMode = "table" | "cards";
 
-const STATUS_OPTIONS: [LibraryStatus | "all", string][] = [
+export const STATUS_OPTIONS: [LibraryFilter, string][] = [
   ["all", "All statuses"],
   ["published", "Published"],
   ["frozen", "Frozen"],
   ["draft", "Draft"],
   ["empty", "No version"],
+  ["archived", "Archived"],
 ];
 
 const SORT_OPTIONS: [LibrarySort, string][] = [
@@ -82,27 +86,55 @@ function StatusCell({ row }: { row: LibraryRow }) {
   );
 }
 
+type OnArchive = (row: LibraryRow) => void;
+
+// ArchiveButton stays outside the row link: a button inside an <a> is
+// invalid HTML.
+function ArchiveButton({ row, onArchive }: { row: LibraryRow; onArchive: OnArchive }) {
+  if (row.archived) {
+    return (
+      <Button variant="ghost" size="sm" aria-label={`Restore ${row.name}`} onClick={() => onArchive(row)}>
+        Restore
+      </Button>
+    );
+  }
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      aria-label={`Archive ${row.name}`}
+      title="Archive"
+      onClick={() => onArchive(row)}
+    >
+      <Archive />
+    </Button>
+  );
+}
+
 function countsText(row: LibraryRow): string {
   return `${plural(row.steps, "step")}, ${plural(row.roles, "role")}`;
 }
 
-function TableRows({ rows }: { rows: LibraryRow[] }) {
+function TableRows({ rows, onArchive }: { rows: LibraryRow[]; onArchive: OnArchive }) {
   return (
     <div className="overflow-hidden rounded-lg border bg-card text-[13px]">
-      <div className={cn("grid gap-3 border-b px-4 py-2.5 text-muted-foreground", TABLE_COLUMNS)}>
-        <span>Process</span>
-        <span>Status</span>
-        <span>Published</span>
-        <span>Latest version</span>
-        <span>Created</span>
-        <span />
+      <div className="flex border-b pr-4 text-muted-foreground">
+        <div className={cn("grid flex-1 gap-3 px-4 py-2.5", TABLE_COLUMNS)}>
+          <span>Process</span>
+          <span>Status</span>
+          <span>Published</span>
+          <span>Latest version</span>
+          <span>Created</span>
+          <span />
+        </div>
+        <span className="w-20" />
       </div>
       <ul>
         {rows.map((row) => (
-          <li key={row.id} className="border-b last:border-b-0">
+          <li key={row.id} className="flex items-center border-b pr-4 last:border-b-0 hover:bg-muted/50">
             <a
               href={processUrl(row.id)}
-              className={cn("grid items-center gap-3 px-4 py-3 hover:bg-muted/50", TABLE_COLUMNS)}
+              className={cn("grid flex-1 items-center gap-3 px-4 py-3", TABLE_COLUMNS)}
             >
               <span className="min-w-0">
                 <span className="block truncate font-semibold">{row.name}</span>
@@ -130,6 +162,9 @@ function TableRows({ rows }: { rows: LibraryRow[] }) {
               <span>{dateText(row.createdAt)}</span>
               <ChevronRight size={16} className="text-muted-foreground" />
             </a>
+            <span className="flex w-20 justify-end">
+              <ArchiveButton row={row} onArchive={onArchive} />
+            </span>
           </li>
         ))}
       </ul>
@@ -137,11 +172,11 @@ function TableRows({ rows }: { rows: LibraryRow[] }) {
   );
 }
 
-function CardRows({ rows }: { rows: LibraryRow[] }) {
+function CardRows({ rows, onArchive }: { rows: LibraryRow[]; onArchive: OnArchive }) {
   return (
     <ul className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))" }}>
       {rows.map((row) => (
-        <li key={row.id}>
+        <li key={row.id} className="relative">
           <a
             href={processUrl(row.id)}
             className="flex h-full flex-col gap-2 rounded-lg border bg-card p-3 text-[13px] hover:border-muted-foreground/40"
@@ -166,6 +201,9 @@ function CardRows({ rows }: { rows: LibraryRow[] }) {
               </>
             )}
           </a>
+          <span className="absolute top-4 right-4 rounded-md bg-card">
+            <ArchiveButton row={row} onArchive={onArchive} />
+          </span>
         </li>
       ))}
     </ul>
@@ -227,16 +265,18 @@ export function LibraryView({
   onStatus,
   onSort,
   onView,
+  onArchive,
 }: {
   rows: LibraryRow[];
   query: string;
-  status: LibraryStatus | "all";
+  status: LibraryFilter;
   sort: LibrarySort;
   view: LibraryViewMode;
   onQuery: (query: string) => void;
-  onStatus: (status: LibraryStatus | "all") => void;
+  onStatus: (status: LibraryFilter) => void;
   onSort: (sort: LibrarySort) => void;
   onView: (view: LibraryViewMode) => void;
+  onArchive: OnArchive;
 }) {
   const shown = sortRows(filterRows(rows, query, status), sort);
   return (
@@ -269,7 +309,7 @@ export function LibraryView({
             className="pl-8"
           />
         </span>
-        <Select value={status} onValueChange={(v) => onStatus(v as LibraryStatus | "all")}>
+        <Select value={status} onValueChange={(v) => onStatus(v as LibraryFilter)}>
           <SelectTrigger aria-label="Status" className="w-40">
             <SelectValue />
           </SelectTrigger>
@@ -327,9 +367,9 @@ export function LibraryView({
           No process matches the search.
         </p>
       ) : view === "table" ? (
-        <TableRows rows={shown} />
+        <TableRows rows={shown} onArchive={onArchive} />
       ) : (
-        <CardRows rows={shown} />
+        <CardRows rows={shown} onArchive={onArchive} />
       )}
     </div>
   );
@@ -337,7 +377,7 @@ export function LibraryView({
 
 export function ProcessLibrary() {
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<LibraryStatus | "all">("all");
+  const [status, setStatus] = useState<LibraryFilter>("all");
   const [sort, setSort] = useState<LibrarySort>("latest");
   const [view, setView] = useState<LibraryViewMode>("table");
   const processes = useQuery({ queryKey: ["processes"], queryFn: listProcesses });
@@ -350,6 +390,16 @@ export function ProcessLibrary() {
   const rows = (processes.data ?? []).map((p, i) =>
     libraryRow(p, versions[i]?.data, versions[i]?.isError ?? false),
   );
+  const client = useQueryClient();
+  async function toggleArchive(row: LibraryRow) {
+    try {
+      await (row.archived ? restoreProcess : archiveProcess)(row.id);
+      await client.invalidateQueries({ queryKey: ["processes"] });
+      toast.success(row.archived ? "Process restored" : "Process archived");
+    } catch {
+      toast.error("The change did not save.");
+    }
+  }
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <header
@@ -382,6 +432,7 @@ export function ProcessLibrary() {
             onStatus={setStatus}
             onSort={setSort}
             onView={setView}
+            onArchive={toggleArchive}
           />
         )}
       </main>

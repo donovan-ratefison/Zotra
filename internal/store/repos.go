@@ -78,7 +78,7 @@ func (s *Store) CreateProcess(ctx context.Context, name string) (Process, error)
 // ListProcesses returns all processes, created_at first, then id.
 func (s *Store) ListProcesses(ctx context.Context) ([]Process, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT id, name, created_at FROM processes ORDER BY created_at, id`)
+		`SELECT id, name, created_at, archived_at FROM processes ORDER BY created_at, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +86,7 @@ func (s *Store) ListProcesses(ctx context.Context) ([]Process, error) {
 	var processes []Process
 	for rows.Next() {
 		var p Process
-		if err := rows.Scan(&p.ID, &p.Name, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.CreatedAt, &p.ArchivedAt); err != nil {
 			return nil, err
 		}
 		processes = append(processes, p)
@@ -101,8 +101,28 @@ func (s *Store) ProcessByID(ctx context.Context, id string) (Process, error) {
 	}
 	var p Process
 	err := s.db.QueryRow(ctx,
-		`SELECT id, name, created_at FROM processes WHERE id = $1`, id).
-		Scan(&p.ID, &p.Name, &p.CreatedAt)
+		`SELECT id, name, created_at, archived_at FROM processes WHERE id = $1`, id).
+		Scan(&p.ID, &p.Name, &p.CreatedAt, &p.ArchivedAt)
+	if isAbsent(err) {
+		return Process{}, notExist("process", id)
+	}
+	return p, err
+}
+
+// SetProcessArchived archives (archived_at = now) or restores
+// (archived_at = NULL) one process. A second archive keeps the first
+// archived_at. The versions and cases stay.
+func (s *Store) SetProcessArchived(ctx context.Context, id string, archived bool) (Process, error) {
+	if !isUUID(id) {
+		return Process{}, notExist("process", id)
+	}
+	var p Process
+	err := s.db.QueryRow(ctx,
+		`UPDATE processes
+		 SET archived_at = CASE WHEN $2 THEN COALESCE(archived_at, now()) END
+		 WHERE id = $1
+		 RETURNING id, name, created_at, archived_at`, id, archived).
+		Scan(&p.ID, &p.Name, &p.CreatedAt, &p.ArchivedAt)
 	if isAbsent(err) {
 		return Process{}, notExist("process", id)
 	}

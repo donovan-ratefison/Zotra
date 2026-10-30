@@ -59,6 +59,8 @@ func NewHandler(static fs.FS, version string, st *store.Store, feedbackDir strin
 		d := apiDeps{st: st, version: version, ai: ai.New(ai.LoadConfig())}
 		mux.HandleFunc("GET /api/processes", d.listProcesses)
 		mux.HandleFunc("POST /api/processes", d.createProcess)
+		mux.HandleFunc("POST /api/processes/{id}/archive", d.archiveProcess)
+		mux.HandleFunc("POST /api/processes/{id}/restore", d.restoreProcess)
 		mux.HandleFunc("GET /api/processes/{id}/versions", d.listVersions)
 		mux.HandleFunc("POST /api/processes/{id}/versions", d.createVersion)
 		mux.HandleFunc("GET /api/versions/{id}", d.readVersion)

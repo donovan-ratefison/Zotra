@@ -102,6 +102,8 @@ type Process struct {
 	ID        string
 	Name      string
 	CreatedAt time.Time
+	// ArchivedAt is nil while the process is not archived.
+	ArchivedAt *time.Time
 }
 
 // Version is one row of the versions table. Definition holds the

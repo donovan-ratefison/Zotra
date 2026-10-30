@@ -94,6 +94,8 @@ export interface ProcessSummary {
   id: string;
   name: string;
   created_at: string;
+  // Absent or null: the process is not archived.
+  archived_at?: string | null;
 }
 export type VersionStatus = "draft" | "frozen" | "published";
 export interface VersionSummary {

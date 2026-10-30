@@ -150,6 +150,21 @@ export async function createProcess(name: string): Promise<ProcessSummary> {
   }).then((body) => body.process);
 }
 
+// archiveProcess hides one process from the library. Its versions and
+// cases stay. An unknown id gives 404 "not_found".
+export async function archiveProcess(id: string): Promise<ProcessSummary> {
+  return postJson<{ process: ProcessSummary }>(
+    `/api/processes/${encodeURIComponent(id)}/archive`,
+  ).then((body) => body.process);
+}
+
+// restoreProcess brings one archived process back to the library.
+export async function restoreProcess(id: string): Promise<ProcessSummary> {
+  return postJson<{ process: ProcessSummary }>(
+    `/api/processes/${encodeURIComponent(id)}/restore`,
+  ).then((body) => body.process);
+}
+
 // createVersion creates one draft version of a process.
 export async function createVersion(
   processId: string,
