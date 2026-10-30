@@ -13,6 +13,10 @@ import {
   newNodeId,
   removeEdge,
   removeNode,
+  setDefaultLink,
+  setEndResult,
+  setLinkCondition,
+  setLinkDecision,
 } from "./edit";
 import type { ProcessDefinition } from "./types";
 
@@ -158,5 +162,56 @@ describe("EditToolbar", () => {
       expect(html).toContain(text);
     }
     expect(html).not.toContain("Start");
+  });
+});
+
+// Seed ids: e07 threshold -> decision, e08 threshold -> offer
+// (default), e09 decision -> offer "approve", e12 offer -> signing.
+const edge = (def: ProcessDefinition, id: string) => def.edges.find((e) => e.id === id)!;
+
+describe("link and end details", () => {
+  test("124b-1: setDefaultLink moves the default of a gateway", () => {
+    const next = setDefaultLink(base, "e07");
+    expect(edge(next, "e07")).toMatchObject({ is_default: true, condition: null });
+    expect(edge(next, "e08").is_default).toBe(false);
+    const others = (d: ProcessDefinition) =>
+      d.edges.filter((e) => e.id !== "e07" && e.id !== "e08");
+    expect(others(next)).toEqual(others(base));
+  });
+
+  test("124b-2: setDefaultLink on a task link changes nothing", () => {
+    expect(setDefaultLink(base, "e12")).toEqual(base);
+  });
+
+  test("124b-3: setLinkCondition trims, and blank text gives null", () => {
+    const set = setLinkCondition(base, "e08", "  loan_amount > 1.0 ");
+    expect(edge(set, "e08").condition).toBe("loan_amount > 1.0");
+    expect(edge(setLinkCondition(set, "e08", "  "), "e08").condition).toBeNull();
+  });
+
+  test("124b-4: setLinkDecision writes a decision, then null", () => {
+    const set = setLinkDecision(base, "e09", "refuse");
+    expect(edge(set, "e09").decision).toBe("refuse");
+    expect(edge(setLinkDecision(set, "e09", null), "e09").decision).toBeNull();
+  });
+
+  test("124b-5: setEndResult changes an end only", () => {
+    const set = setEndResult(base, "released", "refused");
+    expect(set.nodes.find((n) => n.id === "released")!.end_result).toBe("refused");
+    expect(setEndResult(base, "offer", "refused")).toEqual(base);
+  });
+
+  test("124b-6: unknown ids give an equal new definition", () => {
+    const copy = structuredClone(base);
+    for (const next of [
+      setDefaultLink(base, "ghost"),
+      setLinkCondition(base, "ghost", "x"),
+      setLinkDecision(base, "ghost", "x"),
+      setEndResult(base, "ghost", "refused"),
+    ]) {
+      expect(next).toEqual(base);
+      expect(next).not.toBe(base);
+    }
+    expect(base).toEqual(copy);
   });
 });

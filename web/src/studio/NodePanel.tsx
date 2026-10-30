@@ -25,7 +25,14 @@ import {
 import { Switch } from "@/ui/switch";
 import { Textarea } from "@/ui/textarea";
 import { updateDraft } from "./api";
-import { removeEdge, removeNode } from "./edit";
+import {
+  removeEdge,
+  removeNode,
+  setDefaultLink,
+  setEndResult,
+  setLinkCondition,
+  setLinkDecision,
+} from "./edit";
 import { edgePillText, roleColor } from "./layout";
 import {
   addCheck,
@@ -41,6 +48,7 @@ import {
 } from "./node-edit";
 import { useStudioStore, type PanelTab } from "./store";
 import type {
+  EndResult,
   NodeType,
   ProcessDefinition,
   ProcessNode,
@@ -67,6 +75,12 @@ const TABS: { id: PanelTab; label: string }[] = [
 // Radix forbids an empty value on a select item, so the "no role"
 // option carries this sentinel and maps to null on change.
 const NO_ROLE = "__none__";
+const NO_DECISION = "__none__";
+
+const END_RESULT_TEXT: Record<EndResult, string> = {
+  approved: "Approved",
+  refused: "Refused",
+};
 
 export function NodePanel({
   def,
@@ -236,6 +250,26 @@ export function NodePanel({
         <Label htmlFor="np-type">Type</Label>
         <Input id="np-type" value={TYPE_TEXT[node.type]} readOnly />
       </div>
+      {node.type === "end" && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="np-result">Result</Label>
+          <Select
+            value={node.end_result ?? ""}
+            disabled={!editable}
+            onValueChange={(v) => apply(setEndResult(working, node.id, v as EndResult))}
+          >
+            <SelectTrigger id="np-result" aria-label="End result" className="w-full">
+              <SelectValue>
+                {node.end_result !== null ? END_RESULT_TEXT[node.end_result] : null}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="approved">Approved</SelectItem>
+              <SelectItem value="refused">Refused</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="np-deadline">Deadline</Label>
         <div className="relative">
@@ -295,7 +329,13 @@ export function NodePanel({
       </div>
       <div className="flex flex-col gap-1.5">
         <span className="text-[12.5px] font-medium">Outgoing links</span>
-        <OutgoingLinks def={def} node={node} onStructure={structure} />
+        <OutgoingLinks
+          def={def}
+          working={working}
+          node={node}
+          onStructure={structure}
+          onChange={editable ? apply : undefined}
+        />
       </div>
     </div>
   );
@@ -558,12 +598,17 @@ function RoleChip({ def, node }: { def: ProcessDefinition; node: ProcessNode }) 
   );
 }
 
-function OutgoingLinks({ def, node, onStructure }: {
+// OutgoingLinks lists the links of the working copy. The remove
+// button saves a structure edit on def; the detail controls (default,
+// condition, decision) edit the working copy through onChange.
+function OutgoingLinks({ def, working, node, onStructure, onChange }: {
   def: ProcessDefinition;
+  working: ProcessDefinition;
   node: ProcessNode;
   onStructure?: (next: ProcessDefinition) => void;
+  onChange?: (next: ProcessDefinition) => void;
 }) {
-  const outgoing = def.edges.filter((e) => e.from === node.id);
+  const outgoing = working.edges.filter((e) => e.from === node.id);
   if (outgoing.length === 0) {
     return (
       <p className="text-xs text-muted-foreground">
@@ -573,40 +618,119 @@ function OutgoingLinks({ def, node, onStructure }: {
       </p>
     );
   }
+  const decisions = node.type === "task" ? node.decisions : [];
   return (
     <ul className="overflow-hidden rounded-md border">
       {outgoing.map((edge) => {
-        const target = def.nodes.find((n) => n.id === edge.to);
+        const target = working.nodes.find((n) => n.id === edge.to);
+        const targetName = target?.name ?? edge.to;
         const pill = edgePillText(edge);
         return (
           <li
             key={edge.id}
-            className="flex items-center gap-2 border-b px-2.5 py-1.5 text-[12.5px] last:border-b-0"
+            className="flex flex-col gap-1.5 border-b px-2.5 py-1.5 text-[12.5px] last:border-b-0"
           >
-            {pill !== null && (
-              <>
-                <span className="rounded-full border bg-secondary px-1.5 py-0.5 text-[10.5px]">
-                  {pill}
-                </span>
-                <ChevronRight size={12} className="shrink-0 text-muted-foreground" />
-              </>
+            <div className="flex items-center gap-2">
+              {pill !== null && (
+                <>
+                  <span className="rounded-full border bg-secondary px-1.5 py-0.5 text-[10.5px]">
+                    {pill}
+                  </span>
+                  <ChevronRight size={12} className="shrink-0 text-muted-foreground" />
+                </>
+              )}
+              <span className="truncate">{targetName}</span>
+              {onStructure !== undefined && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  className="ml-auto"
+                  aria-label={`Remove the link to ${targetName}`}
+                  onClick={() => onStructure(removeEdge(def, edge.id))}
+                >
+                  <X size={12} />
+                </Button>
+              )}
+            </div>
+            {onChange !== undefined && node.type === "gateway" && (
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant={edge.is_default ? "secondary" : "outline"}
+                  size="xs"
+                  aria-pressed={edge.is_default}
+                  aria-label={`Default link to ${targetName}`}
+                  onClick={() => onChange(setDefaultLink(working, edge.id))}
+                >
+                  Default
+                </Button>
+                {!edge.is_default && (
+                  <ConditionInput
+                    condition={edge.condition}
+                    targetName={targetName}
+                    onText={(text) => onChange(setLinkCondition(working, edge.id, text))}
+                  />
+                )}
+              </div>
             )}
-            <span className="truncate">{target?.name ?? edge.to}</span>
-            {onStructure !== undefined && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                className="ml-auto"
-                aria-label={`Remove the link to ${target?.name ?? edge.to}`}
-                onClick={() => onStructure(removeEdge(def, edge.id))}
+            {onChange !== undefined && decisions.length > 0 && (
+              <Select
+                value={edge.decision ?? NO_DECISION}
+                onValueChange={(v) =>
+                  onChange(setLinkDecision(working, edge.id, v === NO_DECISION ? null : v))
+                }
               >
-                <X size={12} />
-              </Button>
+                <SelectTrigger
+                  size="sm"
+                  aria-label={`Decision of the link to ${targetName}`}
+                  className="w-full"
+                >
+                  <SelectValue>{edge.decision ?? "No decision"}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_DECISION}>No decision</SelectItem>
+                  {decisions.map((d) => (
+                    <SelectItem key={d} value={d}>
+                      {d}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
           </li>
         );
       })}
     </ul>
+  );
+}
+
+// ConditionInput keeps the typed text, so a space at the end stays
+// while the user types; the definition gets the trimmed text. A new
+// condition from outside (a save, "Default") replaces the text.
+function ConditionInput({ condition, targetName, onText }: {
+  condition: string | null;
+  targetName: string;
+  onText: (text: string) => void;
+}) {
+  const [text, setText] = useState(condition ?? "");
+  const [prev, setPrev] = useState(condition);
+  if (prev !== condition) {
+    setPrev(condition);
+    if ((text.trim() || null) !== condition) {
+      setText(condition ?? "");
+    }
+  }
+  return (
+    <Input
+      value={text}
+      aria-label={`Condition of the link to ${targetName}`}
+      title="CEL expression over the fields, for example loan_amount > 100000.0"
+      className="h-7 flex-1 font-mono text-xs md:text-xs"
+      onChange={(e) => {
+        setText(e.target.value);
+        onText(e.target.value);
+      }}
+    />
   );
 }

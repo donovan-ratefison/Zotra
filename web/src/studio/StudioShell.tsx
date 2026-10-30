@@ -310,6 +310,9 @@ export function StudioShell() {
   // react-hooks lint asks for a state change on a value change.
   const [undoStack, setUndoStack] = useState<ProcessDefinition[]>([]);
   const [undoBusy, setUndoBusy] = useState(false);
+  // True from a structure save to the end of its refetch: a second
+  // add or link built on the stale definition would drop the first.
+  const [structureBusy, setStructureBusy] = useState(false);
   const [stackVersionId, setStackVersionId] = useState(versionId);
   if (stackVersionId !== versionId) {
     setStackVersionId(versionId);
@@ -378,7 +381,7 @@ export function StudioShell() {
       return;
     }
     setUndoStack((stack) => pushUndo(stack, loadedDef));
-    void queryClient.invalidateQueries({ queryKey: ["version", versionId] });
+    return queryClient.invalidateQueries({ queryKey: ["version", versionId] });
   }
 
   // saveStructure saves one structure edit (add, link, delete) at
@@ -392,19 +395,22 @@ export function StudioShell() {
       toast.error("Save the step changes first.");
       return false;
     }
+    setStructureBusy(true);
     try {
       await updateDraft(version.id, next);
-      onSavedDraft();
+      await onSavedDraft();
       return true;
     } catch {
       toast.error("The change did not save.");
       return false;
+    } finally {
+      setStructureBusy(false);
     }
   }
 
   // onAdd appends a new step, then opens it in the panel.
   async function onAdd(type: AddType) {
-    if (loadedDef === undefined) {
+    if (loadedDef === undefined || structureBusy) {
       return;
     }
     const r = addNode(loadedDef, type);
@@ -414,7 +420,7 @@ export function StudioShell() {
   }
 
   function onConnect(from: string, to: string) {
-    if (loadedDef === undefined) {
+    if (loadedDef === undefined || structureBusy) {
       return;
     }
     const next = connect(loadedDef, from, to);

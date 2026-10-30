@@ -4,7 +4,7 @@
 
 import { CircleDot, Diamond, Square } from "lucide-react";
 import { Button } from "@/ui/button";
-import type { ProcessDefinition } from "./types";
+import type { EndResult, ProcessDefinition, ProcessEdge } from "./types";
 
 export type AddType = "task" | "gateway" | "end";
 
@@ -113,6 +113,66 @@ export function removeNode(
     ...def,
     nodes: def.nodes.filter((n) => n.id !== nodeId),
     edges: def.edges.filter((e) => e.from !== nodeId && e.to !== nodeId),
+  };
+}
+
+// The link and end details. Each function returns a new definition;
+// an unknown id, or a node of the wrong type, gives an equal copy.
+
+// mapEdge applies f to the edge edgeId only.
+function mapEdge(
+  def: ProcessDefinition,
+  edgeId: string,
+  f: (e: ProcessEdge) => ProcessEdge,
+): ProcessDefinition {
+  return { ...def, edges: def.edges.map((e) => (e.id === edgeId ? f(e) : e)) };
+}
+
+// setDefaultLink makes edgeId the one default link of its gateway.
+// A default link has no condition.
+export function setDefaultLink(def: ProcessDefinition, edgeId: string): ProcessDefinition {
+  const edge = def.edges.find((e) => e.id === edgeId);
+  const from = def.nodes.find((n) => n.id === edge?.from);
+  if (edge === undefined || from?.type !== "gateway") {
+    return { ...def };
+  }
+  return {
+    ...def,
+    edges: def.edges.map((e) => {
+      if (e.id === edgeId) return { ...e, is_default: true, condition: null };
+      if (e.from === edge.from) return { ...e, is_default: false };
+      return e;
+    }),
+  };
+}
+
+export function setLinkCondition(
+  def: ProcessDefinition,
+  edgeId: string,
+  text: string,
+): ProcessDefinition {
+  const condition = text.trim();
+  return mapEdge(def, edgeId, (e) => ({ ...e, condition: condition === "" ? null : condition }));
+}
+
+export function setLinkDecision(
+  def: ProcessDefinition,
+  edgeId: string,
+  decision: string | null,
+): ProcessDefinition {
+  return mapEdge(def, edgeId, (e) => ({ ...e, decision }));
+}
+
+export function setEndResult(
+  def: ProcessDefinition,
+  nodeId: string,
+  result: EndResult,
+): ProcessDefinition {
+  return {
+    ...def,
+    nodes: def.nodes.map((n) =>
+      n.id === nodeId && n.type === "end" ? { ...n, end_result: result } : n,
+    ),
   };
 }
 

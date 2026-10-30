@@ -475,3 +475,81 @@ describe("structure controls", () => {
     expect(html).toContain('aria-label="Remove the link to Application entry"');
   });
 });
+
+describe("link and end details", () => {
+  const general = { tab: "general" as PanelTab };
+  // The fixture with the task entry given the decisions approve and
+  // refuse, and a second link to Loan refused.
+  const withDecisions: ProcessDefinition = {
+    ...panelDefinition,
+    nodes: panelDefinition.nodes.map((n) =>
+      n.id === "entry" ? { ...n, decisions: ["approve", "refuse"] } : n,
+    ),
+    edges: [
+      ...panelDefinition.edges,
+      { id: "e7", from: "entry", to: "refused", label: null, decision: "refuse", condition: null, is_default: false },
+    ],
+  };
+
+  test("124b-7: a draft gateway shows a default toggle per link and a condition per other link", () => {
+    const html = renderNodePanel(
+      draftVersion,
+      { ...general, selectedNodeId: "complete" },
+      panelDefinition,
+      () => {},
+    );
+    // complete has e4 and e5 with a condition, and e6 the default.
+    expect(html.match(/aria-label="Default link to /g)).toHaveLength(3);
+    expect(html).toMatch(/aria-pressed="true"[^>]*aria-label="Default link to Application entry"/);
+    expect(html.match(/aria-label="Condition of the link to /g)).toHaveLength(2);
+    expect(html).toContain('aria-label="Condition of the link to Loan released"');
+    expect(html).toContain('value="size(documents) &gt;= 4"');
+    expect(html).not.toContain(" placeholder=");
+  });
+
+  test("124b-8: a draft task with decisions shows a decision select per link", () => {
+    const html = renderNodePanel(
+      draftVersion,
+      { ...general, selectedNodeId: "entry" },
+      withDecisions,
+      () => {},
+    );
+    expect(html.match(/aria-label="Decision of the link to /g)).toHaveLength(2);
+    expect(html).toContain('aria-label="Decision of the link to Review"');
+    expect(html).toContain('aria-label="Decision of the link to Loan refused"');
+    expect(html).toContain("No decision");
+  });
+
+  test("124b-9: a draft end shows the result select", () => {
+    const html = renderNodePanel(
+      draftVersion,
+      { ...general, selectedNodeId: "refused" },
+      panelDefinition,
+      () => {},
+    );
+    expect(html).toContain('aria-label="End result"');
+    expect(html).toContain("Refused");
+  });
+
+  test("124b-10: a published version shows no detail control", () => {
+    for (const id of ["complete", "entry", "refused"]) {
+      const html = renderNodePanel(
+        publishedVersion,
+        { ...general, selectedNodeId: id },
+        withDecisions,
+        () => {},
+      );
+      expect(html).not.toContain("Default link to");
+      expect(html).not.toContain("Condition of the link to");
+      expect(html).not.toContain("Decision of the link to");
+    }
+    // The brief keeps the end result visible but disabled (item 3).
+    const end = renderNodePanel(
+      publishedVersion,
+      { ...general, selectedNodeId: "refused" },
+      withDecisions,
+      () => {},
+    );
+    expect(end.match(/<button[^>]*aria-label="End result"[^>]*>/)![0]).toContain('disabled=""');
+  });
+});
