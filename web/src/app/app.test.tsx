@@ -452,6 +452,22 @@ describe("app shell", () => {
     expect(html).toContain("Take the step");
     expect(html).not.toContain("<tr");
   });
+
+  test("fb-018 row F8: with a case open, the inbox entry is pressed", () => {
+    // The sidebar entry, in the prop order of React: type, aria-pressed.
+    const INBOX_ON = /<button[^>]*aria-pressed="true"[^>]*>Inbox/;
+    vi.stubGlobal("location", {
+      pathname: "/app",
+      search: "?user=u-advisor&case=c1",
+    });
+    const client = newClient();
+    seedShell(client);
+    client.setQueryData(["case", "c1"], { case: caseFixture, state: stateFixture });
+    client.setQueryData(["events", "c1"], []);
+    client.setQueryData(["documents", "c1"], []);
+    const html = renderApp(client);
+    expect(html).toMatch(INBOX_ON);
+  });
 });
 
 describe("case screen", () => {

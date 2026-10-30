@@ -14,7 +14,7 @@ import { fetchSupervision, fetchAudit, fetchAuditVerify } from "./sup-api";
 import type { AuditEvent, AuditVerify, Supervision } from "./sup-api";
 import { heatColor, SupervisionScreen } from "./SupervisionScreen";
 import { AuditScreen } from "./AuditScreen";
-import { AppShell } from "./AppShell";
+import { AppShell, viewSearch } from "./AppShell";
 import type { InboxCase } from "./app-api";
 import type { UserDTO } from "../studio/case-api";
 import type {
@@ -386,6 +386,12 @@ describe("audit screen", () => {
   });
 });
 
+// The sidebar entries, in the prop order of React: type, aria-pressed,
+// then class.
+const INBOX_ON = /<button[^>]*aria-pressed="true"[^>]*>Inbox/;
+const INBOX_OFF = /<button[^>]*aria-pressed="false"[^>]*>Inbox/;
+const SUP_ON = /<button[^>]*aria-pressed="true"[^>]*>Supervision/;
+
 describe("app shell views", () => {
   test("6.3 row W9: the view parameter shows the audit or the supervision", () => {
     vi.stubGlobal("location", {
@@ -440,5 +446,59 @@ describe("app shell views", () => {
     expect(html).toContain("Loading");
     expect(html).not.toContain("Every event carries the hash");
     expect(html).not.toContain("Cases that wait");
+  });
+
+  test("fb-018 row F5: the inbox entry is pressed on the inbox", () => {
+    vi.stubGlobal("location", { pathname: "/app", search: "?user=u-advisor" });
+    const client = newClient();
+    seedShell(client);
+    const html = renderApp(client);
+    expect(html).toMatch(INBOX_ON);
+    expect(html).not.toContain('aria-current="page"');
+  });
+
+  test("fb-018 row F6: the inbox entry is not pressed on the supervision", () => {
+    vi.stubGlobal("location", {
+      pathname: "/app",
+      search: "?user=u-advisor&view=supervision",
+    });
+    const client = newClient();
+    seedShell(client);
+    client.setQueryData(["supervision", "v1"], supAnswer);
+    const html = renderApp(client);
+    expect(html).toMatch(INBOX_OFF);
+    expect(html).toMatch(SUP_ON);
+  });
+
+  test("fb-018 row F7: the inbox entry is not pressed on the audit", () => {
+    vi.stubGlobal("location", {
+      pathname: "/app",
+      search: "?user=u-advisor&view=audit",
+    });
+    const client = newClient();
+    seedShell(client);
+    client.setQueryData(["audit"], auditAnswer);
+    const html = renderApp(client);
+    expect(html).toMatch(INBOX_OFF);
+  });
+});
+
+describe("view search", () => {
+  test("fb-018 row F1: the inbox has no view parameter", () => {
+    expect(viewSearch("u-advisor", "inbox")).toBe("?user=u-advisor");
+  });
+
+  test("fb-018 row F2: the supervision view", () => {
+    expect(viewSearch("u-advisor", "supervision")).toBe(
+      "?user=u-advisor&view=supervision",
+    );
+  });
+
+  test("fb-018 row F3: the audit view", () => {
+    expect(viewSearch("u-advisor", "audit")).toBe("?user=u-advisor&view=audit");
+  });
+
+  test("fb-018 row F4: no user yet gives an empty user", () => {
+    expect(viewSearch("", "inbox")).toBe("?user=");
   });
 });

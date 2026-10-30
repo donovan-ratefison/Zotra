@@ -75,6 +75,20 @@ export function brandVars(theme: Theme): Record<string, string> {
   };
 }
 
+// viewSearch gives the URL search of one view of the main area. The
+// inbox has no view parameter.
+export function viewSearch(
+  userId: string,
+  view: "inbox" | "supervision" | "audit",
+): string {
+  const params = new URLSearchParams();
+  params.set("user", userId);
+  if (view !== "inbox") {
+    params.set("view", view);
+  }
+  return `?${params.toString()}`;
+}
+
 // pickProcess takes the earliest process that is not archived, then
 // the lowest id (the StudioShell rule).
 function pickProcess(
@@ -246,13 +260,10 @@ export function AppShell() {
     setCaseId("");
   }
 
-  // openView switches the main area to one supervisor screen. The
-  // case parameter drops, the user stays.
-  function openView(next: "supervision" | "audit") {
-    const params = new URLSearchParams();
-    params.set("user", effectiveUserId);
-    params.set("view", next);
-    history.replaceState(null, "", `?${params.toString()}`);
+  // openView switches the main area to the inbox or one supervisor
+  // screen. The case parameter drops, the user stays.
+  function openView(next: "inbox" | "supervision" | "audit") {
+    history.replaceState(null, "", viewSearch(effectiveUserId, next));
     setCaseId("");
     setView(next);
   }
@@ -461,9 +472,15 @@ export function AppShell() {
           </div>
         </div>
         <nav className="mt-4 flex flex-col gap-0.5 px-3" aria-label="App">
-          <span
-            aria-current="page"
-            className="flex items-center gap-2 rounded-md bg-accent px-3 py-2 text-sm font-medium"
+          <button
+            type="button"
+            aria-pressed={view === "inbox"}
+            onClick={() => openView("inbox")}
+            className={`flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${
+              view === "inbox"
+                ? "bg-accent font-medium"
+                : "text-muted-foreground"
+            }`}
           >
             Inbox
             {inboxData !== null && (
@@ -471,7 +488,7 @@ export function AppShell() {
                 {inboxData.cases.length}
               </span>
             )}
-          </span>
+          </button>
           <button
             type="button"
             aria-pressed={view === "supervision"}
