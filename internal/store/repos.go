@@ -588,3 +588,48 @@ func (s *Store) ListCaseDocuments(ctx context.Context, caseID string) ([]Documen
 	}
 	return docs, rows.Err()
 }
+
+// PolicyFile is the policy PDF of one process.
+type PolicyFile struct {
+	ProcessID, FileName, MIME, SHA256 string
+	Bytes                             []byte
+	CreatedAt                         time.Time
+}
+
+// SavePolicyFile stores the policy PDF of one process. A new file
+// replaces the old one. It does no process check: the handler checks
+// first.
+func (s *Store) SavePolicyFile(ctx context.Context, processID, fileName, sha string, data []byte) (PolicyFile, error) {
+	if !isUUID(processID) {
+		return PolicyFile{}, notExist("process", processID)
+	}
+	f := PolicyFile{ProcessID: processID, FileName: fileName,
+		MIME: "application/pdf", SHA256: sha, Bytes: data}
+	err := s.db.QueryRow(ctx, `
+		INSERT INTO policy_files (process_id, file_name, mime, bytes, sha256)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (process_id) DO UPDATE SET
+			file_name = EXCLUDED.file_name, mime = EXCLUDED.mime,
+			bytes = EXCLUDED.bytes, sha256 = EXCLUDED.sha256,
+			created_at = now()
+		RETURNING created_at`,
+		f.ProcessID, f.FileName, f.MIME, f.Bytes, f.SHA256).Scan(&f.CreatedAt)
+	return f, err
+}
+
+// GetPolicyFile returns the policy PDF of one process, or the
+// row-absent error of kind policy.
+func (s *Store) GetPolicyFile(ctx context.Context, processID string) (PolicyFile, error) {
+	if !isUUID(processID) {
+		return PolicyFile{}, notExist("policy", processID)
+	}
+	var f PolicyFile
+	err := s.db.QueryRow(ctx, `
+		SELECT process_id, file_name, mime, bytes, sha256, created_at
+		FROM policy_files WHERE process_id = $1`, processID).
+		Scan(&f.ProcessID, &f.FileName, &f.MIME, &f.Bytes, &f.SHA256, &f.CreatedAt)
+	if isAbsent(err) {
+		return PolicyFile{}, notExist("policy", processID)
+	}
+	return f, err
+}

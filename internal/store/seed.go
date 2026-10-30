@@ -2,14 +2,20 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 )
 
 //go:embed seed/example-process.json
 var seedProcess []byte
 
-// Seed inserts the demo users and the example process with version 1
-// published. It changes nothing when the rows are already there.
+//go:embed seed/home-loan-policy.pdf
+var seedPolicy []byte
+
+// Seed inserts the demo users, the example process with version 1
+// published, and its policy PDF. It changes nothing when the rows
+// are already there.
 func Seed(ctx context.Context, s *Store) error {
 	seedUsers := []User{
 		{ID: "u-advisor", Name: "Demo Advisor", RoleIDs: []string{"advisor"}},
@@ -40,5 +46,13 @@ func Seed(ctx context.Context, s *Store) error {
 		"Initial", StatusPublished, seedProcess); err != nil {
 		return err
 	}
-	return nil
+	// DO NOTHING keeps a policy that the user uploaded.
+	sum := sha256.Sum256(seedPolicy)
+	_, err := s.db.Exec(ctx, `
+		INSERT INTO policy_files (process_id, file_name, mime, bytes, sha256)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (process_id) DO NOTHING`,
+		"00000000-0000-0000-0000-000000000001", "home-loan-policy.pdf",
+		"application/pdf", seedPolicy, hex.EncodeToString(sum[:]))
+	return err
 }

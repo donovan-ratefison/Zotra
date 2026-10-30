@@ -61,6 +61,8 @@ func NewHandler(static fs.FS, version string, st *store.Store, feedbackDir strin
 		mux.HandleFunc("POST /api/processes", d.createProcess)
 		mux.HandleFunc("POST /api/processes/{id}/archive", d.archiveProcess)
 		mux.HandleFunc("POST /api/processes/{id}/restore", d.restoreProcess)
+		mux.HandleFunc("PUT /api/processes/{id}/policy", d.putPolicy)
+		mux.HandleFunc("GET /api/processes/{id}/policy", d.getPolicy)
 		mux.HandleFunc("GET /api/processes/{id}/versions", d.listVersions)
 		mux.HandleFunc("POST /api/processes/{id}/versions", d.createVersion)
 		mux.HandleFunc("GET /api/versions/{id}", d.readVersion)
@@ -134,7 +136,7 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 func writeStoreError(w http.ResponseWriter, err error) {
 	text := err.Error()
 	// <kind> <id> does not exist: 404, or 403 for the user kind.
-	for _, kind := range []string{"user", "process", "version", "case", "document"} {
+	for _, kind := range []string{"user", "process", "version", "case", "document", "policy"} {
 		prefix := kind + " "
 		suffix := " does not exist"
 		if strings.HasPrefix(text, prefix) && strings.HasSuffix(text, suffix) {

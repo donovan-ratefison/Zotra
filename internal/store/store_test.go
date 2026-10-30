@@ -3,6 +3,8 @@ package store
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -591,6 +593,88 @@ func TestSeedFileSync(t *testing.T) {
 	}
 	if !bytes.Equal(seed, example) {
 		t.Fatal("seed/example-process.json is not a byte copy of examples/home-loan/process.json")
+	}
+}
+
+// TestSeedPolicySync (row P1) keeps the embedded seed policy a byte
+// copy of the example policy.
+func TestSeedPolicySync(t *testing.T) {
+	seed, err := os.ReadFile("seed/home-loan-policy.pdf")
+	if err != nil {
+		t.Fatalf("read seed policy: %v", err)
+	}
+	example, err := os.ReadFile("../../examples/home-loan/policy.pdf")
+	if err != nil {
+		t.Fatalf("read example policy: %v", err)
+	}
+	if !bytes.Equal(seed, example) {
+		t.Fatal("seed/home-loan-policy.pdf is not a byte copy of examples/home-loan/policy.pdf")
+	}
+}
+
+// TestPolicyFile covers rows P2 to P5.
+func TestPolicyFile(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+
+	// P2: the seed gives the example policy to the seed process.
+	seed, err := s.GetPolicyFile(ctx, seedProcessID)
+	if err != nil {
+		t.Fatalf("GetPolicyFile seed: %v", err)
+	}
+	sum := sha256.Sum256(seedPolicy)
+	if seed.FileName != "home-loan-policy.pdf" || seed.MIME != "application/pdf" ||
+		!bytes.Equal(seed.Bytes, seedPolicy) || seed.SHA256 != hex.EncodeToString(sum[:]) {
+		t.Errorf("seed policy = %q %q sha %q (%d bytes), want the seed file",
+			seed.FileName, seed.MIME, seed.SHA256, len(seed.Bytes))
+	}
+
+	// P3: a second save replaces the first file.
+	p, err := s.CreateProcess(ctx, "Policy test")
+	if err != nil {
+		t.Fatalf("CreateProcess: %v", err)
+	}
+	if _, err := s.SavePolicyFile(ctx, p.ID, "a.pdf", "sha-a", []byte("%PDF-1 a")); err != nil {
+		t.Fatalf("SavePolicyFile a: %v", err)
+	}
+	if _, err := s.SavePolicyFile(ctx, p.ID, "b.pdf", "sha-b", []byte("%PDF-1 b")); err != nil {
+		t.Fatalf("SavePolicyFile b: %v", err)
+	}
+	got, err := s.GetPolicyFile(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("GetPolicyFile: %v", err)
+	}
+	if got.FileName != "b.pdf" || string(got.Bytes) != "%PDF-1 b" || got.SHA256 != "sha-b" {
+		t.Errorf("policy = %q %q %q, want b.pdf %%PDF-1 b sha-b", got.FileName, got.Bytes, got.SHA256)
+	}
+
+	// P4: a non-uuid id and a process with no file give the absent error.
+	if _, err := s.GetPolicyFile(ctx, "not-a-uuid"); err == nil ||
+		err.Error() != "policy not-a-uuid does not exist" {
+		t.Errorf("non-uuid: err = %v", err)
+	}
+	empty, err := s.CreateProcess(ctx, "No policy")
+	if err != nil {
+		t.Fatalf("CreateProcess: %v", err)
+	}
+	if _, err := s.GetPolicyFile(ctx, empty.ID); err == nil ||
+		err.Error() != "policy "+empty.ID+" does not exist" {
+		t.Errorf("no file: err = %v", err)
+	}
+
+	// P5: a second seed keeps the file of the user.
+	if _, err := s.SavePolicyFile(ctx, seedProcessID, "user.pdf", "sha-u", []byte("%PDF-1 u")); err != nil {
+		t.Fatalf("SavePolicyFile seed: %v", err)
+	}
+	if err := Seed(ctx, s); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+	kept, err := s.GetPolicyFile(ctx, seedProcessID)
+	if err != nil {
+		t.Fatalf("GetPolicyFile after seed: %v", err)
+	}
+	if kept.FileName != "user.pdf" || string(kept.Bytes) != "%PDF-1 u" {
+		t.Errorf("after seed = %q %q, want user.pdf %%PDF-1 u", kept.FileName, kept.Bytes)
 	}
 }
 
