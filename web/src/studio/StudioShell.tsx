@@ -32,7 +32,7 @@ import { PolicyPanel } from "./PolicyPanel";
 import { ProcessDiagram } from "./diagram";
 import { AssistantChat } from "./AssistantChat";
 import { ImportDialog } from "./ImportDialog";
-import { addNode, connect, type AddType } from "./edit";
+import { addNode, connect, removeEdge, removeNode, type AddType } from "./edit";
 import { NodePanel, UnsavedBadge } from "./NodePanel";
 import { ProcessPanel } from "./ProcessPanel";
 import { ProposalBar } from "./ProposalBar";
@@ -444,6 +444,29 @@ export function StudioShell() {
     void saveStructure(next);
   }
 
+  // The right-click menu of the diagram deletes a step (with its
+  // links) or one link, as a normal structure save.
+  function onDeleteNode(id: string) {
+    if (loadedDef === undefined || structureBusy) {
+      return;
+    }
+    const next = removeNode(loadedDef, id);
+    if (next === null) {
+      return;
+    }
+    if (useStudioStore.getState().selectedNodeId === id) {
+      select(null);
+    }
+    void saveStructure(next);
+  }
+
+  function onDeleteEdge(id: string) {
+    if (loadedDef === undefined || structureBusy) {
+      return;
+    }
+    void saveStructure(removeEdge(loadedDef, id));
+  }
+
   // undo writes the previous definition back as a normal draft
   // save. Unsaved edits of the step panel are dropped with it.
   const undo = useCallback(async () => {
@@ -794,7 +817,11 @@ export function StudioShell() {
                     }
                     onCitationClick={onCitationClick}
                     highlightNodeIds={selectedNodeId === null ? canvasFocus : null}
-                    edit={editing ? { onAdd: (t) => void onAdd(t), onConnect } : null}
+                    edit={
+                      editing
+                        ? { onAdd: (t) => void onAdd(t), onConnect, onDeleteNode, onDeleteEdge }
+                        : null
+                    }
                   />
                 </div>
                 {policyBlock}

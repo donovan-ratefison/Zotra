@@ -116,6 +116,39 @@ export function removeNode(
   };
 }
 
+// The right-click menu of the diagram: one delete action for a step
+// or a link.
+export type MenuTarget = { kind: "node"; id: string } | { kind: "edge"; id: string };
+export type MenuItem = {
+  action: "delete-node" | "delete-edge";
+  label: string;
+  disabled: boolean;
+  title: string | null;
+};
+
+// menuItems gives no item for an unknown id or the start, so the
+// browser menu stays. A step with unsaved panel edits cannot be
+// deleted (same rule as the step panel); a link always can.
+export function menuItems(def: ProcessDefinition, target: MenuTarget, dirty: boolean): MenuItem[] {
+  if (target.kind === "edge") {
+    return def.edges.some((e) => e.id === target.id)
+      ? [{ action: "delete-edge", label: "Delete link", disabled: false, title: null }]
+      : [];
+  }
+  const node = def.nodes.find((n) => n.id === target.id);
+  if (node === undefined || node.type === "start") {
+    return [];
+  }
+  return [
+    {
+      action: "delete-node",
+      label: "Delete step",
+      disabled: dirty,
+      title: dirty ? "Save the step first" : null,
+    },
+  ];
+}
+
 // The link and end details. Each function returns a new definition;
 // an unknown id, or a node of the wrong type, gives an equal copy.
 

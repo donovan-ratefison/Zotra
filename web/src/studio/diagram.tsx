@@ -2,7 +2,7 @@
 // furniture (legend, status line, zoom, mini map).
 
 import "@xyflow/react/dist/style.css";
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type RefObject } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -47,7 +47,14 @@ import {
   withSources,
 } from "./layout";
 import { initials, type CaseView } from "./case-view";
-import { EditToolbar, type AddType } from "./edit";
+import { EditToolbar, menuItems, type AddType, type MenuItem, type MenuTarget } from "./edit";
+import { useStudioStore } from "./store";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/ui/dropdown-menu";
 import type { CoverageReport } from "./case-api";
 import type { NodeType, ProcessDefinition, ProcessNode, SourceRow } from "./types";
 
@@ -66,6 +73,10 @@ function NodeHandles({ connectable = false }: { connectable?: boolean }) {
         border: "1.5px solid var(--primary)",
         background: "#ffffff",
         pointerEvents: "auto" as const,
+        // The shape renders after the handles and covers their inner
+        // half: without this, a press on the handle center hits the
+        // shape and no link starts.
+        zIndex: 1,
       }
     : { opacity: 0, pointerEvents: "none" as const };
   const className = connectable ? "zhandle" : undefined;
@@ -566,6 +577,8 @@ export function ElkEdge({ id, markerEnd, data }: EdgeProps) {
     <>
       <BaseEdge
         path={path}
+        // The right click of a link hits within 6 px of its line.
+        interactionWidth={12}
         stroke="#a1a1aa"
         strokeWidth={1.5}
         className="zcov"
@@ -1052,15 +1065,24 @@ export function ProcessDiagram({
   // every other step dims.
   highlightNodeIds?: string[] | null;
   // The edit handlers of a draft: the toolbar adds a step, a drag
-  // between two handles links two steps. Null keeps the diagram read
-  // only.
+  // between two handles links two steps, the right-click menu deletes
+  // a step or a link. Null keeps the diagram read only.
   edit?: {
     onAdd: (type: AddType) => void;
     onConnect: (from: string, to: string) => void;
+    onDeleteNode: (id: string) => void;
+    onDeleteEdge: (id: string) => void;
   } | null;
 }) {
   const [layout, setLayout] = useState<ReturnType<typeof withSources> | null>(null);
   const connectable = edit !== null;
+  // The open right-click menu, at the pointer, relative to wrapRef.
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    target: MenuTarget;
+    items: MenuItem[];
+  } | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   // The step under the pointer, else the step with keyboard focus:
   // its links light up and the steps it does not touch dim.
@@ -1198,6 +1220,21 @@ export function ProcessDiagram({
     [layout, ghostIds],
   );
 
+  // openMenu opens the custom menu on a draft only. With no item, the
+  // browser menu stays.
+  function openMenu(e: MouseEvent, target: MenuTarget) {
+    if (edit === null || wrapRef.current === null) {
+      return;
+    }
+    const items = menuItems(def, target, useStudioStore.getState().dirty);
+    if (items.length === 0) {
+      return;
+    }
+    e.preventDefault();
+    const box = wrapRef.current.getBoundingClientRect();
+    setMenu({ x: e.clientX - box.left, y: e.clientY - box.top, target, items });
+  }
+
   if (layout === null) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -1212,7 +1249,7 @@ export function ProcessDiagram({
       ref={wrapRef}
       role="region"
       aria-label="Process diagram. Tab to reach a step, arrow keys to move to the next step, Enter to select it, Escape to clear the selection."
-      className="h-full w-full"
+      className="relative h-full w-full"
       style={{ backgroundColor: "var(--canvas)" }}
       onFocus={(e) => setFocusId(stepIdOf(e.target))}
       onBlur={() => setFocusId(null)}
@@ -1256,6 +1293,8 @@ export function ProcessDiagram({
         onNodeMouseEnter={(_, n) => n.type !== "token" && !isSourceNode(n.id) && setHoverId(n.id)}
         onNodeMouseLeave={() => setHoverId(null)}
         onPaneClick={() => onNodeSelect(null)}
+        onNodeContextMenu={(e, n) => openMenu(e, { kind: "node", id: n.id })}
+        onEdgeContextMenu={(e, ed) => openMenu(e, { kind: "edge", id: ed.id })}
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="#d4d4d8" />
         <AutoFit box={wrapRef} layout={layout} focus={focus} />
@@ -1280,6 +1319,34 @@ export function ProcessDiagram({
           </Panel>
         )}
       </ReactFlow>
+      {edit !== null && menu !== null && (
+        <DropdownMenu open onOpenChange={(open) => !open && setMenu(null)}>
+          <DropdownMenuTrigger asChild>
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute size-0"
+              style={{ left: menu.x, top: menu.y }}
+            />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-36">
+            {menu.items.map((item) => (
+              <DropdownMenuItem
+                key={item.action}
+                variant="destructive"
+                disabled={item.disabled}
+                title={item.title ?? undefined}
+                onSelect={() =>
+                  item.action === "delete-node"
+                    ? edit.onDeleteNode(menu.target.id)
+                    : edit.onDeleteEdge(menu.target.id)
+                }
+              >
+                {item.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   );
 }

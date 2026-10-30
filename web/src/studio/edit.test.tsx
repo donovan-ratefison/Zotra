@@ -9,6 +9,7 @@ import {
   addNode,
   connect,
   EditToolbar,
+  menuItems,
   newEdgeId,
   newNodeId,
   removeEdge,
@@ -213,5 +214,37 @@ describe("link and end details", () => {
       expect(next).not.toBe(base);
     }
     expect(base).toEqual(copy);
+  });
+});
+
+describe("menuItems", () => {
+  const step = { action: "delete-node", label: "Delete step", disabled: false, title: null };
+  const link = { action: "delete-edge", label: "Delete link", disabled: false, title: null };
+  test("M1: a step gives Delete step, enabled", () => {
+    expect(menuItems(base, { kind: "node", id: "analysis" }, false)).toEqual([step]);
+  });
+  test("M2: a step with unsaved edits gives a disabled item", () => {
+    expect(menuItems(base, { kind: "node", id: "analysis" }, true)).toEqual([
+      { ...step, disabled: true, title: "Save the step first" },
+    ]);
+  });
+  test("M3: the start gives no item", () => {
+    expect(menuItems(base, { kind: "node", id: "start" }, false)).toEqual([]);
+  });
+  test("M4: an unknown step gives no item", () => {
+    expect(menuItems(base, { kind: "node", id: "nope" }, false)).toEqual([]);
+  });
+  test("M5: a link gives Delete link, enabled", () => {
+    expect(menuItems(base, { kind: "edge", id: "e01" }, false)).toEqual([link]);
+  });
+  test("M6: a link with unsaved step edits stays enabled", () => {
+    expect(menuItems(base, { kind: "edge", id: "e01" }, true)).toEqual([link]);
+  });
+  test("M7: an unknown link gives no item", () => {
+    expect(menuItems(base, { kind: "edge", id: "nope" }, false)).toEqual([]);
+  });
+  test("M8: a new end step gives Delete step, enabled", () => {
+    const r = addNode(base, "end");
+    expect(menuItems(r.def, { kind: "node", id: r.id }, false)).toEqual([step]);
   });
 });
