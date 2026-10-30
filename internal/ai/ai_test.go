@@ -595,3 +595,20 @@ func TestCostLog(t *testing.T) {
 		t.Fatalf("log line %q, want %q", got, want)
 	}
 }
+
+func TestPricePerMillion(t *testing.T) {
+	for _, c := range []struct {
+		model   string
+		in, out float64
+	}{
+		{"muse-spark-1.3", 1.25, 4.25},
+		{"muse-spark-1.3-contributor", 0.10, 0.20},
+		{"muse-wonder-1.0", 4, 20},
+		{"unknown", 1.25, 4.25},
+	} {
+		in, out := pricePerMillion(c.model)
+		if in != c.in || out != c.out {
+			t.Errorf("%s: got %v/%v, want %v/%v", c.model, in, out, c.in, c.out)
+		}
+	}
+}

@@ -60,8 +60,11 @@ func LoadConfig() Config {
 // pricePerMillion returns the USD price per million tokens of one
 // model, in and out. An unknown model gets the muse-spark-1.3 prices.
 func pricePerMillion(model string) (in, out float64) {
-	if model == "muse-spark-1.3-contributor" {
+	switch model {
+	case "muse-spark-1.3-contributor":
 		return 0.10, 0.20
+	case "muse-wonder-1.0":
+		return 4, 20
 	}
 	return 1.25, 4.25
 }
