@@ -39,6 +39,7 @@ import {
   type DiagramEdgeData,
   type DiagramNodeData,
   type DiagramPoint,
+  type FlowEdge,
   type FlowNode,
   type LabelPos,
 } from "./layout";
@@ -655,6 +656,41 @@ export function fitViewport(
 }
 
 type LayoutSize = { width: number; height: number };
+type Rect = { x: number; y: number; width: number; height: number };
+
+// The union box of the given steps and of the two ends of the given
+// links. An id that is not in the layout is skipped. No step gives null.
+export function focusBox(
+  layout: { nodes: FlowNode[]; edges: FlowEdge[] },
+  ids: { nodes: Set<string>; edges: Set<string> },
+): Rect | null {
+  const keep = new Set(ids.nodes);
+  for (const e of layout.edges) {
+    if (ids.edges.has(e.id)) {
+      keep.add(e.source);
+      keep.add(e.target);
+    }
+  }
+  const boxes = layout.nodes.filter((n) => keep.has(n.id));
+  if (boxes.length === 0) {
+    return null;
+  }
+  const x = Math.min(...boxes.map((n) => n.position.x));
+  const y = Math.min(...boxes.map((n) => n.position.y));
+  return {
+    x,
+    y,
+    width: Math.max(...boxes.map((n) => n.position.x + (n.width ?? 0))) - x,
+    height: Math.max(...boxes.map((n) => n.position.y + (n.height ?? 0))) - y,
+  };
+}
+
+// The viewport that shows the focus box, at 100 % or less, and never
+// zoomed out more than the full-diagram fit.
+export function focusViewport(layout: LayoutSize, focus: Rect, box: LayoutSize): Viewport {
+  const fullZoom = fitViewport(layout, box).zoom;
+  return getViewportForBounds(focus, box.width, box.height, fullZoom, 1, 0.25);
+}
 
 function ZoomControls({ box, layout }: { box: RefObject<HTMLDivElement | null>; layout: LayoutSize }) {
   const { zoomIn, zoomOut, setViewport } = useReactFlow();
@@ -709,9 +745,18 @@ function ZoomControls({ box, layout }: { box: RefObject<HTMLDivElement | null>; 
 // drawer takes a band of the column when it opens). The fit covers the
 // full layout box, not only the nodes, so no link text leaves the
 // canvas. The frame delay lets React Flow paint the new box first.
-function AutoFit({ box, layout }: { box: RefObject<HTMLDivElement | null>; layout: LayoutSize }) {
+// With a focus box (a chat proposal), each fit shows that box instead.
+function AutoFit({ box, layout, focus }: {
+  box: RefObject<HTMLDivElement | null>;
+  layout: LayoutSize;
+  focus: Rect | null;
+}) {
   const { setViewport } = useReactFlow();
   const { width, height } = layout;
+  const fx = focus?.x;
+  const fy = focus?.y;
+  const fw = focus?.width;
+  const fh = focus?.height;
   useEffect(() => {
     const el = box.current;
     if (el === null || typeof ResizeObserver === "undefined") {
@@ -721,7 +766,12 @@ function AutoFit({ box, layout }: { box: RefObject<HTMLDivElement | null>; layou
     const observer = new ResizeObserver(() => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
-        void setViewport(fitViewport({ width, height }, { width: el.clientWidth, height: el.clientHeight }));
+        const canvas = { width: el.clientWidth, height: el.clientHeight };
+        void setViewport(
+          fx === undefined || fy === undefined || fw === undefined || fh === undefined
+            ? fitViewport({ width, height }, canvas)
+            : focusViewport({ width, height }, { x: fx, y: fy, width: fw, height: fh }, canvas),
+        );
       });
     });
     observer.observe(el);
@@ -729,7 +779,7 @@ function AutoFit({ box, layout }: { box: RefObject<HTMLDivElement | null>; layou
       cancelAnimationFrame(raf);
       observer.disconnect();
     };
-  }, [box, setViewport, width, height]);
+  }, [box, setViewport, width, height, fx, fy, fw, fh]);
   return null;
 }
 
@@ -1060,6 +1110,10 @@ export function ProcessDiagram({
       };
     });
   }, [layout, ghost, ghostIds, caseView, coverage, active, lightSet, selectedNodeId]);
+  const focus = useMemo(
+    () => (ghostIds === undefined || layout === null ? null : focusBox(layout, ghostIds)),
+    [layout, ghostIds],
+  );
 
   if (layout === null) {
     return (
@@ -1117,7 +1171,7 @@ export function ProcessDiagram({
         onPaneClick={() => onNodeSelect(null)}
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="#d4d4d8" />
-        <AutoFit box={wrapRef} layout={layout} />
+        <AutoFit box={wrapRef} layout={layout} focus={focus} />
         {minimap && (
           <MiniMap
             position="bottom-right"

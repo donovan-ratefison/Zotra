@@ -19,7 +19,7 @@ import {
   roleColor,
   toElkGraph,
 } from "./layout";
-import { EdgePill, edgeAnchor, EventShape, fitViewport, neighborIn, TaskCard } from "./diagram";
+import { EdgePill, edgeAnchor, EventShape, fitViewport, focusBox, focusViewport, neighborIn, TaskCard } from "./diagram";
 import { structureProblems } from "./ProcessPanel";
 import { StudioShell, TopBar, pushUndo } from "./StudioShell";
 import ELK from "elkjs/lib/elk.bundled.js";
@@ -1036,6 +1036,65 @@ describe("process overview and keyboard", () => {
     expect(neighborIn(nodes, "threshold", "ArrowDown")).toBe("decision");
     expect(neighborIn(nodes, "decision", "ArrowUp")).toBe("threshold");
     expect(neighborIn(nodes, "start", "ArrowLeft")).toBeNull();
+  });
+
+  const boxOf = (n: { position: { x: number; y: number }; width?: number; height?: number }) => ({
+    x: n.position.x, y: n.position.y, width: n.width!, height: n.height!,
+  });
+  const ids = (nodes: string[], edges: string[]) => ({ nodes: new Set(nodes), edges: new Set(edges) });
+  const near = (b: { x: number; y: number; width: number; height: number }) => ({
+    x: expect.closeTo(b.x, 9), y: expect.closeTo(b.y, 9),
+    width: expect.closeTo(b.width, 9), height: expect.closeTo(b.height, 9),
+  });
+
+  test("52a: focusBox gives the box of one step", async () => {
+    const layout = await layoutProcess(seedDefinition);
+    const analysis = layout.nodes.find((n) => n.id === "analysis")!;
+    expect(focusBox(layout, ids(["analysis"], []))).toEqual(near(boxOf(analysis)));
+  });
+
+  test("52b: focusBox gives the union box of two steps", async () => {
+    const layout = await layoutProcess(seedDefinition);
+    const a = boxOf(layout.nodes.find((n) => n.id === "analysis")!);
+    const b = boxOf(layout.nodes.find((n) => n.id === "offer")!);
+    const x = Math.min(a.x, b.x);
+    const y = Math.min(a.y, b.y);
+    expect(focusBox(layout, ids(["analysis", "offer"], []))).toEqual(near({
+      x, y,
+      width: Math.max(a.x + a.width, b.x + b.width) - x,
+      height: Math.max(a.y + a.height, b.y + b.height) - y,
+    }));
+  });
+
+  test("52c: focusBox takes the two ends of a link", async () => {
+    const layout = await layoutProcess(seedDefinition);
+    expect(focusBox(layout, ids([], ["e03"]))).toEqual(focusBox(layout, ids(["complete", "analysis"], [])));
+  });
+
+  test("52d: focusBox skips unknown ids and gives null", async () => {
+    const layout = await layoutProcess(seedDefinition);
+    expect(focusBox(layout, ids(["missing"], ["missing"]))).toBeNull();
+  });
+
+  test("52e: focusBox gives null with no id", async () => {
+    const layout = await layoutProcess(seedDefinition);
+    expect(focusBox(layout, ids([], []))).toBeNull();
+  });
+
+  test("52f: focusViewport shows one small step at 100 % in the canvas center", async () => {
+    const layout = await layoutProcess(seedDefinition);
+    const focus = focusBox(layout, ids(["analysis"], []))!;
+    const vp = focusViewport(layout, focus, { width: 1366, height: 671 });
+    expect(vp.zoom).toBe(1);
+    expect(Math.abs(vp.x + vp.zoom * (focus.x + focus.width / 2) - 683)).toBeLessThan(0.5);
+    expect(Math.abs(vp.y + vp.zoom * (focus.y + focus.height / 2) - 335.5)).toBeLessThan(0.5);
+  });
+
+  test("52g: focusViewport on the full layout box keeps the full-diagram zoom", async () => {
+    const layout = await layoutProcess(seedDefinition);
+    const canvas = { width: 1366, height: 671 };
+    const full = { x: 0, y: 0, width: layout.width, height: layout.height };
+    expect(focusViewport(layout, full, canvas).zoom).toBeCloseTo(fitViewport(layout, canvas).zoom, 5);
   });
 });
 
