@@ -1,13 +1,22 @@
+/// <reference types="node" />
 // The 13 test rows of the policy import brief: the pure paragraph
 // rules, the new api functions, the error line, and the dialog body.
 // The environment is node: renderToString for the components, no
 // jsdom, and the pdf.js legacy build for the read errors.
 
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ApiError, createProcess, createVersion, policyToProcess } from "./api";
-import { AnalyzeProgress, ImportDialogBody, elapsedText, isAbort } from "./ImportDialog";
+import {
+  AnalyzeProgress,
+  ImportDialogBody,
+  NoTextNotice,
+  analyzeDisabled,
+  elapsedText,
+  isAbort,
+} from "./ImportDialog";
 import {
   extractParagraphs,
   paragraphsOfItems,
@@ -325,5 +334,43 @@ describe("analysis progress and cancel", () => {
     expect(isAbort(err)).toBe(true);
     expect(isAbort(new DOMException("x", "AbortError"))).toBe(true);
     expect(isAbort(new Error("x"))).toBe(false);
+  });
+});
+
+describe("PDF without text", () => {
+  test("121a: a file with paragraphs enables the analysis", () => {
+    expect(analyzeDisabled(true, false, 12)).toBe(false);
+  });
+
+  test("121b: a file with 0 paragraphs disables it", () => {
+    expect(analyzeDisabled(true, false, 0)).toBe(true);
+  });
+
+  test("121c: no file disables it", () => {
+    expect(analyzeDisabled(false, false, 12)).toBe(true);
+  });
+
+  test("121d: a running analysis disables it", () => {
+    expect(analyzeDisabled(true, true, 12)).toBe(true);
+  });
+
+  test("121e: no file and 0 paragraphs disable it", () => {
+    expect(analyzeDisabled(false, false, 0)).toBe(true);
+  });
+
+  test("121f: the notice is an alert with the exact text", () => {
+    const html = renderToString(createElement(NoTextNotice));
+    expect(html).toContain('role="alert"');
+    expect(html).toContain(
+      "This PDF has no readable text. It is a scan or a photo. Use a PDF that holds text.",
+    );
+  });
+
+  test("121g: a PDF with no text layer gives 1 page and 0 paragraphs", async () => {
+    const bytes = readFileSync(new URL("./testdata/no-text.pdf", import.meta.url));
+    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const result = await extractParagraphs(buffer);
+    expect(result).toMatchObject({ pages: 1 });
+    expect(result.paragraphs).toEqual([]);
   });
 });

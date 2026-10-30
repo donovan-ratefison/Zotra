@@ -66,6 +66,21 @@ export function AnalyzeProgress({ paragraphs, seconds }: { paragraphs: number; s
   );
 }
 
+// analyzeDisabled is true when the dialog cannot send the policy:
+// no file, an analysis that runs, or a file with no text (a scan).
+export function analyzeDisabled(hasFile: boolean, analyzing: boolean, paragraphs: number): boolean {
+  return !hasFile || analyzing || paragraphs === 0;
+}
+
+// NoTextNotice tells that the PDF has no text layer for the AI.
+export function NoTextNotice() {
+  return (
+    <p role="alert" className="text-sm text-destructive">
+      This PDF has no readable text. It is a scan or a photo. Use a PDF that holds text.
+    </p>
+  );
+}
+
 export function ImportDialogBody({
   onProposed,
   onClose,
@@ -147,7 +162,7 @@ export function ImportDialogBody({
   // to the shell.
   async function analyze() {
     const current = file;
-    if (!current || analyzing) {
+    if (!current || analyzing || paragraphs.length === 0) {
       return;
     }
     const useName = name.trim() || baseName;
@@ -250,23 +265,29 @@ export function ImportDialogBody({
           <p className="text-sm text-muted-foreground">
             {pages} pages, {paragraphs.length} paragraphs
           </p>
-          <div className="flex flex-col gap-1 rounded-md border p-2 text-xs text-muted-foreground">
-            {paragraphs.slice(0, 3).map((p) => (
-              <p key={p.id} className="truncate">
-                {p.id}: {p.text.slice(0, 80)}
-              </p>
-            ))}
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="process-name" className="text-sm font-medium">
-              Process name
-            </label>
-            <Input
-              id="process-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
+          {paragraphs.length === 0 ? (
+            <NoTextNotice />
+          ) : (
+            <>
+              <div className="flex flex-col gap-1 rounded-md border p-2 text-xs text-muted-foreground">
+                {paragraphs.slice(0, 3).map((p) => (
+                  <p key={p.id} className="truncate">
+                    {p.id}: {p.text.slice(0, 80)}
+                  </p>
+                ))}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="process-name" className="text-sm font-medium">
+                  Process name
+                </label>
+                <Input
+                  id="process-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </div>
+            </>
+          )}
         </div>
       )}
       {details && (
@@ -296,7 +317,10 @@ export function ImportDialogBody({
         >
           Cancel
         </Button>
-        <Button onClick={() => void analyze()} disabled={file === null || analyzing}>
+        <Button
+          onClick={() => void analyze()}
+          disabled={analyzeDisabled(file !== null, analyzing, paragraphs.length)}
+        >
           {analyzing ? "Analyzing the policy..." : "Analyze policy"}
         </Button>
       </div>
