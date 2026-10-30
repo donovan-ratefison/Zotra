@@ -50,8 +50,8 @@ interface LastImport {
   file: File;
 }
 
-// The diff base of a proposal with no opened version: every element
-// of the proposal is then an addition.
+// The diff base of a policy proposal: every element of the proposal
+// is an addition.
 const EMPTY_DEFINITION: ProcessDefinition = {
   schema_version: "1",
   name: "",
@@ -501,7 +501,9 @@ export function StudioShell() {
   // empty studio), in stage 2 (no version yet) and over stage 3.
   // Nothing is saved, so the stage queries stay as they are.
   if (proposal !== null) {
-    const diffBase = loadedDef ?? EMPTY_DEFINITION;
+    // The import always creates a new process: the diff base is the
+    // empty process, never the process that is open.
+    const diffBase = EMPTY_DEFINITION;
     content = (
       <div className="flex h-screen flex-col">
         <TopBar
