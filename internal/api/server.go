@@ -64,6 +64,8 @@ func NewHandler(static fs.FS, version string, st *store.Store, feedbackDir strin
 		mux.HandleFunc("GET /api/processes/{id}/versions", d.listVersions)
 		mux.HandleFunc("POST /api/processes/{id}/versions", d.createVersion)
 		mux.HandleFunc("GET /api/versions/{id}", d.readVersion)
+		mux.HandleFunc("GET /api/versions/{id}/doc.md", d.versionMarkdown)
+		mux.HandleFunc("GET /api/versions/{id}/doc.html", d.versionHTML)
 		mux.HandleFunc("PUT /api/versions/{id}", d.updateVersion)
 		mux.HandleFunc("POST /api/versions/{id}/validate", d.validateVersion)
 		mux.HandleFunc("POST /api/versions/{id}/freeze", d.freezeVersion)

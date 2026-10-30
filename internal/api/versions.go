@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/donovan-ratefison/zotra/internal/docs"
+	"github.com/donovan-ratefison/zotra/internal/process"
 	"github.com/donovan-ratefison/zotra/internal/rules"
 )
 
@@ -97,4 +99,36 @@ func (d apiDeps) forkVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"version": toVersionDTO(v)})
+}
+
+// versionMarkdown answers the documentation of a version in Markdown.
+func (d apiDeps) versionMarkdown(w http.ResponseWriter, r *http.Request) {
+	d.writeDoc(w, r, "text/markdown; charset=utf-8", docs.Markdown)
+}
+
+// versionHTML answers the documentation of a version as a printable
+// HTML page.
+func (d apiDeps) versionHTML(w http.ResponseWriter, r *http.Request) {
+	d.writeDoc(w, r, "text/html; charset=utf-8", docs.HTML)
+}
+
+// writeDoc generates the documentation from the stored definition at
+// each request. A draft can hold a definition that does not decode.
+func (d apiDeps) writeDoc(w http.ResponseWriter, r *http.Request, contentType string,
+	render func(process.Definition) []byte) {
+	id := r.PathValue("id")
+	v, err := d.st.GetVersion(r.Context(), id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	def, err := process.Decode(v.Definition)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal",
+			"cannot read the definition of version "+id)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(render(def))
 }
