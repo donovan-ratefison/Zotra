@@ -254,6 +254,10 @@ const LANE_GAP = 26;
 const LANE_STEP = 14;
 const LABEL_CHAR = 6.4;
 const LABEL_H = 16;
+// The right-edge budget of one spine row: a row that stays under it
+// keeps the fit zoom at 80 % or more at 1366 x 768. The seed row 0,
+// the widest mockup row, ends at 1200.8 px.
+const ROW_BUDGET = 1360;
 
 function labelWidth(text: string): number {
   return text.length * LABEL_CHAR + 8;
@@ -275,6 +279,16 @@ interface Route {
   to: Side;
   // The fixed points between the two ports, filled after the ports.
   build: (a: DiagramPoint, b: DiagramPoint) => DiagramPoint[];
+  // The corridor of this link. `corridor` is the y of the band at the
+  // source end, `corridor2` the y of the band at the target end. Set
+  // for a turn to the next spine row, for a return to an upper row,
+  // and for a cross-row link whose direct way hits a node. The two ys
+  // differ when the two rows lie two or more apart: the link then
+  // also runs down the outer margin (`marginX`) between the bands
+  // (R6). Undefined for every other link.
+  corridor?: number;
+  corridor2?: number;
+  marginX?: number;
 }
 
 export interface GridLayout {
@@ -412,29 +426,28 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
   };
 
   // 1. The main path. A path of 8 steps or fewer runs on row 0, as
-  // in the mockup. A longer path wraps: the first half runs on row 0,
-  // the first node of the second half sits one row pitch down, and the
-  // rest of the second half runs back to the left. The gap between two
-  // nodes still holds the text of their link.
+  // in the mockup. A longer path wraps (decision 17): a row holds
+  // spine nodes until the next node would push the row right edge
+  // past ROW_BUDGET, and the rest continues on the row below, again
+  // from the left, so every row reads left to right. The gap between
+  // two nodes still holds the text of their link.
   const steps = spine.length - 2;
-  const firstHalf = steps > 7 ? Math.ceil(spine.length / 2) : spine.length;
   let x = 0;
+  let row = 0;
   spine.forEach((id, i) => {
     const s = sizeOf(id);
     if (i === 0) {
       x = s.width / 2;
-    } else if (i < firstHalf) {
-      const p = cells.get(spine[i - 1]!)!;
-      x = p.cx + p.w / 2 + Math.max(GRID_GAP, labelOf(spine[i - 1]!, id)) + s.width / 2;
     } else {
-      // The second half runs back to the left. Its first node is the
-      // turn between the halves: one gap to the left of the last node
-      // of the first half, so the spine edge between them turns down
-      // beside it and its text finds a free stretch.
       const p = cells.get(spine[i - 1]!)!;
-      x = p.cx - p.w / 2 - Math.max(GRID_GAP, labelOf(spine[i - 1]!, id)) - s.width / 2;
+      const next = p.cx + p.w / 2 + Math.max(GRID_GAP, labelOf(spine[i - 1]!, id)) + s.width / 2;
+      if (steps > 7 && next + s.width / 2 > ROW_BUDGET) {
+        row++;
+        x = s.width / 2;
+      } else {
+        x = next;
+      }
     }
-    const row = i < firstHalf ? 0 : 1;
     cells.set(id, { cx: x, cy: row * ROW_PITCH, w: s.width, h: s.height, row });
   });
   // The final end of the main path sits under the task before it, as
@@ -474,14 +487,18 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
     cells.set(id, cell);
   }
 
-  // 3. The route kind of every link. The spine steps of a wrapped
-  // path run against the reading direction on their row: they take the
-  // straight leftward link. Every other leftward link on one row takes
-  // a lane over the row, as before.
+  // 3. The route kind of every link. Spine steps on their row run
+  // left to right and take the straight link. A leftward link on one
+  // row takes a lane over the row, as before. A cross-row link takes
+  // the corridor between its rows when it turns to the next spine
+  // row (R3), when it returns to an upper row (R5), or, as step 5
+  // finds, when its direct way down hits a node (R6).
   const spinePos = new Map(spine.map((id, i) => [id, i] as const));
   const rowTop = (row: number) =>
     Math.min(...[...cells.values()].filter((c) => c.row === row).map((c) => c.cy - c.h / 2));
   const lanes: ProcessEdge[] = [];
+  const corridor: Route[] = [];
+  const downs: Route[] = [];
   const routes: Route[] = def.edges.map((edge) => {
     const s = cells.get(edge.from)!;
     const t = cells.get(edge.to)!;
@@ -493,28 +510,39 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
       if (!between && t.cx > s.cx) {
         return { edge, from: "E", to: "W", build: (a, b) => [a, b] };
       }
-      if (!between && spinePos.get(edge.to) === (spinePos.get(edge.from) ?? -2) + 1) {
-        return { edge, from: "W", to: "E", build: (a, b) => [a, b] };
-      }
       lanes.push(edge);
-      // A lane over the row: step 5 sets its points.
+      // A lane over the row: step 8 sets its points.
       return { edge, from: "N", to: "N", build: (a, b) => [a, b] };
     }
     if (Math.abs(s.cx - t.cx) < 1) {
-      return t.row > s.row
+      // The straight drop; step 5 moves it to the corridor when a
+      // node of a row between blocks it (R6).
+      const r: Route = t.row > s.row
         ? { edge, from: "S", to: "N", build: (a, b) => [a, { x: a.x, y: b.y }] }
         : { edge, from: "N", to: "S", build: (a, b) => [a, { x: a.x, y: b.y }] };
+      downs.push(r);
+      return r;
     }
-    if (t.row > s.row) {
-      return {
-        edge, from: "S", to: t.cx > s.cx ? "W" : "E",
-        build: (a, b) => [a, { x: a.x, y: b.y }, b],
-      };
+    if (t.row > s.row && spinePos.get(edge.to) === (spinePos.get(edge.from) ?? -2) + 1) {
+      // The turn to the next spine row: S, corridor, N (R3).
+      const r: Route = { edge, from: "S", to: "N", build: (a, b) => [a, b] };
+      corridor.push(r);
+      return r;
     }
-    return {
-      edge, from: t.cx > s.cx ? "E" : "W", to: "S",
-      build: (a, b) => [a, { x: b.x, y: a.y }, b],
+    if (t.row < s.row) {
+      // The return to an upper row: N, corridor, S (R5).
+      const r: Route = { edge, from: "N", to: "S", build: (a, b) => [a, b] };
+      corridor.push(r);
+      return r;
+    }
+    // The direct way down to a lower row; step 5 moves it to the
+    // corridor when a node blocks it (R6).
+    const r: Route = {
+      edge, from: "S", to: t.cx > s.cx ? "W" : "E",
+      build: (a, b) => [a, { x: a.x, y: b.y }, b],
     };
+    downs.push(r);
+    return r;
   });
 
   // 4. Port offsets on the top and bottom of a task: links that turn
@@ -549,7 +577,138 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
     list.forEach((a, i) => offsets.set(a.key, (i - (list.length - 1) / 2) * step));
   }
 
-  // 5. The points. Lanes: the shortest span runs nearest the row.
+  // 5. A cross-row link keeps its direct way when no node and no
+  // node label sits in the way; else it joins the corridor of its
+  // rows (R6). The corridor way enters the end face of the other
+  // node, not its side. The check reads the label sides of the links
+  // as they point now; a rerouted link enters an end face, which can
+  // still move the label of its target afterwards.
+  const labelSides = (rs: Route[]) => {
+    const used = new Set(
+      rs.flatMap((r) => [`${r.edge.from}:${r.from}`, `${r.edge.to}:${r.to}`]),
+    );
+    const pos = new Map<string, LabelPos>();
+    for (const [id] of cells) {
+      if (byId.get(id)!.type === "task") {
+        continue;
+      }
+      pos.set(
+        id,
+        !used.has(`${id}:S`) ? "below" : !used.has(`${id}:N`) ? "above" : "left",
+      );
+    }
+    return pos;
+  };
+  const sidesNow = labelSides(routes);
+  const labelsNow: Box[] = [];
+  for (const [id, c] of cells) {
+    const side = sidesNow.get(id);
+    if (side !== undefined) {
+      labelsNow.push(nodeLabelBox(byId.get(id)!, c, side));
+    }
+  }
+  for (const r of downs) {
+    const s = cells.get(r.edge.from)!;
+    const t = cells.get(r.edge.to)!;
+    const a = port(s, r.from, offsets.get(`${r.edge.id}:${r.edge.from}`) ?? 0);
+    const b = port(t, r.to, 0);
+    const pts = r.build(a, b);
+    const blocked = pts.some(
+      (p, i) =>
+        i > 0 &&
+        ([...cells].some(
+          ([id, c]) =>
+            id !== r.edge.from && id !== r.edge.to &&
+            segmentHits(pts[i - 1]!, p, boxOf(c)),
+        ) ||
+          labelsNow.some((b) => segmentHits(pts[i - 1]!, p, b))),
+    );
+    if (blocked) {
+      if (r.to !== "N" && r.to !== "S") {
+        r.to = "N";
+      }
+      corridor.push(r);
+    }
+  }
+
+  // 6. The node labels: below, else above, else at the left. The
+  // sides of the final routes decide.
+  const labelPos = labelSides(routes);
+  const obstacles: Box[] = [...cells.values()].map(boxOf);
+  for (const [id, c] of cells) {
+    const pos = labelPos.get(id);
+    if (pos !== undefined) {
+      obstacles.push(nodeLabelBox(byId.get(id)!, c, pos));
+    }
+  }
+
+  // 7. The corridor of every corridor link (R7). The link runs in the
+  // band between its two rows. When the rows lie two or more apart,
+  // it runs in the band at each end and down the outer margin between
+  // them, so no band of a row in between is crossed (R6). A band y
+  // sits between the lowest obstacle of the band's upper row (its
+  // label boxes included, at every label position) and the highest
+  // obstacle of its lower row, minus the space of the lanes over it,
+  // shared out in edge order.
+  const bands = new Map<string, Route[]>();
+  for (const r of corridor) {
+    const s = cells.get(r.edge.from)!;
+    const t = cells.get(r.edge.to)!;
+    const down = t.row > s.row;
+    const near = down ? `${s.row}:${s.row + 1}` : `${s.row - 1}:${s.row}`;
+    const far = down ? `${t.row - 1}:${t.row}` : `${t.row}:${t.row + 1}`;
+    for (const key of new Set([near, far])) {
+      bands.set(key, [...(bands.get(key) ?? []), r]);
+    }
+  }
+  const ys = new Map<string, Map<Route, number>>();
+  for (const [key, list] of bands) {
+    const upper = Number(key.split(":")[0]);
+    const lower = Number(key.split(":")[1]);
+    // The band obstacles: the cell of each row node united with its
+    // label box, so a label below, at the left, or above also counts.
+    const boxes = (row: number) =>
+      [...cells].filter(([, c]) => c.row === row).map(([id, c]) => {
+        const pos = labelPos.get(id);
+        return pos === undefined
+          ? boxOf(c)
+          : unionBox(boxOf(c), nodeLabelBox(byId.get(id)!, c, pos));
+      });
+    const lo = Math.max(...boxes(upper).map((b) => b.y + b.h));
+    const laneCount = lanes.filter((l) => cells.get(l.from)!.row === lower).length;
+    const hi = Math.min(...boxes(lower).map((b) => b.y)) - LANE_GAP - laneCount * LANE_STEP;
+    const m = new Map<Route, number>();
+    list.forEach((r, i) => {
+      m.set(r, lo + ((hi - lo) * (i + 1)) / (list.length + 1));
+    });
+    ys.set(key, m);
+  }
+  // The outer margin: 24 px clear of every shape and label, on the
+  // side with the shorter run. Each weave link steps 12 px further
+  // out, so the margin lines stay apart.
+  const margin = {
+    left: Math.min(...obstacles.map((b) => b.x)) - 24,
+    right: Math.max(...obstacles.map((b) => b.x + b.w)) + 24,
+  };
+  let weaves = 0;
+  for (const r of corridor) {
+    const s = cells.get(r.edge.from)!;
+    const t = cells.get(r.edge.to)!;
+    const down = t.row > s.row;
+    const near = down ? `${s.row}:${s.row + 1}` : `${s.row - 1}:${s.row}`;
+    const far = down ? `${t.row - 1}:${t.row}` : `${t.row}:${t.row + 1}`;
+    r.corridor = ys.get(near)!.get(r)!;
+    if (far !== near) {
+      r.corridor2 = ys.get(far)!.get(r)!;
+      const a = port(s, r.from, offsets.get(`${r.edge.id}:${r.edge.from}`) ?? 0);
+      const b = port(t, r.to, offsets.get(`${r.edge.id}:${r.edge.to}`) ?? 0);
+      const useLeft = a.x + b.x <= margin.left + margin.right;
+      r.marginX = useLeft ? margin.left - 12 * weaves : margin.right + 12 * weaves;
+      weaves++;
+    }
+  }
+
+  // 8. The points. Lanes: the shortest span runs nearest the row.
   const points = new Map<string, DiagramPoint[]>();
   const laneOrder = [...lanes].sort((a, b) =>
     Math.abs(cells.get(a.from)!.cx - cells.get(a.to)!.cx) -
@@ -560,7 +719,26 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
     const a = port(s, r.from, offsets.get(`${r.edge.id}:${r.edge.from}`) ?? 0);
     const b = port(t, r.to, offsets.get(`${r.edge.id}:${r.edge.to}`) ?? 0);
     const lane = laneOrder.indexOf(r.edge);
-    if (lane >= 0) {
+    if (r.corridor !== undefined) {
+      if (r.corridor2 === undefined) {
+        // S or N, through the corridor, into N or S; one straight
+        // drop when the two ports share the x.
+        points.set(r.edge.id, Math.abs(a.x - b.x) < 1
+          ? [a, { x: a.x, y: b.y }]
+          : [a, { x: a.x, y: r.corridor }, { x: b.x, y: r.corridor }, b]);
+      } else {
+        // The band at each end and the outer margin between, so no
+        // band of a row between is crossed (R6).
+        points.set(r.edge.id, [
+          a,
+          { x: a.x, y: r.corridor },
+          { x: r.marginX!, y: r.corridor },
+          { x: r.marginX!, y: r.corridor2! },
+          { x: b.x, y: r.corridor2! },
+          b,
+        ]);
+      }
+    } else if (lane >= 0) {
       const y = rowTop(s.row) - LANE_GAP - lane * LANE_STEP;
       points.set(r.edge.id, [a, { x: a.x, y }, { x: b.x, y }, b]);
     } else {
@@ -568,23 +746,7 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
     }
   }
 
-  // 6. The node labels: below, else above, else at the left.
-  const used = new Set(
-    routes.flatMap((r) => [`${r.edge.from}:${r.from}`, `${r.edge.to}:${r.to}`]),
-  );
-  const labelPos = new Map<string, LabelPos>();
-  const obstacles: Box[] = [...cells.values()].map(boxOf);
-  for (const [id, c] of cells) {
-    const node = byId.get(id)!;
-    if (node.type === "task") {
-      continue;
-    }
-    const pos: LabelPos = !used.has(`${id}:S`) ? "below" : !used.has(`${id}:N`) ? "above" : "left";
-    labelPos.set(id, pos);
-    obstacles.push(nodeLabelBox(node, c, pos));
-  }
-
-  // 7. Check: no link crosses a node or a node label.
+  // 9. Check: no link crosses a node or a node label.
   for (const r of routes) {
     const pts = points.get(r.edge.id)!;
     for (let i = 1; i < pts.length; i++) {
@@ -604,10 +766,12 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
     }
   }
 
-  // 8. The link texts: on the first horizontal stretch that holds the
-  // text, else beside the first vertical stretch long enough, never
-  // on a node, a node label or another text.
+  // 10. The link texts: on the first horizontal stretch that holds
+  // the text, at its middle, then at its quarters, else beside the
+  // first vertical stretch long enough, at the same three positions,
+  // never on a node, a node label or another text.
   const anchors = new Map<string, DiagramPoint | null>();
+  const SPOTS = [0.5, 0.25, 0.75];
   for (const r of routes) {
     const text = diagramEdgeText(r.edge, def);
     if (text === null) {
@@ -621,14 +785,28 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
       const p = pts[i - 1]!;
       const q = pts[i]!;
       if (Math.abs(p.y - q.y) < 1 && Math.abs(q.x - p.x) >= w + 8) {
-        tries.push({ x: (p.x + q.x) / 2 - w / 2, y: p.y - 4 - LABEL_H, w, h: LABEL_H });
+        for (const t of SPOTS) {
+          tries.push({
+            x: p.x + (q.x - p.x) * t - w / 2,
+            y: p.y - 4 - LABEL_H,
+            w,
+            h: LABEL_H,
+          });
+        }
       }
     }
     for (let i = 1; i < pts.length; i++) {
       const p = pts[i - 1]!;
       const q = pts[i]!;
       if (Math.abs(p.x - q.x) < 1 && Math.abs(q.y - p.y) >= LABEL_H + 12) {
-        tries.push({ x: p.x + 6, y: (p.y + q.y) / 2 - LABEL_H / 2, w, h: LABEL_H });
+        for (const t of SPOTS) {
+          tries.push({
+            x: p.x + 6,
+            y: p.y + (q.y - p.y) * t - LABEL_H / 2,
+            w,
+            h: LABEL_H,
+          });
+        }
       }
     }
     const spot = tries.find((b) => !obstacles.some((o) => boxesOverlap(b, o)));

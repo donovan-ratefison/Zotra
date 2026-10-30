@@ -452,6 +452,121 @@ function chainDefinition(steps: number): ProcessDefinition {
   return { ...miniDefinition, name: "Chain", nodes, edges };
 }
 
+// A credit process in the shape of an AI proposal (the fb-009 probe
+// of local/scratch/fb-009): a long main path of 10 steps, one refusal
+// branch, and one or two return loops to early steps.
+function proposalDefinition(loops: 1 | 2): ProcessDefinition {
+  const node = (id: string, type: NodeType, name: string): ProcessNode => ({
+    id, type, name, role: null, deadline_hours: null, documents: [],
+    signature: false, checks: [], decisions: [], end_result: null,
+    scope_overrides: [], source_ids: [], citations: [],
+  });
+  const edge = (
+    id: string, from: string, to: string,
+    extra: Partial<ProcessEdge> = {},
+  ): ProcessEdge => (
+    { id, from, to, label: null, decision: null, condition: null, is_default: false, ...extra }
+  );
+  const nodes: ProcessNode[] = [
+    node("start", "start", "Application received"),
+    node("collect", "task", "Collect documents"),
+    node("fraud", "task", "Fraud screening"),
+    node("complete", "gateway", "File complete?"),
+    node("analysis", "task", "Credit analysis"),
+    node("threshold", "gateway", "Amount above EUR 100,000?"),
+    node("committee", "task", "Risk committee"),
+    node("decision", "task", "Credit decision"),
+    node("offer", "task", "Loan offer"),
+    node("signing", "task", "Client signature"),
+    node("compliance", "gateway", "Compliance clear?"),
+    node("release", "task", "Release of funds"),
+    { ...node("released", "end", "Loan released"), end_result: "approved" },
+    { ...node("refused", "end", "Application refused"), end_result: "refused" },
+  ];
+  const edges: ProcessEdge[] = [
+    edge("p01", "start", "collect"),
+    edge("p02", "collect", "fraud"),
+    edge("p03", "fraud", "complete"),
+    edge("p04", "complete", "analysis", { condition: "size(documents) >= 4" }),
+    edge("p05", "complete", "collect", { label: "Incomplete", is_default: true }),
+    edge("p06", "analysis", "threshold", { decision: "favorable" }),
+    edge("p07", "analysis", "refused", { decision: "unfavorable" }),
+    edge("p08", "threshold", "committee", { condition: "amount > 100000.0" }),
+    edge("p09", "threshold", "decision"),
+    edge("p10", "committee", "decision"),
+    edge("p11", "decision", "offer", { decision: "approve" }),
+    edge("p12", "decision", "refused", { decision: "refuse" }),
+    edge("p13", "decision", "analysis", { decision: "return" }),
+    edge("p14", "offer", "signing"),
+    edge("p15", "signing", "compliance"),
+    edge("p16", "compliance", "release", { condition: "kyc == \"clear\"" }),
+    edge("p18", "release", "released"),
+  ];
+  if (loops === 2) {
+    edges.push(edge("p17", "compliance", "collect", { label: "Rejected", is_default: true }));
+  } else {
+    const p16 = edges.find((e) => e.id === "p16")!;
+    p16.condition = null;
+  }
+  return { ...miniDefinition, name: "AI proposal", nodes, edges };
+}
+
+// The same proposal family over the step range of item 0016, with
+// `steps - 10` extra tasks between signing and compliance. At 15
+// steps the spine wraps into two rows plus the end rows: with the
+// late refuser, the refusal end hangs under the credit decision
+// (row 0) on row 2; without it, under the row 1 refuser of review
+// round 4. The early refusal of the credit analysis then spans two
+// row pairs.
+function proposalFamily(steps: number, lateRefuser: boolean): ProcessDefinition {
+  const edge = (
+    id: string, from: string, to: string,
+    extra: Partial<ProcessEdge> = {},
+  ): ProcessEdge => (
+    { id, from, to, label: null, decision: null, condition: null, is_default: false, ...extra }
+  );
+  const def = proposalDefinition(2);
+  const extra = [
+    ["c1", "Policy check"],
+    ["c2", "Risk review"],
+    ["c3", "Final review"],
+    ["c4", "Offer check"],
+    ["c5", "File preparation"],
+    ["c6", "Data entry"],
+  ] as const;
+  const run = extra.slice(0, steps - 10);
+  const nodes = [...def.nodes];
+  nodes.splice(
+    nodes.findIndex((n) => n.id === "compliance"),
+    0,
+    ...run.map(([id, name]) => ({
+      id, type: "task" as const, name, role: null, deadline_hours: null,
+      documents: [], signature: false, checks: [], decisions: [],
+      end_result: null, scope_overrides: [], source_ids: [], citations: [],
+    })),
+  );
+  const edges: ProcessEdge[] = [];
+  const spine = ["signing", ...run.map(([id]) => id as string), "compliance"];
+  for (const e of def.edges) {
+    if (e.id === "p12" && !lateRefuser) {
+      continue;
+    }
+    if (e.id === "p15") {
+      for (let i = 1; i < spine.length; i++) {
+        edges.push(edge(i === 1 ? "p15" : `s${i - 1}`, spine[i - 1]!, spine[i]!));
+      }
+    } else {
+      edges.push({ ...e });
+    }
+  }
+  return {
+    ...def,
+    name: `AI proposal ${steps}${lateRefuser ? ", both refusers" : ", early refuser"}`,
+    nodes,
+    edges,
+  };
+}
+
 describe("diagram layout guard", () => {
   test("46: diagramEdgeText reads Yes and No on a yes or no gateway", () => {
     const text = (id: string) =>
@@ -500,28 +615,162 @@ describe("diagram layout guard", () => {
     }
   });
 
-  test("48c: a main path of more than 7 steps wraps onto a second row", () => {
+  test("48c: a main path of more than 7 steps wraps left to right", () => {
     const grid = gridLayout(chainDefinition(12))!;
     expect(grid).not.toBeNull();
-    // The first half runs on row 0.
+    // Row 0 holds start to t7 and stops under the row budget.
     expect(grid.cells.get("start")!.row).toBe(0);
-    for (let i = 1; i <= 6; i++) {
+    for (let i = 1; i <= 7; i++) {
       expect(grid.cells.get(`t${i}`)!.row).toBe(0);
     }
-    // The second half runs back on row 1, one row pitch down.
-    for (let i = 7; i <= 12; i++) {
+    expect(grid.cells.get("t7")!.cx + grid.cells.get("t7")!.w / 2).toBe(1356);
+    // Row 1 holds t8 to t12, again left to right.
+    for (let i = 8; i <= 12; i++) {
       expect(grid.cells.get(`t${i}`)!.row).toBe(1);
       expect(grid.cells.get(`t${i}`)!.cy).toBe(140);
     }
-    // The turn between the halves sits left of the last node of the
-    // first half, so the spine edge between them turns down.
-    expect(grid.cells.get("t7")!.cx).toBeLessThan(grid.cells.get("t6")!.cx);
-    expect(grid.points.get("e7")!).toHaveLength(3);
-    // A spine step of the second half is one straight leftward link.
-    expect(grid.points.get("e8")!).toHaveLength(2);
+    expect(grid.cells.get("t8")!.cx).toBeLessThan(grid.cells.get("t9")!.cx);
+    // The turn runs through the corridor between the two rows.
+    const turn = grid.points.get("e8")!;
+    expect(turn).toHaveLength(4);
+    expect(turn[1]!.y).toBe(turn[2]!.y);
+    expect(turn[1]!.y).toBeGreaterThan(36);
+    expect(turn[1]!.y).toBeLessThan(104);
+    // A spine step of row 1 is one straight link.
+    expect(grid.points.get("e9")!).toHaveLength(2);
     // The final end keeps its rule: under the task before it.
     expect(grid.cells.get("released")!.cx).toBe(grid.cells.get("t12")!.cx);
     expect(grid.cells.get("released")!.row).toBe(2);
+  });
+
+  test("48d: an AI proposal shape with one loop takes the grid", () => {
+    const grid = gridLayout(proposalDefinition(1))!;
+    expect(grid).not.toBeNull();
+    // The refusal end and the committee sit below the main row.
+    expect(grid.cells.get("refused")!.row).toBe(1);
+    expect(grid.cells.get("committee")!.row).toBe(1);
+    expect(grid.cells.get("released")!.row).toBe(2);
+    // The widest row stops under the row budget.
+    const widest = Math.max(...[...grid.cells.values()].map((c) => c.cx + c.w / 2));
+    expect(widest).toBeLessThanOrEqual(1360);
+    // The committee return runs through the corridor between the rows.
+    const up = grid.points.get("p10")!;
+    expect(up).toHaveLength(4);
+    expect(up[1]!.y).toBe(up[2]!.y);
+    expect(up[1]!.y).toBeGreaterThan(36);
+    expect(up[1]!.y).toBeLessThan(104);
+    // The refusal drop ran through the corridor: its direct way down
+    // would hit the committee node of row 1. It lands on the top edge
+    // of the refusal end.
+    const drop = grid.points.get("p07")!;
+    expect(drop).toHaveLength(4);
+    expect(drop[3]!.x).toBeCloseTo(936.8, 6);
+    expect(drop[3]!.y).toBe(120);
+  });
+
+  test("48e: an AI proposal shape with two loops takes the grid", () => {
+    const grid = gridLayout(proposalDefinition(2))!;
+    expect(grid).not.toBeNull();
+    expect(grid.cells.get("refused")!.row).toBe(1);
+    const widest = Math.max(...[...grid.cells.values()].map((c) => c.cx + c.w / 2));
+    expect(widest).toBeLessThanOrEqual(1360);
+    // Both cross-row returns run through the corridor.
+    for (const id of ["p10", "p17"]) {
+      const pts = grid.points.get(id)!;
+      expect(pts).toHaveLength(4);
+      expect(pts[1]!.y).toBe(pts[2]!.y);
+      expect(pts[1]!.y).toBeGreaterThan(36);
+      expect(pts[1]!.y).toBeLessThan(104);
+    }
+  });
+
+  test("48f: every fixture takes the grid path, not the ELK band", async () => {
+    const fixtures = [
+      seedDefinition,
+      chainDefinition(6),
+      chainDefinition(7),
+      chainDefinition(12),
+      proposalDefinition(1),
+      proposalDefinition(2),
+      proposalFamily(12, false),
+      proposalFamily(15, true),
+      proposalFamily(15, false),
+      proposalFamily(16, true),
+    ];
+    for (const def of fixtures) {
+      expect(gridLayout(def), def.name).not.toBeNull();
+      const { nodes } = await layoutProcess(def);
+      // The grid path tags every node with a label position; the ELK
+      // path does not.
+      for (const n of nodes) {
+        expect("labelPos" in (n.data ?? {}), `${def.name}: ${n.id}`).toBe(true);
+      }
+    }
+  });
+
+  test("48g: the seed cells stay identical to the layout before the wrap", () => {
+    // The pinned cells of the layout at 2899fd0, before the left to
+    // right wrap. The seed reads as in the mockup and no wrap rule
+    // may move it.
+    const old: Record<string, { cx: number; cy: number; w: number; h: number; row: number }> = {
+      start: { cx: 20, cy: 0, w: 40, h: 40, row: 0 },
+      entry: { cx: 152, cy: 0, w: 152, h: 72, row: 0 },
+      complete: { cx: 290, cy: 0, w: 52, h: 52, row: 0 },
+      analysis: { cx: 431.2, cy: 0, w: 152, h: 72, row: 0 },
+      threshold: { cx: 610.8, cy: 0, w: 52, h: 52, row: 0 },
+      offer: { cx: 748.8, cy: 0, w: 152, h: 72, row: 0 },
+      signing: { cx: 936.8, cy: 0, w: 152, h: 72, row: 0 },
+      release: { cx: 1124.8, cy: 0, w: 152, h: 72, row: 0 },
+      released: { cx: 1124.8, cy: 140, w: 40, h: 40, row: 1 },
+      decision: { cx: 610.8, cy: 140, w: 152, h: 72, row: 1 },
+      refused: { cx: 610.8, cy: 280, w: 40, h: 40, row: 2 },
+    };
+    const grid = gridLayout(seedDefinition)!;
+    const cells: Record<string, { cx: number; cy: number; w: number; h: number; row: number }> = {};
+    for (const [id, c] of grid.cells) {
+      cells[id] = { cx: c.cx, cy: c.cy, w: c.w, h: c.h, row: c.row };
+    }
+    expect(cells).toEqual(old);
+  });
+
+  test("48h: a 15-step proposal with both refusers takes the grid", () => {
+    const grid = gridLayout(proposalFamily(15, true))!;
+    expect(grid).not.toBeNull();
+    // The refusal end, the committee and the release step sit on the
+    // rows under the two spine rows, and the released end under the
+    // release step.
+    expect(grid.cells.get("refused")!.row).toBe(2);
+    expect(grid.cells.get("committee")!.row).toBe(2);
+    expect(grid.cells.get("release")!.row).toBe(2);
+    expect(grid.cells.get("released")!.row).toBe(3);
+    // The early refusal of the credit analysis spans two row pairs:
+    // it runs through the band at each end and the outer margin
+    // between, never through the band of the wrapped row 1.
+    const drop = grid.points.get("p07")!;
+    expect(drop).toHaveLength(6);
+    expect(drop[1]!.y).toBe(drop[2]!.y);
+    expect(drop[3]!.y).toBe(drop[4]!.y);
+    expect(drop[1]!.y).toBeLessThan(104);
+    expect(drop[3]!.y).toBeGreaterThan(176);
+    // The straight drop of the threshold gateway is blocked by the
+    // row 1 committee band and takes the same way out.
+    expect(grid.points.get("p08")!).toHaveLength(6);
+    // The return of the committee climbs through the margin too.
+    expect(grid.points.get("p10")!).toHaveLength(6);
+  });
+
+  test("48i: a 15-step proposal with an early refuser takes the grid", () => {
+    const grid = gridLayout(proposalFamily(15, false))!;
+    expect(grid).not.toBeNull();
+    // The right-most refuser is the final review on row 1, so the
+    // refusal end lands on row 2 and the early refusal of the credit
+    // analysis spans two row pairs.
+    expect(grid.cells.get("refused")!.row).toBe(2);
+    const drop = grid.points.get("p07")!;
+    expect(drop).toHaveLength(6);
+    expect(drop[1]!.y).toBeLessThan(104);
+    expect(drop[3]!.y).toBeGreaterThan(176);
+    expect(grid.points.get("p08")!).toHaveLength(6);
   });
 
   test("49: no seed link has a diagonal segment or crosses a shape", async () => {
