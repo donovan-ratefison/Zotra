@@ -223,9 +223,9 @@ func (d apiDeps) documentRead(w http.ResponseWriter, r *http.Request) {
 	}
 	// 4. The AI call.
 	cfg := ai.LoadConfig()
-	payload := ai.VisionPayload(cfg.TextModel, ai.ReadFieldsPrompt,
+	payload := ai.VisionPayload(cfg.ReadModel, ai.ReadFieldsPrompt,
 		doc.MIME, data, "read_fields", readfields.SchemaFor(fields))
-	aiBody, err := ai.New(cfg).PostChat(r.Context(), payload)
+	aiBody, err := ai.New(cfg.Document()).PostChat(r.Context(), payload)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "ai_unavailable",
 			fmt.Sprintf("the AI layer is not available: %v", err))
@@ -259,7 +259,7 @@ func (d apiDeps) documentZones(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg := ai.LoadConfig()
 	payload := sam.Request(cfg.SAMModel, ai.SamZonesPrompt, doc.MIME, data)
-	body, err := ai.New(cfg).Responses(r.Context(), payload)
+	body, err := ai.New(cfg.Document()).Responses(r.Context(), payload)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "ai_unavailable",
 			fmt.Sprintf("the AI layer is not available: %v", err))

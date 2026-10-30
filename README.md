@@ -22,6 +22,8 @@ Work in progress for the Meta Global AI Developer Hackathon (October 26 to Novem
 | Muse Spark 1.3 | Policy to process, rules, test cases, explanations, document reading. |
 | SAM 3.1 | Signature, stamp and ID areas on scanned documents. |
 
+The case scans can stay in your network: set `ZOTRA_AI_DOC_BASE_URL`, `ZOTRA_AI_DOC_API_KEY` and `ZOTRA_AI_READ_MODEL` to send the zone detection and the field reading to your own endpoint. The design tools keep the text endpoint.
+
 ## The AI never decides
 
 Only CEL rules and people decide on a case. A manual mode works without AI.

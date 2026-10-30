@@ -17,10 +17,16 @@ type Config struct {
 	Mode      string
 	CacheDir  string
 	BudgetUSD float64
+	// The document calls (SAM zones and field reading). Empty: the
+	// text values.
+	DocBaseURL string
+	DocAPIKey  string
+	ReadModel  string
 }
 
 // LoadConfig reads one environment variable per field. An empty or
-// absent variable keeps the default.
+// absent variable keeps the default. An empty document value takes
+// the text value.
 func LoadConfig() Config {
 	cfg := Config{
 		BaseURL:   "https://api.meta.ai/v1",
@@ -54,7 +60,28 @@ func LoadConfig() Config {
 			cfg.BudgetUSD = f
 		}
 	}
+	cfg.DocBaseURL = os.Getenv("ZOTRA_AI_DOC_BASE_URL")
+	cfg.DocAPIKey = os.Getenv("ZOTRA_AI_DOC_API_KEY")
+	cfg.ReadModel = os.Getenv("ZOTRA_AI_READ_MODEL")
+	if cfg.DocBaseURL == "" {
+		cfg.DocBaseURL = cfg.BaseURL
+	}
+	if cfg.DocAPIKey == "" {
+		cfg.DocAPIKey = cfg.APIKey
+	}
+	if cfg.ReadModel == "" {
+		cfg.ReadModel = cfg.TextModel
+	}
 	return cfg
+}
+
+// Document returns the configuration of the document calls (SAM
+// zones and field reading): the document endpoint and key, with all
+// other fields of c.
+func (c Config) Document() Config {
+	c.BaseURL = c.DocBaseURL
+	c.APIKey = c.DocAPIKey
+	return c
 }
 
 // pricePerMillion returns the USD price per million tokens of one

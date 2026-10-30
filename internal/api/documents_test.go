@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -522,4 +523,118 @@ func TestDocumentReadRefusals(t *testing.T) {
 	checkError(t, rec, http.StatusServiceUnavailable, "ai_unavailable",
 		`the AI layer is not available: Post `+
 			`"https://api.meta.ai/v1/chat/completions": ai: off`)
+}
+
+// fakeAI is one httptest AI server. It counts its requests and keeps
+// the last path, Authorization header and body.
+type fakeAI struct {
+	srv   *httptest.Server
+	count int
+	path  string
+	auth  string
+	body  string
+}
+
+func newFakeAI(t *testing.T, answer string) *fakeAI {
+	t.Helper()
+	f := &fakeAI{}
+	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		f.count++
+		f.path, f.auth, f.body = r.URL.Path, r.Header.Get("Authorization"), string(b)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, answer)
+	}))
+	t.Cleanup(f.srv.Close)
+	return f
+}
+
+// samAnswer is the Responses envelope of the zone of TestDocumentZones.
+func samAnswer(t *testing.T) string {
+	t.Helper()
+	b, err := json.Marshal(samEnvelope{Output: []samItem{{
+		Type: "message",
+		Content: []samPart{{Type: "output_text", Text: `{"zones":[{"label":"signature",` +
+			`"box":{"x":10,"y":20,"width":30,"height":40},"mask":[[1,2],[3,4]]}]}`}},
+	}}})
+	if err != nil {
+		t.Fatalf("marshal envelope: %v", err)
+	}
+	return string(b)
+}
+
+// docEnv sets mode live, a fresh cache dir, the text endpoint and the
+// document endpoint.
+func docEnv(t *testing.T, text, doc *fakeAI, textKey, docKey string) {
+	t.Helper()
+	t.Setenv("ZOTRA_AI_MODE", "live")
+	t.Setenv("ZOTRA_AI_CACHE_DIR", t.TempDir())
+	t.Setenv("ZOTRA_AI_BASE_URL", text.srv.URL)
+	t.Setenv("ZOTRA_AI_API_KEY", textKey)
+	t.Setenv("ZOTRA_AI_DOC_BASE_URL", doc.srv.URL)
+	t.Setenv("ZOTRA_AI_DOC_API_KEY", docKey)
+	t.Setenv("ZOTRA_AI_READ_MODEL", "")
+}
+
+// E1 to E4: the document calls go to the document endpoint.
+func TestDocumentEndpoint(t *testing.T) {
+	t.Run("E1 zones", func(t *testing.T) {
+		text, doc := newFakeAI(t, "{}"), newFakeAI(t, samAnswer(t))
+		docEnv(t, text, doc, "text-key", "doc-key")
+		h := newTestAPI(t)
+		rec := postZones(t, uploadForZones(t, h))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("zones: status %d: %s", rec.Code, rec.Body.String())
+		}
+		if n := len(decode(t, rec)["zones"].([]any)); n != 1 {
+			t.Errorf("zones = %d, want 1", n)
+		}
+		if doc.count != 1 || doc.path != "/responses" || doc.auth != "Bearer doc-key" {
+			t.Errorf("doc saw count %d, path %q, auth %q", doc.count, doc.path, doc.auth)
+		}
+		if text.count != 0 {
+			t.Errorf("text saw %d requests, want 0", text.count)
+		}
+	})
+	t.Run("E2 read", func(t *testing.T) {
+		text := newFakeAI(t, "{}")
+		doc := newFakeAI(t, `{"choices":[{"message":{"content":"{\"amount\":240000}"}}]}`)
+		docEnv(t, text, doc, "text-key", "doc-key")
+		t.Setenv("ZOTRA_AI_READ_MODEL", "model-r")
+		h := newTestAPI(t)
+		rec := postRead(t, uploadForZones(t, h),
+			`{"fields":[{"name":"amount","label":"Amount","type":"money"}]}`)
+		if got := rec.Body.String(); rec.Code != http.StatusOK || got != `{"values":{"amount":240000}}` {
+			t.Fatalf("read: status %d: %s", rec.Code, got)
+		}
+		if doc.count != 1 || doc.path != "/chat/completions" ||
+			!strings.Contains(doc.body, `"model":"model-r"`) {
+			t.Errorf("doc saw count %d, path %q, body %s", doc.count, doc.path, doc.body)
+		}
+		if text.count != 0 {
+			t.Errorf("text saw %d requests, want 0", text.count)
+		}
+	})
+	t.Run("E3 no key", func(t *testing.T) {
+		text, doc := newFakeAI(t, "{}"), newFakeAI(t, samAnswer(t))
+		docEnv(t, text, doc, "", "")
+		h := newTestAPI(t)
+		rec := postZones(t, uploadForZones(t, h))
+		if rec.Code != http.StatusServiceUnavailable ||
+			decode(t, rec)["error"].(map[string]any)["code"] != "ai_unavailable" {
+			t.Fatalf("zones: status %d: %s, want 503 ai_unavailable", rec.Code, rec.Body.String())
+		}
+		if doc.count != 0 {
+			t.Errorf("doc saw %d requests, want 0", doc.count)
+		}
+	})
+	t.Run("E4 key default", func(t *testing.T) {
+		text, doc := newFakeAI(t, "{}"), newFakeAI(t, samAnswer(t))
+		docEnv(t, text, doc, "text-key", "")
+		h := newTestAPI(t)
+		postZones(t, uploadForZones(t, h))
+		if doc.auth != "Bearer text-key" {
+			t.Errorf("doc saw auth %q, want Bearer text-key", doc.auth)
+		}
+	})
 }

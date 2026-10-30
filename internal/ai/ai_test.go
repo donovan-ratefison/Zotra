@@ -105,7 +105,8 @@ func TestLoadConfig(t *testing.T) {
 		for _, v := range []string{
 			"ZOTRA_AI_BASE_URL", "ZOTRA_AI_API_KEY", "ZOTRA_AI_TEXT_MODEL",
 			"ZOTRA_AI_SAM_MODEL", "ZOTRA_AI_MODE", "ZOTRA_AI_CACHE_DIR",
-			"ZOTRA_AI_BUDGET_USD",
+			"ZOTRA_AI_BUDGET_USD", "ZOTRA_AI_DOC_BASE_URL",
+			"ZOTRA_AI_DOC_API_KEY", "ZOTRA_AI_READ_MODEL",
 		} {
 			t.Setenv(v, "")
 		}
@@ -113,7 +114,8 @@ func TestLoadConfig(t *testing.T) {
 		if cfg.BaseURL != "https://api.meta.ai/v1" || cfg.APIKey != "" ||
 			cfg.TextModel != "muse-spark-1.3" || cfg.SAMModel != "sam-3.1" ||
 			cfg.Mode != "cache" || cfg.CacheDir != "local/ai-cache" ||
-			cfg.BudgetUSD != 2 {
+			cfg.BudgetUSD != 2 || cfg.DocBaseURL != "https://api.meta.ai/v1" ||
+			cfg.DocAPIKey != "" || cfg.ReadModel != "muse-spark-1.3" {
 			t.Fatalf("wrong defaults: %+v", cfg)
 		}
 	})
@@ -127,12 +129,30 @@ func TestLoadConfig(t *testing.T) {
 		t.Setenv("ZOTRA_AI_MODE", "replay")
 		t.Setenv("ZOTRA_AI_CACHE_DIR", cacheDir)
 		t.Setenv("ZOTRA_AI_BUDGET_USD", "5")
+		t.Setenv("ZOTRA_AI_DOC_BASE_URL", "")
+		t.Setenv("ZOTRA_AI_DOC_API_KEY", "")
+		t.Setenv("ZOTRA_AI_READ_MODEL", "")
 		cfg := LoadConfig()
 		if cfg.BaseURL != "http://127.0.0.1:9" || cfg.APIKey != "k2" ||
 			cfg.TextModel != "model-b" || cfg.SAMModel != "model-s" ||
 			cfg.Mode != "replay" || cfg.CacheDir != cacheDir ||
-			cfg.BudgetUSD != 5 {
+			cfg.BudgetUSD != 5 || cfg.DocBaseURL != "http://127.0.0.1:9" ||
+			cfg.DocAPIKey != "k2" || cfg.ReadModel != "model-b" {
 			t.Fatalf("env values not used: %+v", cfg)
+		}
+	})
+	t.Run("document values", func(t *testing.T) {
+		t.Setenv("ZOTRA_AI_BASE_URL", "http://127.0.0.1:9")
+		t.Setenv("ZOTRA_AI_API_KEY", "k2")
+		t.Setenv("ZOTRA_AI_TEXT_MODEL", "model-b")
+		t.Setenv("ZOTRA_AI_DOC_BASE_URL", "http://127.0.0.1:7")
+		t.Setenv("ZOTRA_AI_DOC_API_KEY", "k3")
+		t.Setenv("ZOTRA_AI_READ_MODEL", "model-r")
+		cfg := LoadConfig()
+		if cfg.DocBaseURL != "http://127.0.0.1:7" || cfg.DocAPIKey != "k3" ||
+			cfg.ReadModel != "model-r" || cfg.BaseURL != "http://127.0.0.1:9" ||
+			cfg.APIKey != "k2" || cfg.TextModel != "model-b" {
+			t.Fatalf("document values not used: %+v", cfg)
 		}
 	})
 	t.Run("bogus values", func(t *testing.T) {
@@ -143,6 +163,22 @@ func TestLoadConfig(t *testing.T) {
 			t.Fatalf("bogus values not refused: %+v", cfg)
 		}
 	})
+}
+
+func TestConfigDocument(t *testing.T) {
+	cfg := Config{
+		BaseURL: "http://text", APIKey: "text-key", TextModel: "model-t",
+		SAMModel: "model-s", Mode: "live", CacheDir: "/tmp/c", BudgetUSD: 3,
+		DocBaseURL: "http://doc", DocAPIKey: "doc-key", ReadModel: "model-r",
+	}
+	want := Config{
+		BaseURL: "http://doc", APIKey: "doc-key", TextModel: "model-t",
+		SAMModel: "model-s", Mode: "live", CacheDir: "/tmp/c", BudgetUSD: 3,
+		DocBaseURL: "http://doc", DocAPIKey: "doc-key", ReadModel: "model-r",
+	}
+	if got := cfg.Document(); got != want {
+		t.Fatalf("Document() = %+v, want %+v", got, want)
+	}
 }
 
 func TestTransportOff(t *testing.T) {
