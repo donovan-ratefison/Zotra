@@ -3,6 +3,7 @@
 // delivered route of lot 3.5 (internal/api/ai.go).
 
 import { ApiError } from "./api";
+import type { ProcessDefinition } from "./types";
 
 export interface ExplainProposal {
   expression: string;
@@ -87,4 +88,30 @@ export async function generateTests(
     throw await apiError(res);
   }
   return (await res.json()) as GenerateTestsAnswer;
+}
+
+// ChangeAnswer is the answer of POST /api/ai/change-process: the
+// proposed definition and the attempt count. Nothing is saved: the
+// caller shows the proposal, and the designer accepts or rejects it.
+export interface ChangeAnswer {
+  definition: ProcessDefinition;
+  attempts: number;
+}
+
+// changeProcess asks the AI for one changed process file from one
+// plain request of the designer. The server validates the answer and
+// checks its citations against the current definition.
+export async function changeProcess(
+  versionId: string,
+  message: string,
+): Promise<ChangeAnswer> {
+  const res = await fetch("/api/ai/change-process", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ version_id: versionId, message }),
+  });
+  if (!res.ok) {
+    throw await apiError(res);
+  }
+  return (await res.json()) as ChangeAnswer;
 }

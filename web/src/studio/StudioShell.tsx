@@ -23,9 +23,10 @@ import {
 } from "./api";
 import { readCase, type CaseDTO, type CaseState } from "./case-api";
 import { Button } from "@/ui/button";
-import { diffDefinitions } from "./diff";
+import { changedIds, diffDefinitions } from "./diff";
 import { PolicyPanel } from "./PolicyPanel";
 import { ProcessDiagram } from "./diagram";
+import { AssistantChat } from "./AssistantChat";
 import { ImportDialog } from "./ImportDialog";
 import { NodePanel, UnsavedBadge } from "./NodePanel";
 import { ProcessPanel } from "./ProcessPanel";
@@ -301,6 +302,17 @@ export function StudioShell() {
     setUndoStack([]);
   }
 
+  // The proposal of the assistant chat. A version switch clears it:
+  // the proposal belongs to the draft it was asked on. The reset
+  // compares the version during render, the pattern of the undo
+  // stack above.
+  const [chatProposal, setChatProposal] = useState<ProcessDefinition | null>(null);
+  const [chatVersionId, setChatVersionId] = useState(versionId);
+  if (chatVersionId !== versionId) {
+    setChatVersionId(versionId);
+    setChatProposal(null);
+  }
+
   const q3 = useQuery({
     queryKey: ["version", versionId],
     queryFn: () => getVersion(versionId!),
@@ -431,6 +443,22 @@ export function StudioShell() {
   const loadedDef = q3.data?.definition;
   // The diagram and the top bar show the proposal while it is open.
   const shownDef = proposal !== null ? proposal.definition : loadedDef;
+
+  // The selection guard of the chat proposal: while the diagram
+  // shows the proposal, a click on an id the loaded definition does
+  // not hold changes nothing, so the side panel stays as it is. An
+  // id of the loaded definition, or null, passes through.
+  function selectOnDiagram(id: string | null) {
+    if (
+      chatProposal !== null &&
+      id !== null &&
+      loadedDef !== undefined &&
+      !loadedDef.nodes.some((n) => n.id === id)
+    ) {
+      return;
+    }
+    select(id);
+  }
   const selectedNode =
     selectedNodeId === null
       ? null
@@ -605,10 +633,15 @@ export function StudioShell() {
               <div className="flex min-w-0 flex-1 flex-col">
                 <div className="min-h-0 flex-1">
                   <ProcessDiagram
-                    def={loaded.definition}
+                    def={chatProposal ?? loaded.definition}
                     selectedNodeId={selectedNodeId}
-                    onNodeSelect={select}
+                    onNodeSelect={selectOnDiagram}
                     ghost={false}
+                    ghostIds={
+                      chatProposal !== null
+                        ? changedIds(loaded.definition, chatProposal)
+                        : undefined
+                    }
                     onCitationClick={onCitationClick}
                     highlightNodeIds={selectedNodeId === null ? canvasFocus : null}
                   />
@@ -618,6 +651,12 @@ export function StudioShell() {
                     <PolicyPanel file={panelFile} highlight={highlight} />
                   </div>
                 )}
+                <AssistantChat
+                  version={loaded}
+                  def={loaded.definition}
+                  onProposal={setChatProposal}
+                  onAccepted={onSavedDraft}
+                />
               </div>
               <aside
                 aria-label="Step detail"

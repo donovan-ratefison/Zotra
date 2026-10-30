@@ -252,3 +252,30 @@ export function diffChips(c: DiffCounts): string[] {
   }
   return chips.length === 0 ? ["No change"] : chips;
 }
+
+// changedIds returns the ids of the nodes and edges of next that are
+// new or modified against base, with the matching of
+// diffDefinitions. A removed element appears in next never, so it
+// highlights nothing.
+export function changedIds(
+  base: ProcessDefinition,
+  next: ProcessDefinition,
+): { nodes: Set<string>; edges: Set<string> } {
+  const baseNodeById = new Map(base.nodes.map((n) => [n.id, n]));
+  const baseEdgeById = new Map(base.edges.map((e) => [e.id, e]));
+  const nodes = new Set<string>();
+  for (const node of next.nodes) {
+    const baseNode = baseNodeById.get(node.id);
+    if (baseNode === undefined || nodeChanged(baseNode, node)) {
+      nodes.add(node.id);
+    }
+  }
+  const edges = new Set<string>();
+  for (const edge of next.edges) {
+    const baseEdge = baseEdgeById.get(edge.id);
+    if (baseEdge === undefined || edgeChanged(baseEdge, edge)) {
+      edges.add(edge.id);
+    }
+  }
+  return { nodes, edges };
+}

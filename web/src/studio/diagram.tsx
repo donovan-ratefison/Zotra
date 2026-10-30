@@ -97,6 +97,7 @@ type NodeState = "done" | "current" | "failed";
 
 type GhostNodeData = DiagramNodeData & {
   ghost?: boolean;
+  proposed?: boolean;
   nodeState?: NodeState | null;
   onCitationClick?: (id: string) => void;
 };
@@ -179,12 +180,26 @@ function StateRing({ color, className }: {
   );
 }
 
-export function TaskCard({ node, color, roleName, selected, ghost = false, nodeState = null, onCitationClick }: {
+// The badge of one proposed element: 11 px, white text on violet,
+// rounded, above the top left corner of the card or shape.
+function ProposedBadge() {
+  return (
+    <span
+      className="absolute -top-2.5 left-0 rounded px-1 text-[11px] font-medium leading-[14px] text-white"
+      style={{ backgroundColor: "#7c3aed" }}
+    >
+      Proposed
+    </span>
+  );
+}
+
+export function TaskCard({ node, color, roleName, selected, ghost = false, proposed = false, nodeState = null, onCitationClick }: {
   node: ProcessNode;
   color: string | null;
   roleName: string | null;
   selected: boolean;
   ghost?: boolean;
+  proposed?: boolean;
   nodeState?: NodeState | null;
   onCitationClick?: (id: string) => void;
 }) {
@@ -196,23 +211,50 @@ export function TaskCard({ node, color, roleName, selected, ghost = false, nodeS
       className={`relative h-[72px] w-[152px] rounded-lg bg-white shadow-sm${
         ghost ? " opacity-70" : ""
       }`}
-      data-ghost={ghost ? "true" : "false"}
+      data-ghost={ghost || proposed ? "true" : "false"}
       style={{
-        border: ghost
-          ? selected
-            ? "2px dashed #7c3aed"
-            : "1px dashed #7c3aed"
-          : nodeState === "failed"
-            ? "1px solid #dc2626"
-            : selected
-              ? "2px solid #2563eb"
-              : nodeState === "done"
-                ? "1px solid #2563eb"
-                : "1px solid #d4d4d8",
+        border: proposed
+          ? // The violet dashed rect below is the only outline: the
+            // own border steps aside, the selected case included.
+            "1.5px solid transparent"
+          : ghost
+            ? selected
+              ? "2px dashed #7c3aed"
+              : "1px dashed #7c3aed"
+            : nodeState === "failed"
+              ? "1px solid #dc2626"
+              : selected
+                ? "2px solid #2563eb"
+                : nodeState === "done"
+                  ? "1px solid #2563eb"
+                  : "1px solid #d4d4d8",
         boxShadow:
           !ghost && selected ? "0 0 0 3px rgba(37, 99, 235, 0.12)" : undefined,
       }}
     >
+      {proposed && (
+        <>
+          <svg
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0"
+            width="152"
+            height="72"
+          >
+            <rect
+              x="0.75"
+              y="0.75"
+              width="150.5"
+              height="70.5"
+              rx="8"
+              fill="none"
+              stroke="#7c3aed"
+              strokeWidth="1.5"
+              strokeDasharray="5 4"
+            />
+          </svg>
+          <ProposedBadge />
+        </>
+      )}
       {nodeState === "current" && (
         <StateRing color="#2563eb" className="zpulse" />
       )}
@@ -309,11 +351,12 @@ const NODE_LABEL_CLASS: Record<LabelPos, string> = {
   left: `${NODE_LABEL_BASE} top-full right-1/2 mt-1 mr-2 text-right`,
 };
 
-export function EventShape({ node, selected, ghost = false, nodeState = null, onCitationClick, labelPos = "below" }: {
+export function EventShape({ node, selected, ghost = false, proposed = false, nodeState = null, onCitationClick, labelPos = "below" }: {
   node: ProcessNode;
   labelPos?: LabelPos;
   selected: boolean;
   ghost?: boolean;
+  proposed?: boolean;
   nodeState?: NodeState | null;
   onCitationClick?: (id: string) => void;
 }) {
@@ -326,12 +369,12 @@ export function EventShape({ node, selected, ghost = false, nodeState = null, on
         : "#71717a";
   const baseStroke = isStart ? "#71717a" : endStroke;
   const stroke =
-    ghost
+    proposed || ghost
       ? "#7c3aed"
       : selected || nodeState === "done"
         ? "#2563eb"
         : baseStroke;
-  const width = (isStart ? 1.5 : 3.5) + (selected ? 0.5 : 0);
+  const width = proposed ? 1.5 : (isStart ? 1.5 : 3.5) + (selected ? 0.5 : 0);
   const radius = isStart ? 18 : 17;
   const cited =
     node.citations.length > 0 ||
@@ -341,8 +384,9 @@ export function EventShape({ node, selected, ghost = false, nodeState = null, on
       className={`relative flex h-[40px] w-[40px] items-center justify-center${
         ghost ? " opacity-70" : ""
       }`}
-      data-ghost={ghost ? "true" : "false"}
+      data-ghost={ghost || proposed ? "true" : "false"}
     >
+      {proposed && <ProposedBadge />}
       {nodeState === "current" && (
         <StateRing color="#2563eb" className="zpulse" />
       )}
@@ -354,7 +398,7 @@ export function EventShape({ node, selected, ghost = false, nodeState = null, on
           fill="#ffffff"
           stroke={stroke}
           strokeWidth={width}
-          strokeDasharray={ghost ? "5 4" : undefined}
+          strokeDasharray={proposed || ghost ? "5 4" : undefined}
         />
       </svg>
       <div className={NODE_LABEL_CLASS[labelPos]}>
@@ -369,16 +413,17 @@ export function EventShape({ node, selected, ghost = false, nodeState = null, on
   );
 }
 
-export function GatewayNode({ node, selected, ghost = false, nodeState = null, onCitationClick, labelPos = "below" }: {
+export function GatewayNode({ node, selected, ghost = false, proposed = false, nodeState = null, onCitationClick, labelPos = "below" }: {
   node: ProcessNode;
   labelPos?: LabelPos;
   selected: boolean;
   ghost?: boolean;
+  proposed?: boolean;
   nodeState?: NodeState | null;
   onCitationClick?: (id: string) => void;
 }) {
   const stroke =
-    ghost
+    proposed || ghost
       ? "#7c3aed"
       : selected || nodeState === "done"
         ? "#2563eb"
@@ -391,8 +436,9 @@ export function GatewayNode({ node, selected, ghost = false, nodeState = null, o
       className={`relative flex h-[52px] w-[52px] items-center justify-center${
         ghost ? " opacity-70" : ""
       }`}
-      data-ghost={ghost ? "true" : "false"}
+      data-ghost={ghost || proposed ? "true" : "false"}
     >
+      {proposed && <ProposedBadge />}
       {nodeState === "current" && (
         <StateRing color="#2563eb" className="zpulse" />
       )}
@@ -401,8 +447,8 @@ export function GatewayNode({ node, selected, ghost = false, nodeState = null, o
           points="26,0 52,26 26,52 0,26"
           fill="#ffffff"
           stroke={stroke}
-          strokeWidth={selected ? 2 : 1.5}
-          strokeDasharray={ghost ? "5 4" : undefined}
+          strokeWidth={proposed ? 1.5 : selected ? 2 : 1.5}
+          strokeDasharray={proposed || ghost ? "5 4" : undefined}
         />
         <path
           d="M20 20 L32 32 M32 20 L20 32"
@@ -459,8 +505,9 @@ export function EdgePill({ text, anchor, dimmed = false }: {
 }
 
 export function ElkEdge({ markerEnd, data }: EdgeProps) {
-  const { points, pill, anchor, ghost, traversed, coverage, lit, dimmed } = data as DiagramEdgeData & {
+  const { points, pill, anchor, ghost, proposed, traversed, coverage, lit, dimmed } = data as DiagramEdgeData & {
     ghost?: boolean;
+    proposed?: boolean;
     traversed?: boolean;
     coverage?: "red" | "green" | null;
     lit?: boolean;
@@ -475,10 +522,11 @@ export function ElkEdge({ markerEnd, data }: EdgeProps) {
         stroke="#a1a1aa"
         strokeWidth={1.5}
         className="zcov"
+        data-ghost={ghost || proposed ? "true" : "false"}
         style={{
           transition: "opacity 150ms, stroke 150ms",
           opacity: dimmed ? 0.2 : 1,
-          ...(ghost
+          ...(proposed || ghost
             ? { stroke: "#7c3aed", strokeWidth: 1.5, strokeDasharray: "5 4" }
             : coverage
               ? {
@@ -514,6 +562,7 @@ const nodeTypes: NodeTypes = {
           roleName={d.roleName}
           selected={d.selected}
           ghost={d.ghost}
+          proposed={d.proposed}
           nodeState={d.nodeState ?? null}
           onCitationClick={d.onCitationClick}
         />
@@ -529,6 +578,7 @@ const nodeTypes: NodeTypes = {
           node={d.node}
           selected={d.selected}
           ghost={d.ghost}
+          proposed={d.proposed}
           nodeState={d.nodeState ?? null}
           onCitationClick={d.onCitationClick}
           labelPos={d.labelPos}
@@ -545,6 +595,7 @@ const nodeTypes: NodeTypes = {
           node={d.node}
           selected={d.selected}
           ghost={d.ghost}
+          proposed={d.proposed}
           nodeState={d.nodeState ?? null}
           onCitationClick={d.onCitationClick}
           labelPos={d.labelPos}
@@ -561,6 +612,7 @@ const nodeTypes: NodeTypes = {
           node={d.node}
           selected={d.selected}
           ghost={d.ghost}
+          proposed={d.proposed}
           nodeState={d.nodeState ?? null}
           onCitationClick={d.onCitationClick}
           labelPos={d.labelPos}
@@ -817,6 +869,7 @@ export function ProcessDiagram({
   selectedNodeId,
   onNodeSelect,
   ghost,
+  ghostIds,
   onCitationClick,
   minimap = true,
   caseView = null,
@@ -827,6 +880,9 @@ export function ProcessDiagram({
   selectedNodeId: string | null;
   onNodeSelect: (nodeId: string | null) => void;
   ghost: boolean;
+  // The ids the assistant chat draws as proposed. The whole-diagram
+  // ghost prop keeps its own style.
+  ghostIds?: { nodes: Set<string>; edges: Set<string> };
   onCitationClick: (id: string) => void;
   minimap?: boolean;
   caseView?: CaseView | null;
@@ -880,6 +936,7 @@ export function ProcessDiagram({
         ...n.data,
         selected: n.id === selectedNodeId,
         ghost,
+        proposed: ghostIds !== undefined && ghostIds.nodes.has(n.id),
         onCitationClick,
         ...(caseView ? { nodeState: nodeStateOf(n.id, caseView) } : {}),
       },
@@ -912,7 +969,7 @@ export function ProcessDiagram({
         data: { label: initials(caseView.actorName), name: caseView.actorName },
       },
     ];
-  }, [layout, selectedNodeId, ghost, onCitationClick, caseView, lightSet]);
+  }, [layout, selectedNodeId, ghost, ghostIds, onCitationClick, caseView, lightSet]);
 
   const edges = useMemo(() => {
     if (layout === null) {
@@ -925,6 +982,7 @@ export function ProcessDiagram({
       (coverage?.edges ?? []).map((edge) => [edge.edge_id, edge.count]),
     );
     return layout.edges.map((e) => {
+      const proposed = ghostIds !== undefined && ghostIds.edges.has(e.id);
       const traversed =
         caseView !== null && caseView.traversedEdgeIds.includes(e.id);
       const cov =
@@ -939,13 +997,14 @@ export function ProcessDiagram({
         data: {
           ...e.data,
           ghost,
+          proposed,
           coverage: cov,
           lit,
           dimmed,
           ...(caseView !== null ? { traversed } : {}),
         },
         markerEnd:
-          ghost && typeof e.markerEnd === "object"
+          (ghost || proposed) && typeof e.markerEnd === "object"
             ? { ...e.markerEnd, color: "#7c3aed" }
             : coverage !== null && typeof e.markerEnd === "object"
               ? {
@@ -957,7 +1016,7 @@ export function ProcessDiagram({
                 : e.markerEnd,
       };
     });
-  }, [layout, ghost, caseView, coverage, active, lightSet, selectedNodeId]);
+  }, [layout, ghost, ghostIds, caseView, coverage, active, lightSet, selectedNodeId]);
 
   if (layout === null) {
     return (

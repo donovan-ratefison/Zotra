@@ -125,3 +125,20 @@ func PolicyToProcessUser(name string, paragraphs []PolicyParagraph) string {
 	}
 	return b.String()
 }
+
+// ChangeProcessSystem is the system prompt of the assistant chat.
+const ChangeProcessSystem = `You change a Zotra process file on request of a process designer.
+You receive the current process file (JSON) and the change request.
+Return the full new process file that satisfies the given schema. Rules:
+- Make the requested change and only it. Keep every other element as it is: ids, names, order, citations.
+- A new element gets a new unique id in the style of the file, and empty citations.
+- Write every name, label and message in English. Money fields use EUR.
+- Each check expression is a CEL boolean expression over the fields of the data model.
+- If the request needs a new field, add it to the data model and to the scope of the step that writes it.
+- schema_version is "1".` + "\n" + ProcessFormatRules
+
+// ChangeProcessUser formats the current file and the request.
+func ChangeProcessUser(definition, message string) string {
+	return "Current process file (JSON):\n" + definition +
+		"\n\nChange request: " + message
+}
