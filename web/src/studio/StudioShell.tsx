@@ -830,6 +830,12 @@ export function StudioShell() {
                     onProposal={setChatProposal}
                     onAccepted={onSavedDraft}
                     listHeight={chatHeight}
+                    about={
+                      loaded.definition.nodes
+                        .filter((n) => n.id === selectedNodeId)
+                        .map((n) => ({ id: n.id, name: n.name }))[0] ?? null
+                    }
+                    onClearAbout={() => select(null)}
                   />
                 </div>
               </div>

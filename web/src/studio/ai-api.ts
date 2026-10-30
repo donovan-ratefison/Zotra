@@ -98,17 +98,28 @@ export interface ChangeAnswer {
   attempts: number;
 }
 
+// chatBody is the body of a chat request. It holds selected_node_id
+// only when a step is selected.
+function chatBody(versionId: string, message: string, selectedNodeId: string | null): string {
+  return JSON.stringify(
+    selectedNodeId === null
+      ? { version_id: versionId, message }
+      : { version_id: versionId, message, selected_node_id: selectedNodeId },
+  );
+}
+
 // changeProcess asks the AI for one changed process file from one
 // plain request of the designer. The server validates the answer and
 // checks its citations against the current definition.
 export async function changeProcess(
   versionId: string,
   message: string,
+  selectedNodeId: string | null = null,
 ): Promise<ChangeAnswer> {
   const res = await fetch("/api/ai/change-process", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ version_id: versionId, message }),
+    body: chatBody(versionId, message, selectedNodeId),
   });
   if (!res.ok) {
     throw await apiError(res);
@@ -140,11 +151,12 @@ export interface RestateQuestion {
 export async function restateChange(
   versionId: string,
   message: string,
+  selectedNodeId: string | null = null,
 ): Promise<{ restatement: string; questions: RestateQuestion[] }> {
   const res = await fetch("/api/ai/restate-change", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ version_id: versionId, message }),
+    body: chatBody(versionId, message, selectedNodeId),
   });
   if (!res.ok) {
     throw await apiError(res);

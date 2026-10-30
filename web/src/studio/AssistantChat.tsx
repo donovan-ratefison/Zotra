@@ -599,6 +599,8 @@ export function ChatPanelView(props: {
   answers?: Answers;
   onAnswersChange?: (a: Answers) => void;
   accepting?: boolean;
+  about?: { id: string; name: string } | null;
+  onClearAbout?: () => void;
 }): ReactElement {
   const { state, version, collapsed, listHeight = 220 } = props;
   const last = state.turns[state.turns.length - 1] ?? null;
@@ -690,6 +692,23 @@ export function ChatPanelView(props: {
             ))}
           </div>
           <div className="flex items-center gap-2 px-4 pb-3">
+            {props.about != null && version.status === "draft" && (
+              <span
+                className="flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[12px]"
+                style={{ borderColor: VIOLET, color: VIOLET }}
+              >
+                About: {props.about.name}
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Clear the selected step"
+                  title="Clear the selected step"
+                  onClick={() => props.onClearAbout?.()}
+                >
+                  <X aria-hidden="true" />
+                </Button>
+              </span>
+            )}
             <input
               type="text"
               aria-label="Message to the AI assistant"
@@ -731,10 +750,11 @@ export async function requestChange(opts: {
   version: Version;
   def: ProcessDefinition;
   text: string;
+  selectedNodeId: string | null;
   change: typeof changeProcess;
 }): Promise<ChatEvent> {
   try {
-    const answer = await opts.change(opts.version.id, opts.text);
+    const answer = await opts.change(opts.version.id, opts.text, opts.selectedNodeId);
     return { type: "answer", base: opts.def, next: answer.definition };
   } catch (err) {
     return errorEvent(err);
@@ -746,10 +766,11 @@ export async function requestChange(opts: {
 export async function requestRestate(opts: {
   version: Version;
   text: string;
+  selectedNodeId: string | null;
   restate: typeof restateChange;
 }): Promise<ChatEvent> {
   try {
-    const answer = await opts.restate(opts.version.id, opts.text);
+    const answer = await opts.restate(opts.version.id, opts.text, opts.selectedNodeId);
     return { type: "restated", text: answer.restatement, questions: answer.questions };
   } catch (err) {
     return errorEvent(err);
@@ -811,12 +832,16 @@ export function AssistantChat({
   onProposal,
   onAccepted,
   listHeight,
+  about = null,
+  onClearAbout,
 }: {
   version: Version;
   def: ProcessDefinition;
   onProposal: (next: ProcessDefinition | null) => void;
   onAccepted: () => void;
   listHeight?: number;
+  about?: { id: string; name: string } | null;
+  onClearAbout?: () => void;
 }) {
   const [state, setState] = useState<ChatState>({ turns: [], notice: null });
   const [collapsed, setCollapsed] = useState(false);
@@ -827,6 +852,9 @@ export function AssistantChat({
     proposal: ProcessDefinition;
   } | null>(null);
   const [pendingRequest, setPendingRequest] = useState("");
+  // The selected step of the send moment: a new selection between the
+  // restate and the confirm does not change the request.
+  const [pendingNodeId, setPendingNodeId] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Answers>({});
   const [restateFirst, setRestateFirst] = useState(() => {
     if (typeof localStorage === "undefined") {
@@ -855,12 +883,14 @@ export function AssistantChat({
     }
     setState((current) => chatEvent(current, { type: "send", text }));
     setDraft("");
+    const selectedNodeId = about?.id ?? null;
     if (!restateFirst) {
-      runChange(text);
+      runChange(text, selectedNodeId);
       return;
     }
     setPendingRequest(text);
-    void requestRestate({ version, text, restate: restateChange }).then((event) => {
+    setPendingNodeId(selectedNodeId);
+    void requestRestate({ version, text, selectedNodeId, restate: restateChange }).then((event) => {
       setState((current) => chatEvent(current, event));
       if (event.type === "restated") {
         setAnswers(defaultAnswers(event.questions));
@@ -873,12 +903,12 @@ export function AssistantChat({
     const questions = last?.kind === "restate" ? (last.questions ?? []) : [];
     if (questions.length === 0) {
       setState((current) => chatEvent(current, { type: "confirm" }));
-      runChange(pendingRequest);
+      runChange(pendingRequest, pendingNodeId);
       return;
     }
     const text = answerLines(questions, answers).join("\n");
     setState((current) => chatEvent(current, { type: "confirm", text }));
-    runChange(composeMessage(pendingRequest, questions, answers));
+    runChange(composeMessage(pendingRequest, questions, answers), pendingNodeId);
   }
 
   function rephrase() {
@@ -888,10 +918,10 @@ export function AssistantChat({
 
   // runChange asks the AI for the changed process. The last turn is
   // waiting when it starts.
-  function runChange(text: string) {
+  function runChange(text: string, selectedNodeId: string | null) {
     // The def of the request is the snapshot of the accept guard.
     const snapshot = def;
-    void requestChange({ version, def: snapshot, text, change: changeProcess }).then(
+    void requestChange({ version, def: snapshot, text, selectedNodeId, change: changeProcess }).then(
       (event) => {
         setState((current) => chatEvent(current, event));
         if (event.type === "answer") {
@@ -966,6 +996,8 @@ export function AssistantChat({
       answers={answers}
       onAnswersChange={setAnswers}
       accepting={accepting}
+      about={about}
+      onClearAbout={onClearAbout}
     />
   );
 }

@@ -26,10 +26,27 @@ import (
 // answer of the assistant chat.
 const msgChangeInvalidMessage = "message is required, 2000 characters at most"
 
+// msgInvalidNode is the message of every invalid_node answer of the
+// assistant chat.
+const msgInvalidNode = "selected_node_id is not a step of the version"
+
 // changeBody is the request body of the assistant chat.
 type changeBody struct {
 	VersionID string `json:"version_id"`
 	Message   string `json:"message"`
+	// SelectedNodeID is the step selected on the diagram. Absent or
+	// null: no selection.
+	SelectedNodeID *string `json:"selected_node_id"`
+}
+
+// changeUser is the user message of both chat routes: the delivered
+// message, plus the selected step note when a step is selected.
+func changeUser(v store.Version, message string, selected *process.Node) string {
+	user := ai.ChangeProcessUser(string(v.Definition), message)
+	if selected != nil {
+		user += ai.SelectedStepNote(selected.ID, selected.Name)
+	}
+	return user
 }
 
 // changeProcess proposes one changed process document for one
@@ -37,7 +54,7 @@ type changeBody struct {
 // "attempts": <n>}. After 3 failed attempts it answers 422 with the
 // errors of the last attempt.
 func (d apiDeps) changeProcess(w http.ResponseWriter, r *http.Request) {
-	v, message, ok := d.changeRequest(w, r)
+	v, message, selected, ok := d.changeRequest(w, r)
 	if !ok {
 		return
 	}
@@ -63,7 +80,7 @@ func (d apiDeps) changeProcess(w http.ResponseWriter, r *http.Request) {
 	// 6. The prompt.
 	messages := []ai.Message{
 		{Role: "system", Content: ai.ChangeProcessSystem},
-		{Role: "user", Content: ai.ChangeProcessUser(string(v.Definition), message)},
+		{Role: "user", Content: changeUser(v, message, selected)},
 	}
 	// 7. The repair loop, at most 3 attempts. lastErrs feeds the 422
 	// details when every attempt failed.
@@ -137,35 +154,53 @@ func withSources(content string, current []byte) string {
 
 // changeRequest reads the body of a chat request and runs the checks
 // that both chat routes share. It writes the error answer and returns
-// ok false when a check fails.
-func (d apiDeps) changeRequest(w http.ResponseWriter, r *http.Request) (v store.Version, message string, ok bool) {
+// ok false when a check fails. selected is the selected step, or nil.
+func (d apiDeps) changeRequest(w http.ResponseWriter, r *http.Request) (v store.Version, message string, selected *process.Node, ok bool) {
 	// 1. The body.
 	var body changeBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", msgInvalidJSON)
-		return v, "", false
+		return v, "", nil, false
 	}
 	// 2. The message, in characters. The limit holds a request of
 	// 1000 characters plus the answer lines of the restate questions.
 	message = strings.TrimSpace(body.Message)
 	if message == "" || utf8.RuneCountInString(message) > 2000 {
 		writeError(w, http.StatusBadRequest, "invalid_message", msgChangeInvalidMessage)
-		return v, "", false
+		return v, "", nil, false
 	}
 	// 3. The version. An unknown version maps to 404 not_found
 	// through the store mapping.
 	v, err := d.st.GetVersion(r.Context(), body.VersionID)
 	if err != nil {
 		writeStoreError(w, err)
-		return v, "", false
+		return v, "", nil, false
 	}
 	// 4. The change applies to a draft.
 	if v.Status != store.StatusDraft {
 		writeError(w, http.StatusConflict, "conflict",
 			fmt.Sprintf("version %s is not a draft", body.VersionID))
-		return v, "", false
+		return v, "", nil, false
 	}
-	return v, message, true
+	// 5. The selected step is a node of the version.
+	if body.SelectedNodeID != nil {
+		def, err := process.Decode(v.Definition)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal",
+				"cannot complete the request")
+			return v, "", nil, false
+		}
+		for i := range def.Nodes {
+			if def.Nodes[i].ID == *body.SelectedNodeID {
+				selected = &def.Nodes[i]
+			}
+		}
+		if selected == nil {
+			writeError(w, http.StatusBadRequest, "invalid_node", msgInvalidNode)
+			return v, "", nil, false
+		}
+	}
+	return v, message, selected, true
 }
 
 // restateOption is one ready answer of a restate question. ref
@@ -325,7 +360,7 @@ func checkQuestions(def process.Definition, qs []restateQuestion) []restateQuest
 // The answer is {"restatement": <text>, "questions": [...]}. It makes
 // one AI call, with no repair loop.
 func (d apiDeps) restateChange(w http.ResponseWriter, r *http.Request) {
-	v, message, ok := d.changeRequest(w, r)
+	v, message, selected, ok := d.changeRequest(w, r)
 	if !ok {
 		return
 	}
@@ -337,7 +372,7 @@ func (d apiDeps) restateChange(w http.ResponseWriter, r *http.Request) {
 	}
 	messages := []ai.Message{
 		{Role: "system", Content: ai.RestateChangeSystem},
-		{Role: "user", Content: ai.ChangeProcessUser(string(v.Definition), message)},
+		{Role: "user", Content: changeUser(v, message, selected)},
 	}
 	ansBody, err := d.ai.ChatCompletion(r.Context(), messages, "restatement", restateSchema)
 	if err != nil {

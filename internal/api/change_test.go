@@ -794,3 +794,101 @@ func TestChangeDraftWithoutSources(t *testing.T) {
 		t.Errorf("sources = %v, want %v", got, want)
 	}
 }
+
+// The rows of the selected step: S1 to S7.
+
+// changeReqNode builds one chat request body with the raw JSON value
+// node in the field selected_node_id.
+func changeReqNode(versionID, message, node string) string {
+	return fmt.Sprintf(`{"version_id":%q,"message":%q,"selected_node_id":%s}`,
+		versionID, message, node)
+}
+
+// S1, S2 and S5: the user message holds the note only when a step is
+// selected.
+func TestChangeSelectedStepNote(t *testing.T) {
+	note := ai.SelectedStepNote("offer", "Loan offer")
+	routes := []struct {
+		name, path, answer string
+	}{
+		{"change-process", "/api/ai/change-process", ""},
+		{"restate-change", "/api/ai/restate-change", `{"restatement":"You want to X.","questions":[]}`},
+	}
+	rows := []struct {
+		name, node string
+		withNote   bool
+	}{
+		{"offer", `"offer"`, true},
+		{"null", "null", false},
+		{"absent", "", false},
+	}
+	for _, route := range routes {
+		for _, row := range rows {
+			t.Run(route.name+" "+row.name, func(t *testing.T) {
+				answer := route.answer
+				if answer == "" {
+					answer = string(seedBytes(t))
+				}
+				srv, count, seen := changeLiveStub(t, []string{chatEnvelope(answer)})
+				aiLive(t, srv.URL)
+				newTestAPI(t)
+				draftID := chatDraft(t)
+				message := "Add a step after this step."
+				body := changeReq(draftID, message)
+				if row.node != "" {
+					body = changeReqNode(draftID, message, row.node)
+				}
+				checkOK(t, do(t, "POST", route.path, body, ""))
+				if *count != 1 {
+					t.Fatalf("requests = %d, want 1", *count)
+				}
+				user := requestMessages(t, (*seen)[0]).Messages[1].Content
+				want := "\n\nChange request: " + message
+				if row.withNote {
+					want += note
+				}
+				if !strings.HasSuffix(user, want) {
+					t.Errorf("user message ends with %q, want %q", user[len(user)-200:], want)
+				}
+			})
+		}
+	}
+}
+
+// S3, S4, S6 and S7: the refusals of the field, no AI call.
+func TestChangeSelectedStepRefusals(t *testing.T) {
+	rows := []struct {
+		name, node string
+		draft      bool
+		status     int
+		code, msg  string
+	}{
+		{"S3: unknown step", `"nobody"`, true,
+			http.StatusBadRequest, "invalid_node", msgInvalidNode},
+		{"S4: empty string", `""`, true,
+			http.StatusBadRequest, "invalid_node", msgInvalidNode},
+		{"S6: number", `5`, true,
+			http.StatusBadRequest, "invalid_json", msgInvalidJSON},
+		{"S7: frozen version", `"nobody"`, false,
+			http.StatusConflict, "conflict",
+			fmt.Sprintf("version %s is not a draft", changeSeedVersionID)},
+	}
+	for _, path := range []string{"/api/ai/change-process", "/api/ai/restate-change"} {
+		for _, row := range rows {
+			t.Run(path+" "+row.name, func(t *testing.T) {
+				srv, count, _ := changeLiveStub(t, []string{chatEnvelope("{}")})
+				aiLive(t, srv.URL)
+				newTestAPI(t)
+				versionID := changeSeedVersionID
+				if row.draft {
+					versionID = chatDraft(t)
+				}
+				rec := do(t, "POST", path, changeReqNode(versionID, "Add a step.", row.node), "")
+				checkError(t, rec, row.status, row.code, row.msg)
+				if *count != 0 {
+					t.Errorf("requests = %d, want 0", *count)
+				}
+			})
+		}
+	}
+}

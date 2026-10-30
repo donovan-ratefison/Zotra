@@ -149,6 +149,12 @@ func ChangeProcessUser(definition, message string) string {
 		"\n\nChange request: " + message
 }
 
+// SelectedStepNote tells the model which step "this step", "after
+// this step" and "here" mean in the change request.
+func SelectedStepNote(id, name string) string {
+	return "\n\nSelected step: " + id + " (" + name + "). In the change request, \"this step\", \"after this step\" and \"here\" mean this step."
+}
+
 // RestateChangeSystem is the system prompt of the restate step of
 // the assistant chat. The model only restates; the file stays as is.
 const RestateChangeSystem = `You restate the change request of a process designer before the process changes.

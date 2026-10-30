@@ -276,6 +276,7 @@ describe("requestChange", () => {
       version: draftVersion,
       def: miniDefinition,
       text: "add an expert review",
+      selectedNodeId: null,
       change: async () => ({ definition: next, attempts: 1 }),
     });
     expect(event).toEqual({ type: "answer", base: miniDefinition, next });
@@ -286,6 +287,7 @@ describe("requestChange", () => {
       version: draftVersion,
       def: miniDefinition,
       text: "add an expert review",
+      selectedNodeId: null,
       change: async () => {
         throw new ApiError(503, "ai_unavailable", "The AI layer is off.");
       },
@@ -452,12 +454,14 @@ describe("restate step", () => {
       await requestRestate({
         version: draftVersion,
         text: "add a step",
+        selectedNodeId: null,
         restate: async () => ({ restatement: "You want to add a step.", questions: [] }),
       }),
     ).toEqual({ type: "restated", text: "You want to add a step.", questions: [] });
     const event = await requestRestate({
       version: draftVersion,
       text: "add a step",
+      selectedNodeId: null,
       restate: async () => {
         throw new ApiError(503, "ai_unavailable", "off", []);
       },
@@ -589,5 +593,66 @@ describe("clarifying questions", () => {
     expect(html).toContain("Yes, make the change");
     expect(html).toContain("No, rephrase");
     expect(html).not.toContain("<fieldset");
+  });
+});
+
+// The rows of the selected step: A1, A2, V1 to V3.
+describe("selected step", () => {
+  test("A1: requestChange passes the selected step id, then null", async () => {
+    const seen: (string | null)[] = [];
+    for (const selectedNodeId of ["offer", null]) {
+      await requestChange({
+        version: draftVersion,
+        def: miniDefinition,
+        text: "add a step after this step",
+        selectedNodeId,
+        change: async (_id, _message, node) => {
+          seen.push(node ?? null);
+          return { definition: miniDefinition, attempts: 1 };
+        },
+      });
+    }
+    expect(seen).toEqual(["offer", null]);
+  });
+
+  test("A2: requestRestate passes the selected step id, then null", async () => {
+    const seen: (string | null)[] = [];
+    for (const selectedNodeId of ["offer", null]) {
+      await requestRestate({
+        version: draftVersion,
+        text: "add a step after this step",
+        selectedNodeId,
+        restate: async (_id, _message, node) => {
+          seen.push(node ?? null);
+          return { restatement: "You want to add a step.", questions: [] };
+        },
+      });
+    }
+    expect(seen).toEqual(["offer", null]);
+  });
+
+  const about = { id: "offer", name: "Loan offer" };
+  function renderAbout(version: Version, value: typeof about | null) {
+    return renderToString(
+      createElement(ChatPanelView, { state: EMPTY, version, collapsed: false, about: value }),
+    );
+  }
+
+  test("V1: a draft with a selected step shows the chip and the clear button", () => {
+    const html = renderAbout(draftVersion, about);
+    expect(html).toContain("About: <!-- -->Loan offer");
+    expect(html).toContain('aria-label="Clear the selected step"');
+  });
+
+  test("V2: no selected step, no chip", () => {
+    const html = renderAbout(draftVersion, null);
+    expect(html).not.toContain("About:");
+    expect(html).not.toContain("Clear the selected step");
+  });
+
+  test("V3: a frozen version shows no chip", () => {
+    const html = renderAbout(publishedVersion, about);
+    expect(html).not.toContain("About:");
+    expect(html).not.toContain("Clear the selected step");
   });
 });
