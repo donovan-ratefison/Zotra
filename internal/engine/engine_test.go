@@ -123,6 +123,12 @@ func foldEvents(t *testing.T, def process.Definition, events []Event) State {
 	return st
 }
 
+// handle runs HandleWithSources with the test values of the sources,
+// as a test case does.
+func handle(def process.Definition, st State, cmd Command, at time.Time) ([]Event, error) {
+	return HandleWithSources(context.Background(), def, st, cmd, at, testValuesFetcher)
+}
+
 // runSteps runs the commands in order. Each Handle gets the state
 // folded from the events so far.
 func runSteps(t *testing.T, def process.Definition, steps []step) []Event {
@@ -130,7 +136,7 @@ func runSteps(t *testing.T, def process.Definition, steps []step) []Event {
 	var all []Event
 	for _, s := range steps {
 		st := foldEvents(t, def, all)
-		evs, err := Handle(def, st, s.cmd, s.at)
+		evs, err := handle(def, st, s.cmd, s.at)
 		if err != nil {
 			t.Fatalf("Handle %s: %v", s.name, err)
 		}
@@ -180,7 +186,7 @@ func entryDataJSON() map[string]any {
 	}
 }
 
-// wantScenarioEvents is the 32-event table of the brief.
+// wantScenarioEvents is the 36-event table of the brief.
 func wantScenarioEvents() []wantEvent {
 	return []wantEvent{
 		{EventCaseCreated, "u-advisor", t0, map[string]any{"version_id": "v1", "data": map[string]any{}}},
@@ -192,9 +198,15 @@ func wantScenarioEvents() []wantEvent {
 		{EventStepEntered, "system", t1, map[string]any{"node_id": "complete"}},
 		{EventEdgeTaken, "system", t1, map[string]any{"edge_id": "e03"}},
 		{EventStepEntered, "system", t1, map[string]any{"node_id": "analysis"}},
+		{EventSourceFetched, "system", t1, map[string]any{
+			"node_id": "analysis", "source_id": "blacklist", "values": map[string]any{"listed": false}}},
+		{EventSourceFetched, "system", t1, map[string]any{
+			"node_id": "analysis", "source_id": "existing_loans", "values": map[string]any{"monthly_total": 0.0}}},
 		{EventStepAssigned, "u-analyst", t2, map[string]any{"node_id": "analysis", "user_id": "u-analyst"}},
 		{EventDataSubmitted, "u-analyst", t3, map[string]any{"node_id": "analysis", "values": analysisData()}},
 		{EventCheckEvaluated, "u-analyst", t4, checkEvaluatedJSON("analysis", "analysis-debt-ratio", true)},
+		{EventCheckEvaluated, "u-analyst", t4, checkEvaluatedJSON("analysis", "analysis-blacklist", true)},
+		{EventCheckEvaluated, "u-analyst", t4, checkEvaluatedJSON("analysis", "analysis-existing-loans", true)},
 		{EventDecisionMade, "u-analyst", t4, map[string]any{"node_id": "analysis", "decision": "favorable"}},
 		{EventEdgeTaken, "system", t4, map[string]any{"edge_id": "e05"}},
 		{EventStepEntered, "system", t4, map[string]any{"node_id": "threshold"}},
@@ -226,12 +238,12 @@ func TestScenarioApproved(t *testing.T) {
 	// The state that the caller passes to Handle is not modified.
 	// Command 2 computes monthly_payment, the caller state must not
 	// gain it.
-	startEvs, err := Handle(def, State{}, startCmd(), t0)
+	startEvs, err := handle(def, State{}, startCmd(), t0)
 	if err != nil {
 		t.Fatalf("Handle start: %v", err)
 	}
 	stAfterStart := foldEvents(t, def, startEvs)
-	if _, err := Handle(def, stAfterStart, scenarioSteps()[1].cmd, t1); err != nil {
+	if _, err := handle(def, stAfterStart, scenarioSteps()[1].cmd, t1); err != nil {
 		t.Fatalf("Handle entry submit: %v", err)
 	}
 	if len(stAfterStart.Data) != 0 {
@@ -295,11 +307,11 @@ func TestScenarioApproved(t *testing.T) {
 	if st.Assignee != "" {
 		t.Errorf("assignee = %q, want empty", st.Assignee)
 	}
-	if st.Seq != 32 {
-		t.Errorf("seq = %d, want 32", st.Seq)
+	if st.Seq != 36 {
+		t.Errorf("seq = %d, want 36", st.Seq)
 	}
-	if st.PrevHash != events[31].Hash {
-		t.Errorf("prev hash = %q, want the hash of event 32", st.PrevHash)
+	if st.PrevHash != events[35].Hash {
+		t.Errorf("prev hash = %q, want the hash of event 36", st.PrevHash)
 	}
 	if len(st.Data) != 13 {
 		t.Errorf("data has %d fields, want 13: %v", len(st.Data), st.Data)
@@ -320,9 +332,9 @@ func TestScenarioApproved(t *testing.T) {
 		t.Errorf("state at 9: node %q assignee %q seq %d, want analysis, empty, 9",
 			st9.NodeID, st9.Assignee, st9.Seq)
 	}
-	st10 := foldEvents(t, def, events[:10])
-	if st10.Assignee != "u-analyst" {
-		t.Errorf("state at 10: assignee %q, want u-analyst", st10.Assignee)
+	st12 := foldEvents(t, def, events[:12])
+	if st12.Assignee != "u-analyst" {
+		t.Errorf("state at 12: assignee %q, want u-analyst", st12.Assignee)
 	}
 }
 
@@ -331,11 +343,11 @@ func TestScenarioLoops(t *testing.T) {
 
 	// Row 1: the return loop, from the state after the Sign.
 	events := runSteps(t, def, scenarioSteps()[:6])
-	if len(events) != 18 {
-		t.Fatalf("events to the Sign = %d, want 18", len(events))
+	if len(events) != 22 {
+		t.Fatalf("events to the Sign = %d, want 22", len(events))
 	}
 	st := foldEvents(t, def, events)
-	evs, err := Handle(def, st, Decide{Actor: "u-director", Decision: "return"}, t6)
+	evs, err := handle(def, st, Decide{Actor: "u-director", Decision: "return"}, t6)
 	if err != nil {
 		t.Fatalf("Handle return: %v", err)
 	}
@@ -343,6 +355,10 @@ func TestScenarioLoops(t *testing.T) {
 		{EventDecisionMade, "u-director", t6, map[string]any{"node_id": "decision", "decision": "return"}},
 		{EventEdgeTaken, "system", t6, map[string]any{"edge_id": "e11"}},
 		{EventStepEntered, "system", t6, map[string]any{"node_id": "analysis"}},
+		{EventSourceFetched, "system", t6, map[string]any{
+			"node_id": "analysis", "source_id": "blacklist", "values": map[string]any{"listed": false}}},
+		{EventSourceFetched, "system", t6, map[string]any{
+			"node_id": "analysis", "source_id": "existing_loans", "values": map[string]any{"monthly_total": 0.0}}},
 	}
 	if len(evs) != len(want) {
 		t.Fatalf("return events = %d, want %d", len(evs), len(want))
@@ -360,20 +376,20 @@ func TestScenarioLoops(t *testing.T) {
 	all := append(slices.Clone(events), evs...)
 	stLoop := foldEvents(t, def, all)
 	if stLoop.NodeID != "analysis" || stLoop.Assignee != "" ||
-		stLoop.Status != StatusOpen || stLoop.Seq != 21 {
-		t.Errorf("loop state: node %q assignee %q status %q seq %d, want analysis, empty, open, 21",
+		stLoop.Status != StatusOpen || stLoop.Seq != 27 {
+		t.Errorf("loop state: node %q assignee %q status %q seq %d, want analysis, empty, open, 27",
 			stLoop.NodeID, stLoop.Assignee, stLoop.Status, stLoop.Seq)
 	}
 
 	// Row 2: the incomplete loop through the default edge.
 	incomplete := entryData()
 	incomplete["documents"] = []string{"ID card", "Salary slips", "Bank statements"}
-	startEvs, err := Handle(def, State{}, startCmd(), t0)
+	startEvs, err := handle(def, State{}, startCmd(), t0)
 	if err != nil {
 		t.Fatalf("Handle start: %v", err)
 	}
 	stStart := foldEvents(t, def, startEvs)
-	evs2, err := Handle(def, stStart, Submit{Actor: "u-advisor", Values: incomplete}, t1)
+	evs2, err := handle(def, stStart, Submit{Actor: "u-advisor", Values: incomplete}, t1)
 	if err != nil {
 		t.Fatalf("Handle incomplete submit: %v", err)
 	}
@@ -405,7 +421,7 @@ func TestScenarioLoops(t *testing.T) {
 	}
 
 	// A second Submit with 4 documents moves to analysis.
-	evs3, err := Handle(def, stIncomplete, Submit{Actor: "u-advisor", Values: entryData()}, t1)
+	evs3, err := handle(def, stIncomplete, Submit{Actor: "u-advisor", Values: entryData()}, t1)
 	if err != nil {
 		t.Fatalf("Handle second submit: %v", err)
 	}
@@ -432,12 +448,12 @@ func TestScenarioLoops(t *testing.T) {
 // with no debt_ratio.
 func caseWithoutIncome(t *testing.T, def process.Definition) ([]Event, State) {
 	t.Helper()
-	startEvs, err := Handle(def, State{}, startCmd(), t0)
+	startEvs, err := handle(def, State{}, startCmd(), t0)
 	if err != nil {
 		t.Fatalf("Handle start: %v", err)
 	}
 	st := foldEvents(t, def, startEvs)
-	evs, err := Handle(def, st, Submit{Actor: "u-advisor", Values: entryDataWithout("monthly_income")}, t1)
+	evs, err := handle(def, st, Submit{Actor: "u-advisor", Values: entryDataWithout("monthly_income")}, t1)
 	if err != nil {
 		t.Fatalf("Handle submit: %v", err)
 	}
@@ -449,14 +465,14 @@ func TestScenarioFailedCheck(t *testing.T) {
 	def := exampleDef(t)
 
 	// Row 1: the entry check fails on amount 0.
-	startEvs, err := Handle(def, State{}, startCmd(), t0)
+	startEvs, err := handle(def, State{}, startCmd(), t0)
 	if err != nil {
 		t.Fatalf("Handle start: %v", err)
 	}
 	st := foldEvents(t, def, startEvs)
 	data := entryData()
 	data["amount"] = 0.0
-	evs, err := Handle(def, st, Submit{Actor: "u-advisor", Values: data}, t1)
+	evs, err := handle(def, st, Submit{Actor: "u-advisor", Values: data}, t1)
 	if err != nil {
 		t.Fatalf("Handle submit: %v", err)
 	}
@@ -479,7 +495,7 @@ func TestScenarioFailedCheck(t *testing.T) {
 	}
 
 	// Row 2: the same case moves when the amount is fixed.
-	evs2, err := Handle(def, st1, Submit{Actor: "u-advisor", Values: map[string]any{"amount": 240000.0}}, t1)
+	evs2, err := handle(def, st1, Submit{Actor: "u-advisor", Values: map[string]any{"amount": 240000.0}}, t1)
 	if err != nil {
 		t.Fatalf("Handle fixed submit: %v", err)
 	}
@@ -504,7 +520,7 @@ func TestScenarioFailedCheck(t *testing.T) {
 	// Row 4: with monthly_income back, the ratio is computed again.
 	vals := analysisData()
 	vals["monthly_income"] = 4500.0
-	evs4, err := Handle(def, st3, Submit{Actor: "u-analyst", Values: vals}, t3)
+	evs4, err := handle(def, st3, Submit{Actor: "u-analyst", Values: vals}, t3)
 	if err != nil {
 		t.Fatalf("Handle analysis submit: %v", err)
 	}
@@ -517,7 +533,7 @@ func TestScenarioFailedCheck(t *testing.T) {
 	// Row 5: the decision on the row 3 case fails on the unset
 	// variable.
 	all5, st5 := caseWithoutIncome(t, def)
-	evs5, err := Handle(def, st5, Decide{Actor: "u-analyst", Decision: "favorable"}, t4)
+	evs5, err := handle(def, st5, Decide{Actor: "u-analyst", Decision: "favorable"}, t4)
 	if err != nil {
 		t.Fatalf("Handle decide: %v", err)
 	}
@@ -610,9 +626,9 @@ func TestHandleRefusals(t *testing.T) {
 	events := runApproved(t, def)
 	stStarted := foldEvents(t, def, events[:3])
 	stEntry := foldEvents(t, def, events[:3])
-	stAnalysis := foldEvents(t, def, events[:9])
-	stAssigned := foldEvents(t, def, events[:10])
-	stDecision := foldEvents(t, def, events[:17])
+	stAnalysis := foldEvents(t, def, events[:11])
+	stAssigned := foldEvents(t, def, events[:12])
+	stDecision := foldEvents(t, def, events[:21])
 	stClosed := foldEvents(t, def, events)
 	crafted := State{Status: StatusOpen, Seq: 9, NodeID: "complete", Data: map[string]any{}}
 
@@ -647,7 +663,7 @@ func TestHandleRefusals(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			evs, err := Handle(def, tt.st, tt.cmd, t1)
+			evs, err := handle(def, tt.st, tt.cmd, t1)
 			if err == nil {
 				t.Fatalf("Handle: no error, want %q", tt.want)
 			}
@@ -773,7 +789,7 @@ func TestFoldErrors(t *testing.T) {
 		}(), "event 10: check c9 does not exist", false},
 		{"undeclared decision", func() []Event {
 			out := slices.Clone(good[:9])
-			e := withPayload(good[12], DecisionMadePayload{NodeID: "analysis", Decision: "maybe"})
+			e := withPayload(good[16], DecisionMadePayload{NodeID: "analysis", Decision: "maybe"})
 			e.Seq = 10
 			return append(out, e)
 		}(), "event 10: decision maybe is not a decision of node analysis", false},

@@ -197,12 +197,26 @@
           "message": "The debt ratio must stay at 0.33, or the comment must explain the exception.",
           "plain_text": null,
           "citations": []
+        },
+        {
+          "id": "analysis-blacklist",
+          "expression": "blacklist.listed == false",
+          "message": "The client is on the credit blacklist.",
+          "plain_text": null,
+          "citations": []
+        },
+        {
+          "id": "analysis-existing-loans",
+          "expression": "existing_loans.monthly_total + monthly_payment <= monthly_income * 0.33",
+          "message": "The existing loans and the new monthly payment pass 33 percent of the income.",
+          "plain_text": null,
+          "citations": []
         }
       ],
       "decisions": ["favorable", "unfavorable"],
       "end_result": null,
       "scope_overrides": [],
-      "source_ids": [],
+      "source_ids": ["blacklist", "existing_loans"],
       "citations": []
     },
     {
@@ -335,5 +349,18 @@
     { "id": "e13", "from": "signing", "to": "release", "label": null, "decision": null, "condition": null, "is_default": false },
     { "id": "e14", "from": "release", "to": "released", "label": null, "decision": null, "condition": null, "is_default": false }
   ],
-  "sources": []
+  "sources": [
+    {
+      "id": "blacklist",
+      "name": "Credit blacklist",
+      "url": "http://127.0.0.1:8097/blacklist",
+      "test_values": { "listed": false }
+    },
+    {
+      "id": "existing_loans",
+      "name": "Existing loans",
+      "url": "http://127.0.0.1:8097/loans",
+      "test_values": { "monthly_total": 0.0 }
+    }
+  ]
 }

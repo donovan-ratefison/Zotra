@@ -42,6 +42,8 @@ make build
 
 The app runs at http://localhost:8080.
 
+Before a real case of the example reaches the analysis step, start the demo core banking service on port 8097: `go run ./cmd/zotra-demo`.
+
 To test from another machine on the same network, run `make serve`.
 It binds 0.0.0.0, picks a free port, and prints the URL.
 

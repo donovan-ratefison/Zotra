@@ -544,7 +544,7 @@ func TestChangeDraftWithoutSources(t *testing.T) {
 	draftID := createProcessVersion(t, draft, "No sources")
 
 	definition := postChangeOnce(t, draftID, count)
-	if got := sourcesOf(t, definition); !reflect.DeepEqual(got, []any{}) {
-		t.Errorf("sources = %v, want []", got)
+	if got, want := sourcesOf(t, definition), sourcesOf(t, seedBytes(t)); !reflect.DeepEqual(got, want) {
+		t.Errorf("sources = %v, want %v", got, want)
 	}
 }

@@ -1,6 +1,7 @@
 package coverage
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"reflect"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/donovan-ratefison/zotra/internal/engine"
 	"github.com/donovan-ratefison/zotra/internal/process"
+	"github.com/donovan-ratefison/zotra/internal/sources"
 )
 
 // t0 is the time of the first command of a case.
@@ -35,8 +37,13 @@ func exampleDef(t *testing.T) process.Definition {
 	return def
 }
 
-// runCase runs the commands in order through Handle and Fold, as the
-// engine tests do. Command i runs at commandAt(i).
+// simulated serves the test values of a source, as a test case does.
+func simulated(_ context.Context, src process.Source) (map[string]any, error) {
+	return sources.Simulated(src), nil
+}
+
+// runCase runs the commands in order through HandleWithSources and
+// Fold, as the engine tests do. Command i runs at commandAt(i).
 func runCase(t *testing.T, def process.Definition, cmds []engine.Command) []engine.Event {
 	t.Helper()
 	var all []engine.Event
@@ -49,7 +56,7 @@ func runCase(t *testing.T, def process.Definition, cmds []engine.Command) []engi
 				t.Fatalf("Fold: %v", err)
 			}
 		}
-		evs, err := engine.Handle(def, st, cmd, commandAt(i))
+		evs, err := engine.HandleWithSources(context.Background(), def, st, cmd, commandAt(i), simulated)
 		if err != nil {
 			t.Fatalf("Handle command %d: %v", i, err)
 		}

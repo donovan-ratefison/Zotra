@@ -202,7 +202,7 @@ func createCase(t *testing.T, versionID string, isTest bool) string {
 }
 
 // analysisCase creates a case on the seeded version and runs start
-// plus the entry submit. The case sits on analysis with 9 events.
+// plus the entry submit. The case sits on analysis with 11 events.
 func analysisCase(t *testing.T) string {
 	t.Helper()
 	caseID := createCase(t, seedVersionID, true)
@@ -513,13 +513,13 @@ func TestCasesAndCommands(t *testing.T) {
 		t.Errorf("start state = %v", st)
 	}
 
-	// entry submit: 6 events, node analysis, seq 9, monthly_payment.
+	// entry submit: 8 events, node analysis, seq 11, monthly_payment.
 	ans = cmd(`{"type":"submit","values":`+entryValues()+`}`, "u-advisor")
-	if n := len(ans["events"].([]any)); n != 6 {
-		t.Errorf("submit events = %d, want 6", n)
+	if n := len(ans["events"].([]any)); n != 8 {
+		t.Errorf("submit events = %d, want 8", n)
 	}
 	st = ans["state"].(map[string]any)
-	if st["node_id"] != "analysis" || st["seq"] != float64(9) {
+	if st["node_id"] != "analysis" || st["seq"] != float64(11) {
 		t.Errorf("submit state = %v", st)
 	}
 	payment := st["data"].(map[string]any)["monthly_payment"].(float64)
@@ -536,24 +536,24 @@ func TestCasesAndCommands(t *testing.T) {
 		t.Errorf("assignee = %v, want u-analyst", got)
 	}
 
-	// decide favorable: 6 events, the case moves to decision.
+	// decide favorable: 8 events, the case moves to decision.
 	ans = cmd(`{"type":"decide","decision":"favorable"}`, "u-analyst")
-	if n := len(ans["events"].([]any)); n != 6 {
-		t.Errorf("decide events = %d, want 6", n)
+	if n := len(ans["events"].([]any)); n != 8 {
+		t.Errorf("decide events = %d, want 8", n)
 	}
 	st = ans["state"].(map[string]any)
 	if st["node_id"] != "decision" {
 		t.Errorf("decide state = %v, want node decision", st)
 	}
 
-	// events: 16, in seq order.
+	// events: 20, in seq order.
 	rec = do(t, "GET", "/api/cases/"+caseID+"/events", "", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("events: status %d: %s", rec.Code, rec.Body.String())
 	}
 	events := decode(t, rec)["events"].([]any)
-	if len(events) != 16 {
-		t.Fatalf("events = %d, want 16", len(events))
+	if len(events) != 20 {
+		t.Fatalf("events = %d, want 20", len(events))
 	}
 	for i, e := range events {
 		if got := e.(map[string]any)["seq"]; got != float64(i+1) {
@@ -582,7 +582,7 @@ func TestCasesAndCommands(t *testing.T) {
 
 	// at=999: out of range.
 	rec = do(t, "GET", "/api/cases/"+caseID+"?at=999", "", "")
-	checkError(t, rec, http.StatusBadRequest, "invalid_query", "at must hold 0 to 16")
+	checkError(t, rec, http.StatusBadRequest, "invalid_query", "at must hold 0 to 20")
 }
 
 // 6.
@@ -777,9 +777,9 @@ func TestMoreRefusals(t *testing.T) {
 	rec := do(t, "POST", "/api/cases/"+caseID+"/commands", `{"type":"decide"}`, "u-analyst")
 	checkError(t, rec, http.StatusBadRequest, "invalid_command", "decision is required")
 
-	// at not an integer. The case has 9 events.
+	// at not an integer. The case has 11 events.
 	rec = do(t, "GET", "/api/cases/"+caseID+"?at=abc", "", "")
-	checkError(t, rec, http.StatusBadRequest, "invalid_query", "at must hold 0 to 9")
+	checkError(t, rec, http.StatusBadRequest, "invalid_query", "at must hold 0 to 11")
 
 	// an unknown version.
 	rec = do(t, "POST", "/api/cases", `{"version_id":"ghost"}`, "")
