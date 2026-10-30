@@ -15,6 +15,7 @@ import {
   PublishDialogBody,
   VersionActions,
   definitionFile,
+  docLinks,
   labelValid,
 } from "./version-actions";
 import { TopBar } from "./StudioShell";
@@ -127,6 +128,36 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("docLinks", () => {
+  test("L1: the links and the file name of a version", () => {
+    expect(docLinks(miniDefinition, versionRow(2, "draft"))).toEqual({
+      html: "/api/versions/v2/doc.html",
+      md: "/api/versions/v2/doc.md",
+      mdName: "Mini loan-v2.md",
+    });
+  });
+
+  test("L2: the name is trimmed", () => {
+    const def = { ...miniDefinition, name: "  Home loan  " };
+    expect(docLinks(def, versionRow(1, "draft")).mdName).toBe("Home loan-v1.md");
+  });
+
+  test("L3: each forbidden file name character becomes a dash", () => {
+    const def = { ...miniDefinition, name: "A/B: test?" };
+    expect(docLinks(def, versionRow(3, "draft")).mdName).toBe("A-B- test--v3.md");
+  });
+
+  test("L4: a blank name gives process", () => {
+    const def = { ...miniDefinition, name: "   " };
+    expect(docLinks(def, versionRow(1, "draft")).mdName).toBe("process-v1.md");
+  });
+
+  test("L5: the version id is encoded in the path", () => {
+    const version = { ...versionRow(1, "draft"), id: "a b" };
+    expect(docLinks(miniDefinition, version).html).toBe("/api/versions/a%20b/doc.html");
+  });
+});
+
 describe("definitionFile and labelValid", () => {
   test("1: definitionFile names and serializes the export file", () => {
     const file = definitionFile(miniDefinition, versionRow(2, "draft"));
@@ -233,6 +264,7 @@ describe("status buttons", () => {
       ])),
     );
     expect(html).toContain("Export");
+    expect(html).toContain("Documentation");
     expect(html).toContain("Freeze version");
     expect(html).not.toContain("New draft from this version");
     expect(html).not.toContain("Publish");
@@ -248,6 +280,7 @@ describe("status buttons", () => {
     expect(html).toContain("Publish");
     expect(html).toContain("New draft from this version");
     expect(html).toContain("Export");
+    expect(html).toContain("Documentation");
     expect(html).not.toContain("Freeze version");
   });
 
@@ -259,6 +292,7 @@ describe("status buttons", () => {
     );
     expect(html).toContain("New draft from this version");
     expect(html).toContain("Export");
+    expect(html).toContain("Documentation");
     expect(html).not.toContain("Freeze version");
     expect(html).not.toContain("Publish");
   });
@@ -271,9 +305,20 @@ describe("status buttons", () => {
       ])),
     );
     expect(html).toContain("Export");
+    expect(html).toContain("Documentation");
     expect(html).not.toContain("Freeze version");
     expect(html).not.toContain("Publish");
     expect(html).not.toContain("New draft from this version");
+  });
+
+  test("L7: the Documentation trigger comes before the Export button", () => {
+    const html = renderToString(
+      createElement(VersionActions, actionsProps(versionRow(2, "draft"), [
+        versionRow(2, "draft"),
+      ])),
+    );
+    expect(html.indexOf("Documentation")).toBeGreaterThan(-1);
+    expect(html.indexOf("Documentation")).toBeLessThan(html.indexOf('aria-label="Export"'));
   });
 });
 

@@ -6,11 +6,17 @@
 // screen, props down).
 
 import { useState } from "react";
-import { Download, GitBranch, GitCompareArrows, History, Lock, Upload } from "lucide-react";
+import { Download, FileText, GitBranch, GitCompareArrows, History, Lock, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError, freezeVersion, forkVersion, publishVersion } from "./api";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent } from "@/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/ui/dropdown-menu";
 import { Input } from "@/ui/input";
 import type { ProcessDefinition, VersionSummary } from "./types";
 
@@ -23,6 +29,17 @@ export function definitionFile(
     name: `process-v${version.number}.json`,
     body: JSON.stringify(def, null, 2),
   };
+}
+
+// docLinks gives the links of the documentation menu; the items render
+// in a portal, so the rows test this function.
+export function docLinks(
+  def: ProcessDefinition,
+  version: VersionSummary,
+): { html: string; md: string; mdName: string } {
+  const base = `/api/versions/${encodeURIComponent(version.id)}/doc`;
+  const name = def.name.trim().replace(/[\\/:*?"<>|]/g, "-") || "process";
+  return { html: `${base}.html`, md: `${base}.md`, mdName: `${name}-v${version.number}.md` };
 }
 
 // labelValid accepts a label with at least one non-space character.
@@ -380,6 +397,8 @@ export function VersionActions({ def, version, versions,
     }
   }
 
+  const links = docLinks(def, version);
+
   return (
     <>
       <div className="flex shrink-0 items-center gap-2">
@@ -387,6 +406,30 @@ export function VersionActions({ def, version, versions,
           <History aria-hidden="true" />
           History
         </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              aria-label="Documentation"
+              title="Open or download the documentation"
+            >
+              <FileText aria-hidden="true" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem asChild>
+              <a href={links.html} target="_blank" rel="noopener">
+                Open the documentation
+              </a>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <a href={links.md} download={links.mdName}>
+                Download Markdown
+              </a>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button
           variant="outline"
           size="icon-sm"
