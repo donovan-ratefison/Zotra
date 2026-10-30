@@ -154,3 +154,22 @@ export function defaultRow(def: ProcessDefinition): RuleRow {
     },
   );
 }
+
+// The mode a check opens in. "" and "true" carry no rule (addCheck
+// starts a check at "true"): the guided mode seeds one row for them.
+// A stored expression that the guided builder cannot show at mount
+// opens in the expert mode: the builder starts with no rows, so its
+// preview is empty and every stored rule diverges from it. A check
+// that opens this way was never in the guided mode, so it shows no
+// notice and no restore button (ruleNotice).
+export function initialRuleMode(expression: string): "guided" | "expert" {
+  return expression === "" || expression === "true" ? "guided" : "expert";
+}
+
+// The notice of the guided mode: a guided form existed in this edit
+// session (the builder holds rows), and the stored CEL left the
+// expression that the rows build. A check opened fresh shows no
+// notice: no guided form existed.
+export function ruleNotice(rows: number, expression: string, guided: string): boolean {
+  return rows > 0 && expression !== guided;
+}

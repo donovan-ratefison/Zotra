@@ -7,9 +7,11 @@ import {
   buildExpression,
   conditionCel,
   defaultRow,
+  initialRuleMode,
   literalOf,
   operatorLabel,
   operatorsFor,
+  ruleNotice,
   typesOf,
   type RuleRow,
 } from "./rule-builder";
@@ -224,13 +226,24 @@ describe("rule builder render", () => {
     expectSeededRow(renderBuilder(checkWith("true")));
   });
 
-  test("8: an expression the rows did not build shows the notice", () => {
+  test("8: a stored rule the builder cannot show opens in the expert mode", () => {
     const html = renderBuilder(c1);
-    expect(html).toContain(
-      "This rule was changed in the expert mode. The guided builder cannot show it.",
-    );
-    expect(html).toContain("Restore the guided rule");
+    expect(html).toMatch(/<button[^>]*aria-pressed="false"[^>]*>Guided/);
+    expect(html).toMatch(/<button[^>]*aria-pressed="true"[^>]*>Expert/);
+    // The stored CEL sits in the textarea.
+    expect(html).toContain("amount &gt; 0.0");
+    // The plain text of the check sits above the CEL.
+    expect(html).toContain("The loan amount must be positive.");
+    // The rule was never in the guided mode: no notice, no restore.
+    expect(html).not.toContain("changed in the expert mode");
+    expect(html).not.toContain("Restore the guided rule");
     expect(html).not.toContain("Field of condition 1");
+  });
+
+  test("8b: the expert pane hides an empty plain text", () => {
+    const html = renderBuilder({ ...c1, plain_text: null });
+    expect(html).toContain('aria-label="Expression of check c1"');
+    expect(html).not.toContain("The loan amount must be positive.");
   });
 
   test("9: a disabled builder disables the value input and the add button", () => {
@@ -247,5 +260,22 @@ describe("rule builder render", () => {
       'disabled=""',
     );
     expect(html).not.toContain('aria-label="Join of the conditions"');
+  });
+});
+
+describe("rule mode and notice helpers", () => {
+  test("8c: initialRuleMode opens markers guided and stored rules expert", () => {
+    expect(initialRuleMode("")).toBe("guided");
+    expect(initialRuleMode("true")).toBe("guided");
+    expect(initialRuleMode("amount > 0.0")).toBe("expert");
+  });
+
+  test("8d: ruleNotice needs guided rows and a left built expression", () => {
+    // No guided form existed in this edit session.
+    expect(ruleNotice(0, "a changed CEL", "")).toBe(false);
+    // The stored CEL still matches the rows.
+    expect(ruleNotice(2, "amount <= 0", "amount <= 0")).toBe(false);
+    // The user built rows, then changed the CEL in the expert mode.
+    expect(ruleNotice(2, "a changed CEL", "amount <= 0")).toBe(true);
   });
 });

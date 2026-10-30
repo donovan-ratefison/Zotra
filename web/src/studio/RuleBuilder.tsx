@@ -1,7 +1,9 @@
 // The guided editor of one check: rows of field, operator and value
 // with one join, and a read-only preview of the generated CEL. The
-// raw CEL stays one toggle away in the expert mode. A rule changed in
-// the expert mode shows a notice, with a restore button.
+// raw CEL stays one toggle away in the expert mode. A rule that left
+// the guided rows in this edit session shows a notice, with a restore
+// button; a check that the builder cannot show at mount opens in the
+// expert mode instead.
 
 import { Fragment, useEffect, useState } from "react";
 import { X } from "lucide-react";
@@ -12,8 +14,10 @@ import {
   buildExpression,
   defaultRow,
   defaultRowFor,
+  initialRuleMode,
   operatorLabel,
   operatorsFor,
+  ruleNotice,
   typesOf,
   type RuleRow,
 } from "./rule-builder";
@@ -33,7 +37,7 @@ export function RuleBuilder({
   onExpressionChange: (expression: string) => void;
   disabled: boolean;
 }) {
-  const [mode, setMode] = useState<"guided" | "expert">("guided");
+  const [mode, setMode] = useState<"guided" | "expert">(initialRuleMode(check.expression));
   const [rows, setRows] = useState<RuleRow[]>([]);
   const [join, setJoin] = useState<"and" | "or">("and");
 
@@ -42,7 +46,9 @@ export function RuleBuilder({
   const types = typesOf(def);
   const shownRows = rows.length === 0 && isMarker ? [defaultRow(def)] : rows;
   const guidedExpression = buildExpression(shownRows, types, join);
-  const showNotice = !isMarker && check.expression !== guidedExpression;
+  // A guided form existed in this edit session when the builder holds
+  // rows: only then can the stored CEL have left it.
+  const showNotice = ruleNotice(rows.length, check.expression, guidedExpression);
 
   // One effect covers every marker moment: the stored check and the
   // preview agree in the running app. The props exist at mount, so the
@@ -107,14 +113,19 @@ export function RuleBuilder({
         </Button>
       </div>
       {mode === "expert" ? (
-        <Textarea
-          aria-label={`Expression of check ${check.id}`}
-          rows={2}
-          disabled={disabled}
-          className="font-mono text-xs"
-          value={check.expression}
-          onChange={(e) => onExpressionChange(e.target.value)}
-        />
+        <>
+          {check.plain_text !== null && check.plain_text !== "" && (
+            <p className="text-xs text-muted-foreground">{check.plain_text}</p>
+          )}
+          <Textarea
+            aria-label={`Expression of check ${check.id}`}
+            rows={2}
+            disabled={disabled}
+            className="font-mono text-xs"
+            value={check.expression}
+            onChange={(e) => onExpressionChange(e.target.value)}
+          />
+        </>
       ) : showNotice ? (
         <div className="flex flex-col items-start gap-2 rounded-md border p-2.5">
           <span className="text-[12.5px]">

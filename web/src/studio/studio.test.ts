@@ -430,6 +430,28 @@ describe("pill placement", () => {
 // The seed process of the demo: the layout guard rows run on it.
 const seedDefinition = seedJson as ProcessDefinition;
 
+// A chain of one start, the given number of plain steps and one
+// approved end, for the wrap rows of gridLayout.
+function chainDefinition(steps: number): ProcessDefinition {
+  const nodes: ProcessNode[] = [
+    { ...nodeCopy("start", "start") },
+  ];
+  const edges: ProcessEdge[] = [];
+  for (let i = 1; i <= steps; i++) {
+    nodes.push(nodeCopy("review", `t${i}`));
+    edges.push({
+      id: `e${i}`, from: i === 1 ? "start" : `t${i - 1}`, to: `t${i}`,
+      label: null, decision: null, condition: null, is_default: false,
+    });
+  }
+  nodes.push(nodeCopy("released", "released"));
+  edges.push({
+    id: `e${steps + 1}`, from: `t${steps}`, to: "released",
+    label: null, decision: null, condition: null, is_default: false,
+  });
+  return { ...miniDefinition, name: "Chain", nodes, edges };
+}
+
 describe("diagram layout guard", () => {
   test("46: diagramEdgeText reads Yes and No on a yes or no gateway", () => {
     const text = (id: string) =>
@@ -457,6 +479,49 @@ describe("diagram layout guard", () => {
     expect(row("refused")).toBe(2);
     expect(grid.cells.get("decision")!.cx).toBe(grid.cells.get("threshold")!.cx);
     expect(grid.cells.get("released")!.cx).toBe(grid.cells.get("release")!.cx);
+  });
+
+  test("48b: a process of 8 nodes keeps its main path on one row", () => {
+    const six = gridLayout(chainDefinition(6))!;
+    expect(six).not.toBeNull();
+    expect(six.cells.get("start")!.row).toBe(0);
+    for (let i = 1; i <= 6; i++) {
+      expect(six.cells.get(`t${i}`)!.row).toBe(0);
+    }
+    // The final end keeps its own rule: under the task before it.
+    expect(six.cells.get("released")!.row).toBe(1);
+    expect(six.cells.get("released")!.cx).toBe(six.cells.get("t6")!.cx);
+    // Seven steps on the main path still take the one row of the
+    // mockup: the seed process is one.
+    const seven = gridLayout(chainDefinition(7))!;
+    expect(seven).not.toBeNull();
+    for (let i = 1; i <= 7; i++) {
+      expect(seven.cells.get(`t${i}`)!.row).toBe(0);
+    }
+  });
+
+  test("48c: a main path of more than 7 steps wraps onto a second row", () => {
+    const grid = gridLayout(chainDefinition(12))!;
+    expect(grid).not.toBeNull();
+    // The first half runs on row 0.
+    expect(grid.cells.get("start")!.row).toBe(0);
+    for (let i = 1; i <= 6; i++) {
+      expect(grid.cells.get(`t${i}`)!.row).toBe(0);
+    }
+    // The second half runs back on row 1, one row pitch down.
+    for (let i = 7; i <= 12; i++) {
+      expect(grid.cells.get(`t${i}`)!.row).toBe(1);
+      expect(grid.cells.get(`t${i}`)!.cy).toBe(140);
+    }
+    // The turn between the halves sits left of the last node of the
+    // first half, so the spine edge between them turns down.
+    expect(grid.cells.get("t7")!.cx).toBeLessThan(grid.cells.get("t6")!.cx);
+    expect(grid.points.get("e7")!).toHaveLength(3);
+    // A spine step of the second half is one straight leftward link.
+    expect(grid.points.get("e8")!).toHaveLength(2);
+    // The final end keeps its rule: under the task before it.
+    expect(grid.cells.get("released")!.cx).toBe(grid.cells.get("t12")!.cx);
+    expect(grid.cells.get("released")!.row).toBe(2);
   });
 
   test("49: no seed link has a diagonal segment or crosses a shape", async () => {
@@ -683,6 +748,26 @@ describe("top bar", () => {
     expect(select).toContain(`aria-label="Version"`);
     expect(select).toContain(`disabled=""`);
     expect(html).toContain("v1 · Published");
+  });
+
+  test("18d: a proposal top bar names the proposal with a badge and no version", () => {
+    const html = renderToString(
+      createElement(TopBar, {
+        def: miniDefinition,
+        proposalName: "Home Loan Release",
+      }),
+    );
+    // The breadcrumb names the brand and the proposal, not the
+    // definition that was open, with the violet Proposal badge.
+    expect(html).toContain("Mini Bank");
+    expect(html).toContain("Home Loan Release");
+    expect(html).toContain("#7c3aed");
+    expect(html).toContain("Proposal");
+    expect(html).not.toContain("&gt;Mini loan&lt;");
+    // No version select and no version actions during the review.
+    expect(html).not.toContain('aria-label="Version"');
+    expect(html).not.toContain("New draft from this version");
+    expect(html).not.toContain("Freeze version");
   });
 });
 

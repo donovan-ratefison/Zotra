@@ -319,7 +319,7 @@ describe("citation chips", () => {
     expect(html.match(/aria-label="Show/g)).toHaveLength(4);
   });
 
-  test("12: a ghost task card carries data-ghost", () => {
+  test("12: a ghost task card paints the proposed style without a badge", () => {
     const entry = changed.nodes.find((n) => n.id === "entry")!;
     const html = renderToString(
       createElement(TaskCard, {
@@ -331,9 +331,18 @@ describe("citation chips", () => {
       }),
     );
     expect(html).toContain(`data-ghost="true"`);
+    // Full opacity and normal text colors: no ghost fade.
+    expect(html).not.toContain("opacity-70");
+    // The violet dashed rect is the only outline, 1.5 px like the
+    // proposed style.
+    expect(html).toContain('stroke="#7c3aed"');
+    expect(html).toContain('stroke-width="1.5"');
+    expect(html).toContain('stroke-dasharray="5 4"');
+    // No badge on a ghost element: the badge marks chat proposals.
+    expect(html).not.toContain("Proposed");
   });
 
-  test("13: a ghost gateway carries data-ghost", () => {
+  test("13: a ghost gateway carries data-ghost and no badge", () => {
     const gateway = changed.nodes.find((n) => n.id === "complete")!;
     const html = renderToString(
       createElement(GatewayNode, {
@@ -343,6 +352,9 @@ describe("citation chips", () => {
       }),
     );
     expect(html).toContain(`data-ghost="true"`);
+    expect(html).not.toContain("opacity-70");
+    expect(html).toContain('stroke="#7c3aed"');
+    expect(html).not.toContain("Proposed");
   });
 
   test("14: an end shape renders its chip and the ghost flag", () => {

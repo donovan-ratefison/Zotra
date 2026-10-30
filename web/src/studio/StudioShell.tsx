@@ -535,8 +535,9 @@ export function StudioShell() {
     content = (
       <div className="flex h-screen flex-col">
         <TopBar
-          def={loadedDef ?? proposal.definition}
-          version={version ?? undefined}
+          def={proposal.definition}
+          version={undefined}
+          proposalName={proposal.name}
           onNewFromPolicy={() => setImportOpen(true)}
           policyOpen={policyOpen}
           onTogglePolicy={onTogglePolicy}
@@ -712,6 +713,7 @@ const STATUS_DOT: Record<string, string> = {
 export function TopBar({
   def,
   version,
+  proposalName,
   onNewFromPolicy,
   policyOpen = false,
   onTogglePolicy,
@@ -724,6 +726,10 @@ export function TopBar({
 }: {
   def: ProcessDefinition;
   version?: VersionSummary;
+  // The name of the reviewed proposal. When set, the breadcrumb names
+  // it and carries the Proposal badge, and the version select and the
+  // version actions stay out (version is undefined).
+  proposalName?: string;
   onNewFromPolicy?: () => void;
   policyOpen?: boolean;
   onTogglePolicy?: () => void;
@@ -760,7 +766,15 @@ export function TopBar({
       <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1 text-[13px]">
         <span className="truncate">{def.theme.brand_name}</span>
         <ChevronRight size={14} className="shrink-0" />
-        <span className="truncate font-semibold">{def.name}</span>
+        <span className="truncate font-semibold">{proposalName ?? def.name}</span>
+        {proposalName !== undefined && (
+          <span
+            className="shrink-0 rounded-full border px-2 py-0.5 text-[12px]"
+            style={{ borderColor: "#7c3aed", color: "#7c3aed" }}
+          >
+            Proposal
+          </span>
+        )}
       </nav>
       {version !== undefined && (
         <span className="flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[12px]">

@@ -2,7 +2,7 @@
 // furniture (legend, status line, zoom, mini map).
 
 import "@xyflow/react/dist/style.css";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -208,31 +208,26 @@ export function TaskCard({ node, color, roleName, selected, ghost = false, propo
     node.checks.some((check) => check.citations.length > 0);
   return (
     <div
-      className={`relative h-[72px] w-[152px] rounded-lg bg-white shadow-sm${
-        ghost ? " opacity-70" : ""
-      }`}
+      className="relative h-[72px] w-[152px] rounded-lg bg-white shadow-sm"
       data-ghost={ghost || proposed ? "true" : "false"}
       style={{
-        border: proposed
-          ? // The violet dashed rect below is the only outline: the
-            // own border steps aside, the selected case included.
-            "1.5px solid transparent"
-          : ghost
-            ? selected
-              ? "2px dashed #7c3aed"
-              : "1px dashed #7c3aed"
-            : nodeState === "failed"
-              ? "1px solid #dc2626"
-              : selected
-                ? "2px solid #2563eb"
-                : nodeState === "done"
-                  ? "1px solid #2563eb"
-                  : "1px solid #d4d4d8",
+        // The violet dashed rect below is the only outline of a ghost
+        // or proposed card: the own border steps aside, the selected
+        // case included.
+        border: proposed || ghost
+          ? "1.5px solid transparent"
+          : nodeState === "failed"
+            ? "1px solid #dc2626"
+            : selected
+              ? "2px solid #2563eb"
+              : nodeState === "done"
+                ? "1px solid #2563eb"
+                : "1px solid #d4d4d8",
         boxShadow:
           !ghost && selected ? "0 0 0 3px rgba(37, 99, 235, 0.12)" : undefined,
       }}
     >
-      {proposed && (
+      {(proposed || ghost) && (
         <>
           <svg
             aria-hidden="true"
@@ -252,7 +247,7 @@ export function TaskCard({ node, color, roleName, selected, ghost = false, propo
               strokeDasharray="5 4"
             />
           </svg>
-          <ProposedBadge />
+          {proposed && <ProposedBadge />}
         </>
       )}
       {nodeState === "current" && (
@@ -374,16 +369,14 @@ export function EventShape({ node, selected, ghost = false, proposed = false, no
       : selected || nodeState === "done"
         ? "#2563eb"
         : baseStroke;
-  const width = proposed ? 1.5 : (isStart ? 1.5 : 3.5) + (selected ? 0.5 : 0);
+  const width = proposed || ghost ? 1.5 : (isStart ? 1.5 : 3.5) + (selected ? 0.5 : 0);
   const radius = isStart ? 18 : 17;
   const cited =
     node.citations.length > 0 ||
     node.checks.some((check) => check.citations.length > 0);
   return (
     <div
-      className={`relative flex h-[40px] w-[40px] items-center justify-center${
-        ghost ? " opacity-70" : ""
-      }`}
+      className="relative flex h-[40px] w-[40px] items-center justify-center"
       data-ghost={ghost || proposed ? "true" : "false"}
     >
       {proposed && <ProposedBadge />}
@@ -433,9 +426,7 @@ export function GatewayNode({ node, selected, ghost = false, proposed = false, n
     node.checks.some((check) => check.citations.length > 0);
   return (
     <div
-      className={`relative flex h-[52px] w-[52px] items-center justify-center${
-        ghost ? " opacity-70" : ""
-      }`}
+      className="relative flex h-[52px] w-[52px] items-center justify-center"
       data-ghost={ghost || proposed ? "true" : "false"}
     >
       {proposed && <ProposedBadge />}
@@ -447,7 +438,7 @@ export function GatewayNode({ node, selected, ghost = false, proposed = false, n
           points="26,0 52,26 26,52 0,26"
           fill="#ffffff"
           stroke={stroke}
-          strokeWidth={proposed ? 1.5 : selected ? 2 : 1.5}
+          strokeWidth={proposed || ghost ? 1.5 : selected ? 2 : 1.5}
           strokeDasharray={proposed || ghost ? "5 4" : undefined}
         />
         <path
@@ -691,6 +682,35 @@ function ZoomControls() {
   );
 }
 
+// The canvas holds the whole diagram: a fresh fit when the layout has
+// landed (React Flow mounts with the nodes and the observer reports
+// its box) and each time the canvas box changes after that (the policy
+// drawer takes a band of the column when it opens). The fitView prop
+// covers the mount itself; the frame delay lets React Flow paint the
+// new box before the fit reads it.
+function AutoFit({ box }: { box: RefObject<HTMLDivElement | null> }) {
+  const { fitView } = useReactFlow();
+  useEffect(() => {
+    const el = box.current;
+    if (el === null || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    let raf = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        void fitView({ padding: 0.1, maxZoom: 1 });
+      });
+    });
+    observer.observe(el);
+    return () => {
+      cancelAnimationFrame(raf);
+      observer.disconnect();
+    };
+  }, [box, fitView]);
+  return null;
+}
+
 // The coverage legend row: one plain child of the Legend panel (no
 // Panel, no store access, no props), so the rows render it directly.
 export function CoverageLegendRow() {
@@ -892,6 +912,7 @@ export function ProcessDiagram({
   highlightNodeIds?: string[] | null;
 }) {
   const [layout, setLayout] = useState<Awaited<ReturnType<typeof layoutProcess>> | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   // The step under the pointer, else the step with keyboard focus:
   // its links light up and the steps it does not touch dim.
   const [hoverId, setHoverId] = useState<string | null>(null);
@@ -1029,6 +1050,7 @@ export function ProcessDiagram({
 
   return (
     <div
+      ref={wrapRef}
       role="region"
       aria-label="Process diagram. Tab to reach a step, arrow keys to move to the next step, Enter to select it, Escape to clear the selection."
       className="h-full w-full"
@@ -1075,6 +1097,7 @@ export function ProcessDiagram({
         onPaneClick={() => onNodeSelect(null)}
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="#d4d4d8" />
+        <AutoFit box={wrapRef} />
         {minimap && (
           <MiniMap
             position="bottom-right"

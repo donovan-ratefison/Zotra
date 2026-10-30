@@ -411,18 +411,31 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
     return text === null ? 0 : labelWidth(text) + 12;
   };
 
-  // 1. The main path on row 0. The gap between two nodes holds the
-  // text of their link.
+  // 1. The main path. A path of 8 steps or fewer runs on row 0, as
+  // in the mockup. A longer path wraps: the first half runs on row 0,
+  // the first node of the second half sits one row pitch down, and the
+  // rest of the second half runs back to the left. The gap between two
+  // nodes still holds the text of their link.
+  const steps = spine.length - 2;
+  const firstHalf = steps > 7 ? Math.ceil(spine.length / 2) : spine.length;
   let x = 0;
   spine.forEach((id, i) => {
     const s = sizeOf(id);
-    if (i > 0) {
+    if (i === 0) {
+      x = s.width / 2;
+    } else if (i < firstHalf) {
       const p = cells.get(spine[i - 1]!)!;
       x = p.cx + p.w / 2 + Math.max(GRID_GAP, labelOf(spine[i - 1]!, id)) + s.width / 2;
     } else {
-      x = s.width / 2;
+      // The second half runs back to the left. Its first node is the
+      // turn between the halves: one gap to the left of the last node
+      // of the first half, so the spine edge between them turns down
+      // beside it and its text finds a free stretch.
+      const p = cells.get(spine[i - 1]!)!;
+      x = p.cx - p.w / 2 - Math.max(GRID_GAP, labelOf(spine[i - 1]!, id)) - s.width / 2;
     }
-    cells.set(id, { cx: x, cy: 0, w: s.width, h: s.height, row: 0 });
+    const row = i < firstHalf ? 0 : 1;
+    cells.set(id, { cx: x, cy: row * ROW_PITCH, w: s.width, h: s.height, row });
   });
   // The final end of the main path sits under the task before it, as
   // in the mockup: the row stays short enough to read at full size.
@@ -431,7 +444,7 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
   if (beforeLast !== undefined && byId.get(beforeLast)!.type === "task") {
     const p = cells.get(beforeLast)!;
     const c = cells.get(last)!;
-    cells.set(last, { ...c, cx: p.cx, cy: ROW_PITCH, row: 1 });
+    cells.set(last, { ...c, cx: p.cx, cy: p.cy + ROW_PITCH, row: p.row + 1 });
   }
 
   // 2. Every other node, in topological order: below the right-most
@@ -461,7 +474,11 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
     cells.set(id, cell);
   }
 
-  // 3. The route kind of every link.
+  // 3. The route kind of every link. The spine steps of a wrapped
+  // path run against the reading direction on their row: they take the
+  // straight leftward link. Every other leftward link on one row takes
+  // a lane over the row, as before.
+  const spinePos = new Map(spine.map((id, i) => [id, i] as const));
   const rowTop = (row: number) =>
     Math.min(...[...cells.values()].filter((c) => c.row === row).map((c) => c.cy - c.h / 2));
   const lanes: ProcessEdge[] = [];
@@ -473,8 +490,11 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
         (c) => c.row === s.row && c !== s && c !== t &&
           c.cx > Math.min(s.cx, t.cx) && c.cx < Math.max(s.cx, t.cx),
       );
-      if (t.cx > s.cx && !between) {
+      if (!between && t.cx > s.cx) {
         return { edge, from: "E", to: "W", build: (a, b) => [a, b] };
+      }
+      if (!between && spinePos.get(edge.to) === (spinePos.get(edge.from) ?? -2) + 1) {
+        return { edge, from: "W", to: "E", build: (a, b) => [a, b] };
       }
       lanes.push(edge);
       // A lane over the row: step 5 sets its points.
