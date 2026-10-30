@@ -147,3 +147,11 @@ func ChangeProcessUser(definition, message string) string {
 	return "Current process file (JSON):\n" + definition +
 		"\n\nChange request: " + message
 }
+
+// RestateChangeSystem is the system prompt of the restate step of
+// the assistant chat. The model only restates; the file stays as is.
+const RestateChangeSystem = `You restate the change request of a process designer before the process changes.
+You receive the current process file (JSON) and the change request.
+Write one or two short sentences in plain English that say what will change. Use the names of the steps, roles and fields of the file. Start with "You want to".
+Do not invent a step, a role or a field that the request does not name. Do not change the file.
+If the request is not clear, say in one sentence what is not clear.`

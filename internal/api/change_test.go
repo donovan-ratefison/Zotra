@@ -350,3 +350,134 @@ func TestChangeDraftUnchanged(t *testing.T) {
 	}
 	checkDefinitionEqual(t, definition)
 }
+
+// The rows of the restate step: R1 to R8.
+
+// postRestate posts one restate request to the handler under test.
+func postRestate(t *testing.T, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	return do(t, "POST", "/api/ai/restate-change", body, "")
+}
+
+// R1.
+func TestRestateAnswersTrimmed(t *testing.T) {
+	srv, count, seen := changeLiveStub(t,
+		[]string{chatEnvelope(`{"restatement":"  You want to add a step.  "}`)})
+	aiLive(t, srv.URL)
+	newTestAPI(t)
+	draftID := chatDraft(t)
+	message := "Add a 12 h deadline to the legal check"
+
+	rec := postRestate(t, changeReq(draftID, message))
+	checkOK(t, rec)
+	if got := decode(t, rec)["restatement"]; got != "You want to add a step." {
+		t.Errorf("restatement = %q", got)
+	}
+	if *count != 1 {
+		t.Fatalf("requests = %d, want 1", *count)
+	}
+	req := requestMessages(t, (*seen)[0])
+	if len(req.Messages) != 2 || req.Messages[0].Content != ai.RestateChangeSystem {
+		t.Error("system message is not RestateChangeSystem")
+	}
+	draft := do(t, "GET", "/api/versions/"+draftID, "", "")
+	version, _ := decode(t, draft)["version"].(map[string]any)
+	def, err := json.Marshal(version["definition"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The store may reorder the keys, so the definitions compare as
+	// parsed values.
+	var have, want any
+	prefix := "Current process file (JSON):\n"
+	user := req.Messages[1].Content
+	suffix := "\n\nChange request: " + message
+	if !strings.HasPrefix(user, prefix) || !strings.HasSuffix(user, suffix) {
+		t.Fatalf("user message is not ChangeProcessUser: %q", user)
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSuffix(strings.TrimPrefix(user, prefix), suffix)), &have); err != nil {
+		t.Fatalf("user message definition does not parse: %v", err)
+	}
+	_ = json.Unmarshal(def, &want)
+	if !reflect.DeepEqual(have, want) {
+		t.Error("user message definition differs from the draft definition")
+	}
+	var format struct {
+		ResponseFormat struct {
+			JSONSchema struct {
+				Name string `json:"name"`
+			} `json:"json_schema"`
+		} `json:"response_format"`
+	}
+	if err := json.Unmarshal([]byte((*seen)[0]), &format); err != nil {
+		t.Fatal(err)
+	}
+	if format.ResponseFormat.JSONSchema.Name != "restatement" {
+		t.Errorf("schema name = %q, want restatement", format.ResponseFormat.JSONSchema.Name)
+	}
+}
+
+// R2 to R4: one AI call, then 422.
+func TestRestateInvalidOutput(t *testing.T) {
+	rows := []struct{ name, body string }{
+		{"R2: blank restatement", chatEnvelope(`{"restatement":"   "}`)},
+		{"R3: not json", chatEnvelope("not json")},
+		{"R4: no choices", `{"choices":[]}`},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			srv, count, _ := changeLiveStub(t, []string{row.body})
+			aiLive(t, srv.URL)
+			newTestAPI(t)
+			draftID := chatDraft(t)
+			rec := postRestate(t, changeReq(draftID, "Add a deadline."))
+			checkError(t, rec, http.StatusUnprocessableEntity, "invalid_output", msgNoContent)
+			if *count != 1 {
+				t.Errorf("requests = %d, want 1", *count)
+			}
+		})
+	}
+}
+
+// R5.
+func TestRestateAIOff(t *testing.T) {
+	t.Setenv("ZOTRA_AI_MODE", "off")
+	t.Setenv("ZOTRA_AI_CACHE_DIR", t.TempDir())
+	newTestAPI(t)
+	draftID := chatDraft(t)
+	rec := postRestate(t, changeReq(draftID, "Add a deadline."))
+	checkError(t, rec, http.StatusServiceUnavailable, "ai_unavailable",
+		"The AI layer is off.")
+}
+
+// R6 to R8: the shared checks, no AI call.
+func TestRestateRefusals(t *testing.T) {
+	rows := []struct {
+		name   string
+		body   string
+		status int
+		code   string
+		msg    string
+	}{
+		{"R6: body does not parse", "{",
+			http.StatusBadRequest, "invalid_json", msgInvalidJSON},
+		{"R7: empty message", changeReq(changeSeedVersionID, ""),
+			http.StatusBadRequest, "invalid_message", msgChangeInvalidMessage},
+		{"R7: message of 1001 characters",
+			changeReq(changeSeedVersionID, strings.Repeat("a", 1001)),
+			http.StatusBadRequest, "invalid_message", msgChangeInvalidMessage},
+		{"R8: unknown version",
+			changeReq("00000000-0000-0000-0000-000000000009", "Add a deadline."),
+			http.StatusNotFound, "not_found", "no version 00000000-0000-0000-0000-000000000009"},
+		{"R8: published version", changeReq(changeSeedVersionID, "Add a deadline."),
+			http.StatusConflict, "conflict",
+			fmt.Sprintf("version %s is not a draft", changeSeedVersionID)},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			aiRefusalEnv(t)
+			newTestAPI(t)
+			checkError(t, postRestate(t, row.body), row.status, row.code, row.msg)
+		})
+	}
+}

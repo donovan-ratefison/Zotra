@@ -1,4 +1,5 @@
-// The assistant chat: POST /api/ai/change-process. The designer
+// The assistant chat: POST /api/ai/change-process (and the restate
+// step, POST /api/ai/restate-change). The designer
 // types a change of the process in plain words, the model answers
 // with one full process document, and only a document that passes
 // the full validation and the citation check against the current
@@ -35,29 +36,8 @@ type changeBody struct {
 // "attempts": <n>}. After 3 failed attempts it answers 422 with the
 // errors of the last attempt.
 func (d apiDeps) changeProcess(w http.ResponseWriter, r *http.Request) {
-	// 1. The body.
-	var body changeBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", msgInvalidJSON)
-		return
-	}
-	// 2. The message, in characters.
-	message := strings.TrimSpace(body.Message)
-	if message == "" || utf8.RuneCountInString(message) > 1000 {
-		writeError(w, http.StatusBadRequest, "invalid_message", msgChangeInvalidMessage)
-		return
-	}
-	// 3. The version. An unknown version maps to 404 not_found
-	// through the store mapping.
-	v, err := d.st.GetVersion(r.Context(), body.VersionID)
-	if err != nil {
-		writeStoreError(w, err)
-		return
-	}
-	// 4. The change applies to a draft.
-	if v.Status != store.StatusDraft {
-		writeError(w, http.StatusConflict, "conflict",
-			fmt.Sprintf("version %s is not a draft", body.VersionID))
+	v, message, ok := d.changeRequest(w, r)
+	if !ok {
 		return
 	}
 	// 5. The citation ids of the current definition: the model may
@@ -122,4 +102,78 @@ func (d apiDeps) changeProcess(w http.ResponseWriter, r *http.Request) {
 	}
 	writeErrorDetails(w, http.StatusUnprocessableEntity, "invalid_output",
 		msgExplainFailed, lastErrs)
+}
+
+// changeRequest reads the body of a chat request and runs the checks
+// that both chat routes share. It writes the error answer and returns
+// ok false when a check fails.
+func (d apiDeps) changeRequest(w http.ResponseWriter, r *http.Request) (v store.Version, message string, ok bool) {
+	// 1. The body.
+	var body changeBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", msgInvalidJSON)
+		return v, "", false
+	}
+	// 2. The message, in characters.
+	message = strings.TrimSpace(body.Message)
+	if message == "" || utf8.RuneCountInString(message) > 1000 {
+		writeError(w, http.StatusBadRequest, "invalid_message", msgChangeInvalidMessage)
+		return v, "", false
+	}
+	// 3. The version. An unknown version maps to 404 not_found
+	// through the store mapping.
+	v, err := d.st.GetVersion(r.Context(), body.VersionID)
+	if err != nil {
+		writeStoreError(w, err)
+		return v, "", false
+	}
+	// 4. The change applies to a draft.
+	if v.Status != store.StatusDraft {
+		writeError(w, http.StatusConflict, "conflict",
+			fmt.Sprintf("version %s is not a draft", body.VersionID))
+		return v, "", false
+	}
+	return v, message, true
+}
+
+// restateSchema is the response schema of the restate step.
+var restateSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"restatement": map[string]any{"type": "string"},
+	},
+	"required":             []string{"restatement"},
+	"additionalProperties": false,
+}
+
+// restateChange restates one request of the designer in one or two
+// sentences, before any change. The answer is {"restatement": <text>}.
+// It makes one AI call, with no repair loop.
+func (d apiDeps) restateChange(w http.ResponseWriter, r *http.Request) {
+	v, message, ok := d.changeRequest(w, r)
+	if !ok {
+		return
+	}
+	messages := []ai.Message{
+		{Role: "system", Content: ai.RestateChangeSystem},
+		{Role: "user", Content: ai.ChangeProcessUser(string(v.Definition), message)},
+	}
+	ansBody, err := d.ai.ChatCompletion(r.Context(), messages, "restatement", restateSchema)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "ai_unavailable", aiErrorText(err))
+		return
+	}
+	var answer struct {
+		Restatement string `json:"restatement"`
+	}
+	content, ok := answerContent(ansBody)
+	if ok {
+		ok = json.Unmarshal([]byte(content), &answer) == nil
+	}
+	text := strings.TrimSpace(answer.Restatement)
+	if !ok || text == "" {
+		writeError(w, http.StatusUnprocessableEntity, "invalid_output", msgNoContent)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"restatement": text})
 }

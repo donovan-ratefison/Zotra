@@ -115,3 +115,20 @@ export async function changeProcess(
   }
   return (await res.json()) as ChangeAnswer;
 }
+
+// restateChange asks the AI to restate one request of the designer,
+// before any change of the draft.
+export async function restateChange(
+  versionId: string,
+  message: string,
+): Promise<{ restatement: string }> {
+  const res = await fetch("/api/ai/restate-change", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ version_id: versionId, message }),
+  });
+  if (!res.ok) {
+    throw await apiError(res);
+  }
+  return (await res.json()) as { restatement: string };
+}

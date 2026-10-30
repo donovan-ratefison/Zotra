@@ -20,9 +20,10 @@ import {
   X,
 } from "lucide-react";
 import { ApiError, updateDraft } from "./api";
-import { changeProcess } from "./ai-api";
+import { changeProcess, restateChange } from "./ai-api";
 import { diffChips, diffDefinitions, type DiffRow } from "./diff";
 import { Button } from "@/ui/button";
+import { Switch } from "@/ui/switch";
 import type { ProcessDefinition, Version } from "./types";
 
 const VIOLET = "#7c3aed";
@@ -48,12 +49,19 @@ const HINT_TITLE =
   "Describe a change of the process, for example: add a 12 h deadline to the legal officer";
 const CLOSED_TITLE = "Open a draft to change the process with the AI.";
 const PENDING_TITLE = "Accept or reject the proposal first.";
+const CONFIRM_TEXT = "Yes, make the change";
+const REPHRASE_TEXT = "Rephrase your request below.";
+const RESTATE_TITLE =
+  "The assistant restates your request and waits for your OK before it changes the draft.";
+const RESTATE_KEY = "zotra.chat.restateFirst";
 
 // ChatTurn is one message of the thread: the user text, or the main
 // text of one AI state, with the diff of a proposal and the details
 // of a validation error.
 export interface ChatTurn {
-  kind: "user" | "waiting" | "proposal" | "none" | "accepted" | "rejected" | "error";
+  kind:
+    | "user" | "waiting" | "restate" | "proposal" | "none" | "accepted" | "rejected"
+    | "error";
   text: string;
   chips: string[];
   rows: DiffRow[];
@@ -72,7 +80,10 @@ export type ChatEvent =
   | { type: "accept-ok"; versionNumber: number }
   | { type: "accept-stale" }
   | { type: "save-failed" }
-  | { type: "reject" };
+  | { type: "reject" }
+  | { type: "restated"; text: string }
+  | { type: "confirm" }
+  | { type: "rephrase" };
 
 // chatEvent is the pure transition of the thread. It returns the new
 // state and touches nothing else. An event that needs a specific
@@ -89,6 +100,40 @@ export function chatEvent(state: ChatState, event: ChatEvent): ChatState {
           ...state.turns,
           { kind: "user", text: event.text, chips: [], rows: [], details: [] },
           { kind: "waiting", text: WAITING_TEXT, chips: [], rows: [], details: [] },
+        ],
+      };
+    case "restated":
+      if (last === undefined || last.kind !== "waiting") {
+        return state;
+      }
+      return {
+        notice: null,
+        turns: [
+          ...withoutLast,
+          { kind: "restate", text: event.text, chips: [], rows: [], details: [] },
+        ],
+      };
+    case "confirm":
+      if (last === undefined || last.kind !== "restate") {
+        return state;
+      }
+      return {
+        notice: null,
+        turns: [
+          ...state.turns,
+          { kind: "user", text: CONFIRM_TEXT, chips: [], rows: [], details: [] },
+          { kind: "waiting", text: WAITING_TEXT, chips: [], rows: [], details: [] },
+        ],
+      };
+    case "rephrase":
+      if (last === undefined || last.kind !== "restate") {
+        return state;
+      }
+      return {
+        notice: null,
+        turns: [
+          ...state.turns,
+          { kind: "none", text: REPHRASE_TEXT, chips: [], rows: [], details: [] },
         ],
       };
     case "answer": {
@@ -173,11 +218,16 @@ export function chatEvent(state: ChatState, event: ChatEvent): ChatState {
 
 // ChatTurnView renders one thread message. An AI message sits left,
 // with a round violet avatar and its content in a card with border.
-function ChatTurnView({ turn, accepting, onAccept, onReject }: {
+function ChatTurnView({
+  turn, isLast, accepting, onAccept, onReject, onConfirm, onRephrase,
+}: {
   turn: ChatTurn;
+  isLast: boolean;
   accepting: boolean;
   onAccept?: () => void;
   onReject?: () => void;
+  onConfirm?: () => void;
+  onRephrase?: () => void;
 }) {
   if (turn.kind === "user") {
     return (
@@ -205,6 +255,21 @@ function ChatTurnView({ turn, accepting, onAccept, onReject }: {
             <Loader2 size={13} className="animate-spin" aria-hidden="true" />
             {turn.text}
           </p>
+        )}
+        {turn.kind === "restate" && (
+          <>
+            <p>{turn.text}</p>
+            {isLast && (
+              <div className="mt-2 flex items-center gap-2">
+                <Button size="xs" onClick={() => onConfirm?.()}>
+                  {CONFIRM_TEXT}
+                </Button>
+                <Button variant="outline" size="xs" onClick={() => onRephrase?.()}>
+                  No, rephrase
+                </Button>
+              </div>
+            )}
+          </>
         )}
         {turn.kind === "proposal" && (
           <>
@@ -305,6 +370,8 @@ export function ChatPanelView(props: {
   state: ChatState;
   version: Version;
   collapsed: boolean;
+  restateFirst?: boolean;
+  onRestateFirstChange?: (on: boolean) => void;
   listHeight?: number;
   draft?: string;
   onDraftChange?: (text: string) => void;
@@ -312,6 +379,8 @@ export function ChatPanelView(props: {
   onToggle?: () => void;
   onAccept?: () => void;
   onReject?: () => void;
+  onConfirm?: () => void;
+  onRephrase?: () => void;
   accepting?: boolean;
 }): ReactElement {
   const { state, version, collapsed, listHeight = 220 } = props;
@@ -354,6 +423,19 @@ export function ChatPanelView(props: {
           Without AI, you can still edit everything by hand.
         </span>
         <span className="flex-1" />
+        <Switch
+          id="restate-first"
+          size="sm"
+          checked={props.restateFirst ?? true}
+          onCheckedChange={(on) => props.onRestateFirstChange?.(on)}
+        />
+        <label
+          htmlFor="restate-first"
+          title={RESTATE_TITLE}
+          className="shrink-0 text-[12px] text-zinc-600"
+        >
+          Restate first
+        </label>
         <Button
           variant="ghost"
           size="sm"
@@ -377,9 +459,12 @@ export function ChatPanelView(props: {
               <ChatTurnView
                 key={i}
                 turn={turn}
+                isLast={i === state.turns.length - 1}
                 accepting={props.accepting ?? false}
                 onAccept={props.onAccept}
                 onReject={props.onReject}
+                onConfirm={props.onConfirm}
+                onRephrase={props.onRephrase}
               />
             ))}
           </div>
@@ -431,19 +516,45 @@ export async function requestChange(opts: {
     const answer = await opts.change(opts.version.id, opts.text);
     return { type: "answer", base: opts.def, next: answer.definition };
   } catch (err) {
-    if (err instanceof ApiError) {
-      return {
-        type: "error",
-        status: err.status,
-        message: err.message,
-        details: err.details.map((detail) => {
-          const message = (detail as { message?: unknown } | null)?.message;
-          return typeof message === "string" ? message : String(detail);
-        }),
-      };
-    }
-    return { type: "error", status: 0, message: String(err), details: [] };
+    return errorEvent(err);
   }
+}
+
+// requestRestate asks the AI to restate the request and maps the
+// answer onto one event.
+export async function requestRestate(opts: {
+  version: Version;
+  text: string;
+  restate: typeof restateChange;
+}): Promise<ChatEvent> {
+  try {
+    const answer = await opts.restate(opts.version.id, opts.text);
+    return { type: "restated", text: answer.restatement };
+  } catch (err) {
+    return errorEvent(err);
+  }
+}
+
+// errorEvent maps one failed AI call onto the error event.
+function errorEvent(err: unknown): ChatEvent {
+  if (err instanceof ApiError) {
+    return {
+      type: "error",
+      status: err.status,
+      message: err.message,
+      details: err.details.map((detail) => {
+        const message = (detail as { message?: unknown } | null)?.message;
+        return typeof message === "string" ? message : String(detail);
+      }),
+    };
+  }
+  return { type: "error", status: 0, message: String(err), details: [] };
+}
+
+// readRestateFirst reads the stored switch value: only "0" turns the
+// restate step off.
+export function readRestateFirst(raw: string | null): boolean {
+  return raw !== "0";
 }
 
 // acceptProposal applies the guard, then saves. It returns "stale"
@@ -471,7 +582,8 @@ export async function acceptProposal(opts: {
 // AssistantChat holds the thread, the collapse flag and the pending
 // proposal, maps its async calls onto chatEvent, and renders the
 // view. The thread lives here only: no storage, and the model gets
-// only the current request, no history.
+// only the current request, no history. Only the restate switch is
+// stored, in localStorage.
 export function AssistantChat({
   version,
   def,
@@ -493,16 +605,59 @@ export function AssistantChat({
     snapshot: ProcessDefinition;
     proposal: ProcessDefinition;
   } | null>(null);
+  const [pendingRequest, setPendingRequest] = useState("");
+  const [restateFirst, setRestateFirst] = useState(() => {
+    if (typeof localStorage === "undefined") {
+      return true;
+    }
+    try {
+      return readRestateFirst(localStorage.getItem(RESTATE_KEY));
+    } catch {
+      return true;
+    }
+  });
+
+  function changeRestateFirst(on: boolean) {
+    setRestateFirst(on);
+    try {
+      localStorage.setItem(RESTATE_KEY, on ? "1" : "0");
+    } catch {
+      // The switch still works for this page.
+    }
+  }
 
   function send() {
     const text = draft.trim();
     if (text === "" || accepting) {
       return;
     }
-    // The def of the send is the snapshot of the accept guard.
-    const snapshot = def;
     setState((current) => chatEvent(current, { type: "send", text }));
     setDraft("");
+    if (!restateFirst) {
+      runChange(text);
+      return;
+    }
+    setPendingRequest(text);
+    void requestRestate({ version, text, restate: restateChange }).then((event) =>
+      setState((current) => chatEvent(current, event)),
+    );
+  }
+
+  function confirm() {
+    setState((current) => chatEvent(current, { type: "confirm" }));
+    runChange(pendingRequest);
+  }
+
+  function rephrase() {
+    setState((current) => chatEvent(current, { type: "rephrase" }));
+    setDraft(pendingRequest);
+  }
+
+  // runChange asks the AI for the changed process. The last turn is
+  // waiting when it starts.
+  function runChange(text: string) {
+    // The def of the request is the snapshot of the accept guard.
+    const snapshot = def;
     void requestChange({ version, def: snapshot, text, change: changeProcess }).then(
       (event) => {
         setState((current) => chatEvent(current, event));
@@ -564,6 +719,8 @@ export function AssistantChat({
       state={state}
       version={version}
       collapsed={collapsed}
+      restateFirst={restateFirst}
+      onRestateFirstChange={changeRestateFirst}
       listHeight={listHeight}
       draft={draft}
       onDraftChange={setDraft}
@@ -571,6 +728,8 @@ export function AssistantChat({
       onToggle={() => setCollapsed((v) => !v)}
       onAccept={() => void accept()}
       onReject={reject}
+      onConfirm={confirm}
+      onRephrase={rephrase}
       accepting={accepting}
     />
   );

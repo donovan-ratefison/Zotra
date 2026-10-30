@@ -13,7 +13,9 @@ import {
   ChatPanelView,
   acceptProposal,
   chatEvent,
+  readRestateFirst,
   requestChange,
+  requestRestate,
   type ChatState,
 } from "./AssistantChat";
 import { diffChips, diffDefinitions } from "./diff";
@@ -361,5 +363,96 @@ describe("diagram proposed flags", () => {
     const html = renderToString(createElement(TaskCard, { ...cardProps }));
     expect(html).not.toContain("Proposed");
     expect(html).toContain('data-ghost="false"');
+  });
+});
+
+// The rows of the restate step: C1 to C10.
+const restated = chatEvent(sent, { type: "restated", text: "You want to X." });
+
+describe("restate step", () => {
+  test("C1: restated replaces the waiting turn", () => {
+    expect(restated.turns.at(-1)).toEqual({
+      kind: "restate", text: "You want to X.", chips: [], rows: [], details: [],
+    });
+    expect(restated.turns).toHaveLength(2);
+  });
+
+  test("C2: restated after a proposal leaves the state", () => {
+    expect(chatEvent(proposed, { type: "restated", text: "x" })).toBe(proposed);
+  });
+
+  test("C3: confirm appends the yes turn and the waiting turn", () => {
+    const next = chatEvent(restated, { type: "confirm" });
+    expect(next.turns.slice(-2)).toEqual([
+      { kind: "user", text: "Yes, make the change", chips: [], rows: [], details: [] },
+      { kind: "waiting", text: "Thinking...", chips: [], rows: [], details: [] },
+    ]);
+  });
+
+  test("C4: confirm after a none turn leaves the state", () => {
+    const none = chatEvent(restated, { type: "rephrase" });
+    expect(chatEvent(none, { type: "confirm" })).toBe(none);
+  });
+
+  test("C5: rephrase appends the rephrase turn", () => {
+    expect(chatEvent(restated, { type: "rephrase" }).turns.at(-1)).toEqual({
+      kind: "none", text: "Rephrase your request below.", chips: [], rows: [], details: [],
+    });
+  });
+
+  test("C6: rephrase while waiting leaves the state", () => {
+    expect(chatEvent(sent, { type: "rephrase" })).toBe(sent);
+  });
+
+  test("C7: a last restate turn shows the two buttons", () => {
+    const html = renderChat(restated, draftVersion);
+    expect(html).toContain("You want to X.");
+    expect(html).toContain("Yes, make the change");
+    expect(html).toContain("No, rephrase");
+  });
+
+  test("C8: a restate turn that is not last has no buttons", () => {
+    const html = renderChat(chatEvent(restated, { type: "rephrase" }), draftVersion);
+    expect(html).toContain("You want to X.");
+    expect(html).not.toContain("Yes, make the change");
+    expect(html).not.toContain("No, rephrase");
+  });
+
+  test("C9: the header switch shows its state", () => {
+    for (const on of [true, false]) {
+      const html = renderToString(
+        createElement(ChatPanelView, {
+          state: EMPTY, version: draftVersion, collapsed: false, restateFirst: on,
+        }),
+      );
+      expect(html).toContain('id="restate-first"');
+      expect(html).toContain("Restate first");
+      expect(html).toContain(`aria-checked="${on}"`);
+    }
+  });
+
+  test("C10: only the stored value 0 turns the step off", () => {
+    expect(readRestateFirst("0")).toBe(false);
+    expect(readRestateFirst("1")).toBe(true);
+    expect(readRestateFirst(null)).toBe(true);
+    expect(readRestateFirst("x")).toBe(true);
+  });
+
+  test("requestRestate maps the answer and an ApiError", async () => {
+    expect(
+      await requestRestate({
+        version: draftVersion,
+        text: "add a step",
+        restate: async () => ({ restatement: "You want to add a step." }),
+      }),
+    ).toEqual({ type: "restated", text: "You want to add a step." });
+    const event = await requestRestate({
+      version: draftVersion,
+      text: "add a step",
+      restate: async () => {
+        throw new ApiError(503, "ai_unavailable", "off", []);
+      },
+    });
+    expect(event).toMatchObject({ type: "error", status: 503 });
   });
 });
