@@ -397,6 +397,21 @@ describe("top bar", () => {
     expect(html).toContain("New draft from this version");
   });
 
+  test("B1: the top bar shows the Zotra wordmark, not the old tile", () => {
+    const html = renderToString(
+      createElement(TopBar, {
+        def: miniDefinition,
+        version: versionRow(1, "published"),
+        versions: [versionRow(1, "published")],
+        versionsPending: false,
+        onVersionsChanged: () => {},
+      }),
+    );
+    expect(html).toContain('src="/zotra-wordmark.svg"');
+    expect(html).toContain('alt="Zotra"');
+    expect(html).not.toContain('rx="6"');
+  });
+
   test("F3: the top bar shows the unsaved badge while the draft is dirty", () => {
     const topBarProps = {
       def: miniDefinition,

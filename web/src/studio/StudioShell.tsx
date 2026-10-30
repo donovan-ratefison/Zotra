@@ -749,19 +749,7 @@ export function TopBar({
       className="flex h-12 w-full shrink-0 items-center gap-3 border-b px-4"
       style={{ background: "var(--card)" }}
     >
-      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
-        <rect width="24" height="24" rx="6" fill="#18181b" />
-        <path
-          d="M7 7.5h10L7 16.5h10"
-          fill="none"
-          stroke="#fff"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <circle cx="17" cy="7.5" r="1.6" fill="#fff" />
-      </svg>
-      <span className="font-semibold">Zotra</span>
+      <img src="/zotra-wordmark.svg" alt="Zotra" width={76} height={22} className="shrink-0" />
       <span className="h-5 w-px shrink-0" style={{ background: "var(--border)" }} />
       <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1 text-[13px]">
         <span className="truncate">{def.theme.brand_name}</span>

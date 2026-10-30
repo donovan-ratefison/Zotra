@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 552 160" width="552" height="160" role="img" aria-label="Zotra">
+<title>Zotra</title>
+<defs>
+<mask id="zotra-holes" maskUnits="userSpaceOnUse" x="0" y="0" width="552" height="160"><rect width="552" height="160" fill="#fff"/><circle cx="62" cy="80" r="3.5"/><circle cx="286" cy="30" r="3.5"/><circle cx="349" cy="30" r="3.5"/></mask>
+<clipPath id="zotra-baseline"><rect width="552" height="137"/></clipPath>
+</defs>
+<g mask="url(#zotra-holes)">
+<g fill="#1a1523"><rect x="22" y="23" width="80" height="14"/><rect x="22" y="123" width="80" height="14"/><rect x="279" y="37" width="14" height="100"/><rect x="342" y="46" width="14" height="91"/><circle cx="172" cy="80.75" r="4.5"/></g>
+<g fill="none" stroke="#1a1523" stroke-width="14"><path d="M213.57 51.64A50.75 50.75 0 1 1 172 30"/><path d="M171 30H378A25 25 0 0 1 378 80L426.6 146" stroke-miterlimit="4" clip-path="url(#zotra-baseline)"/></g>
+<polygon fill="#d9cfe6" points="29.32,123 69.96,86.05 62,80 54.04,73.95"/>
+<polygon fill="#820ad1" points="94.68,37 69.96,86.05 62,80 54.04,73.95"/>
+<polygon fill="#820ad1" points="484,23 526,137 442,137"/>
+</g>
+</svg>
