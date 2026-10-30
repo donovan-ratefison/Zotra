@@ -5,8 +5,14 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ChevronRight, Clock } from "lucide-react";
+import { ChevronRight, Clock, MoreHorizontal, X } from "lucide-react";
 import { Button } from "@/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/ui/dropdown-menu";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
 import {
@@ -19,6 +25,7 @@ import {
 import { Switch } from "@/ui/switch";
 import { Textarea } from "@/ui/textarea";
 import { updateDraft } from "./api";
+import { removeEdge, removeNode } from "./edit";
 import { edgePillText, roleColor } from "./layout";
 import {
   addCheck,
@@ -65,12 +72,17 @@ export function NodePanel({
   def,
   version,
   onSaved,
+  onStructure,
 }: {
   def: ProcessDefinition;
   version: VersionSummary;
   onSaved: () => void;
+  // The structure save of the shell (remove a link, delete a step).
+  // Without it, the panel shows no structure control.
+  onStructure?: (next: ProcessDefinition) => void;
 }) {
   const selectedNodeId = useStudioStore((s) => s.selectedNodeId);
+  const select = useStudioStore((s) => s.select);
   const tab = useStudioStore((s) => s.tab);
   const setTab = useStudioStore((s) => s.setTab);
   const setDirty = useStudioStore((s) => s.setDirty);
@@ -88,6 +100,7 @@ export function NodePanel({
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const editable = version.status === "draft";
+  const structure = editable ? onStructure : undefined;
   const dirty = working !== def;
 
   // The top bar shows the unsaved sign while this panel holds
@@ -135,9 +148,35 @@ export function NodePanel({
 
   const header = (
     <div className="flex flex-col gap-1.5 border-b px-4 pb-3 pt-3.5">
-      <span className="text-[11.5px] font-medium text-muted-foreground">
-        {`${TYPE_TEXT[node.type]} · Step ${stepIndex + 1}`}
-      </span>
+      <div className="flex items-center justify-between">
+        <span className="text-[11.5px] font-medium text-muted-foreground">
+          {`${TYPE_TEXT[node.type]} · Step ${stepIndex + 1}`}
+        </span>
+        {structure !== undefined && node.type !== "start" && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="ghost" size="icon-xs" aria-label="Step actions">
+                <MoreHorizontal />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {/* A delete with unsaved edits would drop them: save first. */}
+              <DropdownMenuItem
+                disabled={dirty}
+                onSelect={() => {
+                  const next = removeNode(def, node.id);
+                  if (next !== null) {
+                    select(null);
+                    structure(next);
+                  }
+                }}
+              >
+                Delete step
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
       <h2 className="text-[17px] font-semibold leading-tight">{node.name}</h2>
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <RoleChip def={def} node={node} />
@@ -256,7 +295,7 @@ export function NodePanel({
       </div>
       <div className="flex flex-col gap-1.5">
         <span className="text-[12.5px] font-medium">Outgoing links</span>
-        <OutgoingLinks def={def} node={node} />
+        <OutgoingLinks def={def} node={node} onStructure={structure} />
       </div>
     </div>
   );
@@ -519,7 +558,11 @@ function RoleChip({ def, node }: { def: ProcessDefinition; node: ProcessNode }) 
   );
 }
 
-function OutgoingLinks({ def, node }: { def: ProcessDefinition; node: ProcessNode }) {
+function OutgoingLinks({ def, node, onStructure }: {
+  def: ProcessDefinition;
+  node: ProcessNode;
+  onStructure?: (next: ProcessDefinition) => void;
+}) {
   const outgoing = def.edges.filter((e) => e.from === node.id);
   if (outgoing.length === 0) {
     return (
@@ -549,6 +592,18 @@ function OutgoingLinks({ def, node }: { def: ProcessDefinition; node: ProcessNod
               </>
             )}
             <span className="truncate">{target?.name ?? edge.to}</span>
+            {onStructure !== undefined && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="ml-auto"
+                aria-label={`Remove the link to ${target?.name ?? edge.to}`}
+                onClick={() => onStructure(removeEdge(def, edge.id))}
+              >
+                <X size={12} />
+              </Button>
+            )}
           </li>
         );
       })}

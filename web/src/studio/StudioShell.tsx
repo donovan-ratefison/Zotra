@@ -30,6 +30,7 @@ import { PolicyPanel } from "./PolicyPanel";
 import { ProcessDiagram } from "./diagram";
 import { AssistantChat } from "./AssistantChat";
 import { ImportDialog } from "./ImportDialog";
+import { addNode, connect, type AddType } from "./edit";
 import { NodePanel, UnsavedBadge } from "./NodePanel";
 import { ProcessPanel } from "./ProcessPanel";
 import { ProposalBar } from "./ProposalBar";
@@ -380,6 +381,50 @@ export function StudioShell() {
     void queryClient.invalidateQueries({ queryKey: ["version", versionId] });
   }
 
+  // saveStructure saves one structure edit (add, link, delete) at
+  // once, so the undo reverts it. Unsaved edits of the step panel
+  // would be lost, so it refuses them. It returns true on a save.
+  async function saveStructure(next: ProcessDefinition): Promise<boolean> {
+    if (version === null) {
+      return false;
+    }
+    if (useStudioStore.getState().dirty) {
+      toast.error("Save the step changes first.");
+      return false;
+    }
+    try {
+      await updateDraft(version.id, next);
+      onSavedDraft();
+      return true;
+    } catch {
+      toast.error("The change did not save.");
+      return false;
+    }
+  }
+
+  // onAdd appends a new step, then opens it in the panel.
+  async function onAdd(type: AddType) {
+    if (loadedDef === undefined) {
+      return;
+    }
+    const r = addNode(loadedDef, type);
+    if (await saveStructure(r.def)) {
+      select(r.id);
+    }
+  }
+
+  function onConnect(from: string, to: string) {
+    if (loadedDef === undefined) {
+      return;
+    }
+    const next = connect(loadedDef, from, to);
+    if (next === null) {
+      toast.error("This link is not allowed.");
+      return;
+    }
+    void saveStructure(next);
+  }
+
   // undo writes the previous definition back as a normal draft
   // save. Unsaved edits of the step panel are dropped with it.
   const undo = useCallback(async () => {
@@ -663,6 +708,9 @@ export function StudioShell() {
     content = <Loading />;
   } else {
     const loaded = q3.data;
+    // The proposal branch renders first, so no proposal is open here.
+    const editing =
+      mode === "design" && version.status === "draft" && chatProposal === null;
     content = (
       <div className="flex h-screen flex-col">
         <TopBar
@@ -699,6 +747,7 @@ export function StudioShell() {
                     }
                     onCitationClick={onCitationClick}
                     highlightNodeIds={selectedNodeId === null ? canvasFocus : null}
+                    edit={editing ? { onAdd: (t) => void onAdd(t), onConnect } : null}
                   />
                 </div>
                 {policyBlock}
@@ -769,6 +818,7 @@ export function StudioShell() {
                     def={loaded.definition}
                     version={version}
                     onSaved={onSavedDraft}
+                    onStructure={editing ? (next) => void saveStructure(next) : undefined}
                   />
                 )}
               </aside>

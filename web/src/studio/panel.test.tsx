@@ -1,5 +1,6 @@
 // The 27 test rows of the panel brief, in order, plus the F rows of
-// lot fb-003 (unsaved badge and reserved corner).
+// lot fb-003 (unsaved badge and reserved corner), and the 124 rows
+// of the structure controls.
 
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
@@ -123,6 +124,7 @@ function renderNodePanel(
   version: VersionSummary,
   state: { selectedNodeId: string | null; tab: PanelTab },
   def: ProcessDefinition = panelDefinition,
+  onStructure?: (next: ProcessDefinition) => void,
 ): string {
   setStudioStore(state);
   return renderToString(
@@ -130,6 +132,7 @@ function renderNodePanel(
       def,
       version,
       onSaved: () => {},
+      onStructure,
     }),
   );
 }
@@ -425,5 +428,50 @@ describe("unsaved badge and reserved corner", () => {
     expect(html).toContain("bg-amber-500/10");
     expect(html).toContain("text-amber-700");
     expect(html).toContain('bg-amber-500" aria-hidden="true"');
+  });
+});
+
+describe("structure controls", () => {
+  const general = { tab: "general" as PanelTab };
+
+  test("124-18: a draft task with onStructure shows the menu and a remove button per link", () => {
+    const html = renderNodePanel(
+      draftVersion,
+      { ...general, selectedNodeId: "entry" },
+      panelDefinition,
+      () => {},
+    );
+    expect(html).toContain('aria-label="Step actions"');
+    // entry has one outgoing link: e2 to Review.
+    expect(html.match(/aria-label="Remove the link to /g)).toHaveLength(1);
+    expect(html).toContain('aria-label="Remove the link to Review"');
+  });
+
+  test("124-19: without onStructure the panel shows neither control", () => {
+    const html = renderNodePanel(draftVersion, { ...general, selectedNodeId: "entry" });
+    expect(html).not.toContain("Step actions");
+    expect(html).not.toContain("Remove the link to");
+  });
+
+  test("124-20: a published version shows neither control", () => {
+    const html = renderNodePanel(
+      publishedVersion,
+      { ...general, selectedNodeId: "entry" },
+      panelDefinition,
+      () => {},
+    );
+    expect(html).not.toContain("Step actions");
+    expect(html).not.toContain("Remove the link to");
+  });
+
+  test("124-21: the start node has no menu but keeps its remove button", () => {
+    const html = renderNodePanel(
+      draftVersion,
+      { ...general, selectedNodeId: "start" },
+      panelDefinition,
+      () => {},
+    );
+    expect(html).not.toContain("Step actions");
+    expect(html).toContain('aria-label="Remove the link to Application entry"');
   });
 });

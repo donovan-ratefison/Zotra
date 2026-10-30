@@ -44,28 +44,43 @@ import {
   type LabelPos,
 } from "./layout";
 import { initials, type CaseView } from "./case-view";
+import { EditToolbar, type AddType } from "./edit";
 import type { CoverageReport } from "./case-api";
 import type { NodeType, ProcessDefinition, ProcessNode } from "./types";
 
 // React Flow renders an edge only when both of its nodes carry
 // handle bounds. ELK gives the exact edge points, so the handles
-// carry no geometry of their own: they stay invisible and
-// unconnectable. They sit in the nodeTypes wrappers, because a
-// Handle reads the React Flow store and cannot render outside it.
-function NodeHandles() {
+// carry no geometry of their own. They stay invisible and
+// unconnectable, except on a draft in edit mode: then they show on
+// hover as small circles, and a drag from one to another node links
+// them. They sit in the nodeTypes wrappers, because a Handle reads
+// the React Flow store and cannot render outside it.
+function NodeHandles({ connectable = false }: { connectable?: boolean }) {
+  const style = connectable
+    ? {
+        width: 10,
+        height: 10,
+        border: "1.5px solid var(--primary)",
+        background: "#ffffff",
+        pointerEvents: "auto" as const,
+      }
+    : { opacity: 0, pointerEvents: "none" as const };
+  const className = connectable ? "zhandle" : undefined;
   return (
     <>
       <Handle
         type="target"
         position={Position.Left}
-        isConnectable={false}
-        style={{ opacity: 0, pointerEvents: "none" }}
+        isConnectable={connectable}
+        className={className}
+        style={style}
       />
       <Handle
         type="source"
         position={Position.Right}
-        isConnectable={false}
-        style={{ opacity: 0, pointerEvents: "none" }}
+        isConnectable={connectable}
+        className={className}
+        style={style}
       />
     </>
   );
@@ -103,6 +118,7 @@ type GhostNodeData = DiagramNodeData & {
   proposed?: boolean;
   nodeState?: NodeState | null;
   onCitationClick?: (id: string) => void;
+  connectable?: boolean;
 };
 
 // The citation ids of a node, in order: the node citations, then the
@@ -549,7 +565,7 @@ const nodeTypes: NodeTypes = {
     const d = data as GhostNodeData;
     return (
       <>
-        <NodeHandles />
+        <NodeHandles connectable={d.connectable} />
         <TaskCard
           node={d.node}
           color={d.color}
@@ -567,7 +583,7 @@ const nodeTypes: NodeTypes = {
     const d = data as GhostNodeData;
     return (
       <>
-        <NodeHandles />
+        <NodeHandles connectable={d.connectable} />
         <GatewayNode
           node={d.node}
           selected={d.selected}
@@ -584,7 +600,7 @@ const nodeTypes: NodeTypes = {
     const d = data as GhostNodeData;
     return (
       <>
-        <NodeHandles />
+        <NodeHandles connectable={d.connectable} />
         <EventShape
           node={d.node}
           selected={d.selected}
@@ -601,7 +617,7 @@ const nodeTypes: NodeTypes = {
     const d = data as GhostNodeData;
     return (
       <>
-        <NodeHandles />
+        <NodeHandles connectable={d.connectable} />
         <EventShape
           node={d.node}
           selected={d.selected}
@@ -878,6 +894,8 @@ const ANIMATION_CSS = `
 .ztoken { transition: transform 600ms ease; }
 .zcov { transition: stroke .6s ease; }
 .react-flow .react-flow__node:focus { outline: none; }
+.zhandle { opacity: 0; transition: opacity 150ms; }
+.react-flow__node:hover .zhandle { opacity: 1; }
 .react-flow .react-flow__node.selectable:focus-visible { outline: 2px solid #2563eb; outline-offset: 5px; border-radius: 10px; }
 @media (prefers-reduced-motion: reduce) {
   .zpulse, .zshake { animation: none; }
@@ -967,6 +985,7 @@ export function ProcessDiagram({
   caseView = null,
   coverage = null,
   highlightNodeIds = null,
+  edit = null,
 }: {
   def: ProcessDefinition;
   selectedNodeId: string | null;
@@ -982,8 +1001,16 @@ export function ProcessDiagram({
   // Steps to light from outside (a role row of the process panel);
   // every other step dims.
   highlightNodeIds?: string[] | null;
+  // The edit handlers of a draft: the toolbar adds a step, a drag
+  // between two handles links two steps. Null keeps the diagram read
+  // only.
+  edit?: {
+    onAdd: (type: AddType) => void;
+    onConnect: (from: string, to: string) => void;
+  } | null;
 }) {
   const [layout, setLayout] = useState<Awaited<ReturnType<typeof layoutProcess>> | null>(null);
+  const connectable = edit !== null;
   const wrapRef = useRef<HTMLDivElement | null>(null);
   // The step under the pointer, else the step with keyboard focus:
   // its links light up and the steps it does not touch dim.
@@ -1031,6 +1058,7 @@ export function ProcessDiagram({
         ghost,
         proposed: ghostIds !== undefined && ghostIds.nodes.has(n.id),
         onCitationClick,
+        connectable,
         ...(caseView ? { nodeState: nodeStateOf(n.id, caseView) } : {}),
       },
     }));
@@ -1062,7 +1090,7 @@ export function ProcessDiagram({
         data: { label: initials(caseView.actorName), name: caseView.actorName },
       },
     ];
-  }, [layout, selectedNodeId, ghost, ghostIds, onCitationClick, caseView, lightSet]);
+  }, [layout, selectedNodeId, ghost, ghostIds, onCitationClick, caseView, lightSet, connectable]);
 
   const edges = useMemo(() => {
     if (layout === null) {
@@ -1161,7 +1189,11 @@ export function ProcessDiagram({
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         nodesDraggable={false}
-        nodesConnectable={false}
+        nodesConnectable={connectable}
+        onConnect={edit === null ? undefined : (c) => edit.onConnect(c.source, c.target)}
+        // The default Backspace would delete elements outside the
+        // draft rules: the panel and the undo own the deletions.
+        deleteKeyCode={null}
         elementsSelectable={true}
         minZoom={0.2}
         maxZoom={2}
@@ -1187,6 +1219,11 @@ export function ProcessDiagram({
         )}
         <ZoomControls box={wrapRef} layout={layout} />
         <Legend coverage={coverage} />
+        {edit !== null && (
+          <Panel position="top-center">
+            <EditToolbar onAdd={edit.onAdd} />
+          </Panel>
+        )}
       </ReactFlow>
     </div>
   );
