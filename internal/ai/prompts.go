@@ -96,7 +96,20 @@ Return one JSON document that satisfies the given schema. Rules:
 - The theme carries the bank name from the policy and primary_color "#0f4c45".
 - Each check expression is a CEL boolean expression over the fields of the data model.
 - Put the id of the paragraph that justifies an element in the citations of that node or check.
-- Cite only paragraph ids you received. schema_version is "1".`
+- Cite only paragraph ids you received. schema_version is "1".
+` + ProcessFormatRules
+
+// ProcessFormatRules states the semantic rules that the server checks
+// after the JSON Schema. A model that knows them passes the checks at
+// the first attempt more often.
+const ProcessFormatRules = `Format rules that the server checks:
+- Exactly one start node, and at least one end node. Each end node has an end_result.
+- Each node is reachable from the start node and reaches an end node.
+- A task without decisions has exactly one outgoing edge.
+- A task with decisions has, for each decision, exactly one outgoing edge whose "decision" is that decision.
+- A gateway has exactly one outgoing edge with "is_default": true. Each other edge of the gateway has a "condition". "is_default" is false on every edge that does not leave a gateway.
+- "computed" is null for a value that a person enters. Else it is a CEL expression over other fields.
+- CEL types: money and number fields are doubles, so write their literals with a decimal point (50000.0, 0.33). Integer fields use integer literals (300). Document fields are lists of strings (size(documents) >= 4). Date fields are timestamps (release_date >= now).`
 
 // PolicyToProcessUser formats the process name and the numbered
 // paragraphs as the user message: the name line, one blank line, then
