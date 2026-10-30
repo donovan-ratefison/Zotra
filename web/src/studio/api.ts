@@ -77,16 +77,18 @@ async function postJson<T>(path: string, body?: unknown): Promise<T> {
 
 // requestJson sends one JSON request and returns the parsed answer
 // of a success status. A failure throws the ApiError of the error
-// body.
+// body. A given signal lets the caller abort the request.
 async function requestJson<T>(
   path: string,
   method: string,
   body: unknown,
+  signal?: AbortSignal,
 ): Promise<T> {
   const res = await fetch(path, {
     method,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    ...(signal ? { signal } : {}),
   });
   if (res.ok) {
     return (await res.json()) as T;
@@ -132,11 +134,13 @@ export async function updateDraft(
 export async function policyToProcess(
   name: string,
   paragraphs: Paragraph[],
+  signal?: AbortSignal,
 ): Promise<{ definition: ProcessDefinition; attempts: number }> {
   return requestJson<{ definition: ProcessDefinition; attempts: number }>(
     "/api/ai/policy-to-process",
     "POST",
     { name, paragraphs },
+    signal,
   );
 }
 

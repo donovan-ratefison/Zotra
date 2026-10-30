@@ -3,11 +3,13 @@
 // review. Nothing is saved here: the shell creates the process and
 // the draft when the designer accepts. The body is a plain
 // component, so the tests render it with no Dialog context: the
-// title and the description are plain elements.
+// title is a plain element and the description is a Hint.
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent } from "@/ui/dialog";
+import { Hint } from "@/ui/hint";
 import { Input } from "@/ui/input";
 import { ApiError, policyToProcess } from "./api";
 import { extractParagraphs, policyErrorText, type Paragraph } from "./policy";
@@ -17,6 +19,51 @@ import type { ProcessDefinition } from "./types";
 interface Detail {
   path: string;
   message: string;
+}
+
+// elapsedText gives m:ss of the whole seconds. A negative or
+// non-finite value gives 0:00.
+export function elapsedText(seconds: number): string {
+  const total = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+  const rest = total % 60;
+  return `${Math.floor(total / 60)}:${rest < 10 ? "0" : ""}${rest}`;
+}
+
+// isAbort is true for the error of an aborted request: the dialog
+// shows no error text for it.
+export function isAbort(err: unknown): boolean {
+  return err instanceof DOMException && err.name === "AbortError";
+}
+
+// The inner bar slides from left to right in a loop. Under reduced
+// motion it stays still.
+const BAR_CSS = `
+@keyframes zanalyze { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+.zanalyze { animation: zanalyze 1.5s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .zanalyze { animation: none; } }
+`;
+
+// AnalyzeProgress shows that the AI analysis runs: a spinner, the
+// size of the work, a moving bar and the elapsed time.
+export function AnalyzeProgress({ paragraphs, seconds }: { paragraphs: number; seconds: number }) {
+  return (
+    <>
+      <style>{BAR_CSS}</style>
+      <div role="status" aria-live="polite" className="flex flex-col gap-2 rounded-lg border p-4">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          Analyzing the policy
+        </div>
+        <p className="text-sm text-muted-foreground">
+          {`The AI reads ${paragraphs} ${paragraphs === 1 ? "paragraph" : "paragraphs"} and drafts the process.`}
+        </p>
+        <div data-testid="analyze-bar" className="h-1 overflow-hidden rounded bg-muted">
+          <div className="zanalyze h-full w-2/5 rounded bg-primary" />
+        </div>
+        <p className="text-xs text-muted-foreground">{`Elapsed ${elapsedText(seconds)}`}</p>
+      </div>
+    </>
+  );
 }
 
 export function ImportDialogBody({
@@ -42,6 +89,21 @@ export function ImportDialogBody({
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [details, setDetails] = useState<Detail[] | null>(null);
+  const [seconds, setSeconds] = useState(0);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Count the seconds of the analysis, from the click.
+  useEffect(() => {
+    if (!analyzing) {
+      return;
+    }
+    const start = Date.now();
+    const id = setInterval(() => setSeconds((Date.now() - start) / 1000), 1000);
+    return () => clearInterval(id);
+  }, [analyzing]);
+
+  // A close by Esc or the overlay unmounts the body: abort the request.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   // reset clears every state of the body, after a close or a saved
   // import.
@@ -89,14 +151,20 @@ export function ImportDialogBody({
       return;
     }
     const useName = name.trim() || baseName;
+    setSeconds(0);
     setAnalyzing(true);
     setAnalysisError(null);
     setDetails(null);
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
     let definition: ProcessDefinition;
     try {
-      const answer = await policyToProcess(useName, paragraphs);
+      const answer = await policyToProcess(useName, paragraphs, ctrl.signal);
       definition = answer.definition;
     } catch (err) {
+      if (isAbort(err) || ctrl.signal.aborted) {
+        return;
+      }
       if (err instanceof ApiError && err.status === 422 && err.code === "invalid_output") {
         setDetails(
           err.details.map((d) => {
@@ -113,6 +181,10 @@ export function ImportDialogBody({
       setAnalyzing(false);
       return;
     }
+    if (ctrl.signal.aborted) {
+      return;
+    }
+    abortRef.current = null;
     onProposed(useName, definition, paragraphs, current);
     reset();
     onClose();
@@ -120,56 +192,59 @@ export function ImportDialogBody({
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
+      <div className="flex items-center gap-1.5">
         <h2 className="text-lg leading-none font-semibold">New from policy</h2>
-        <p className="mt-1.5 text-sm text-muted-foreground">
+        <Hint label="About New from policy">
           The AI reads the policy and proposes the process. You review the
           result before it is saved.
-        </p>
+        </Hint>
       </div>
-      <div
-        role="button"
-        tabIndex={0}
-        aria-label="Policy PDF"
-        className="flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground hover:bg-accent/50"
-        onClick={() => inputRef.current?.click()}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            inputRef.current?.click();
-          }
-        }}
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={(e) => {
-          e.preventDefault();
-          const picked = e.dataTransfer.files[0];
-          if (picked) {
-            void loadFile(picked);
-          } else {
-            setFile(null);
-            setLoadError(true);
-          }
-        }}
-      >
-        <span>Drop the policy PDF here, or browse.</span>
-        <input
-          ref={inputRef}
-          type="file"
-          accept="application/pdf"
-          className="hidden"
-          onChange={(e) => {
-            const picked = e.target.files?.[0];
+      {analyzing && <AnalyzeProgress paragraphs={paragraphs.length} seconds={seconds} />}
+      {!analyzing && (
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="Policy PDF"
+          className="flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground hover:bg-accent/50"
+          onClick={() => inputRef.current?.click()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              inputRef.current?.click();
+            }
+          }}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const picked = e.dataTransfer.files[0];
             if (picked) {
               void loadFile(picked);
+            } else {
+              setFile(null);
+              setLoadError(true);
             }
-            e.target.value = "";
           }}
-        />
-      </div>
+        >
+          <span>Drop the policy PDF here, or browse.</span>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="application/pdf"
+            className="hidden"
+            onChange={(e) => {
+              const picked = e.target.files?.[0];
+              if (picked) {
+                void loadFile(picked);
+              }
+              e.target.value = "";
+            }}
+          />
+        </div>
+      )}
       {reading && <p className="text-sm text-muted-foreground">Reading the policy...</p>}
       {loadError && (
         <p className="text-sm text-destructive">The file did not read as a PDF.</p>
       )}
-      {file && !reading && (
+      {file && !reading && !analyzing && (
         <div className="flex flex-col gap-2">
           <p className="truncate text-sm font-medium">{file.name}</p>
           <p className="text-sm text-muted-foreground">
@@ -213,6 +288,8 @@ export function ImportDialogBody({
         <Button
           variant="outline"
           onClick={() => {
+            abortRef.current?.abort();
+            abortRef.current = null;
             reset();
             onClose();
           }}
@@ -243,7 +320,16 @@ export function ImportDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent aria-label="New from policy" className="max-h-[85vh] overflow-y-auto">
+      {/* Focus the dialog content, not its first focusable element:
+          that is the Hint, and a focus opens its tooltip at each open. */}
+      <DialogContent
+        aria-label="New from policy"
+        className="max-h-[85vh] overflow-y-auto"
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          (e.currentTarget as HTMLElement).focus();
+        }}
+      >
         <ImportDialogBody
           onProposed={onProposed}
           onClose={() => onOpenChange(false)}

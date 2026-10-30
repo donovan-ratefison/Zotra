@@ -7,7 +7,7 @@ import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ApiError, createProcess, createVersion, policyToProcess } from "./api";
-import { ImportDialogBody } from "./ImportDialog";
+import { AnalyzeProgress, ImportDialogBody, elapsedText, isAbort } from "./ImportDialog";
 import {
   extractParagraphs,
   paragraphsOfItems,
@@ -243,5 +243,87 @@ describe("dialog body", () => {
     expect(html).toContain("Analyze policy");
     // No file loaded: the analyze button is disabled.
     expect(html).toContain("disabled");
+  });
+});
+
+describe("analysis progress and cancel", () => {
+  const body = () =>
+    renderToString(
+      createElement(ImportDialogBody, { onProposed: () => {}, onClose: () => {} }),
+    );
+
+  test("50a: the description sits in a Hint next to the title", () => {
+    expect(body()).toContain('aria-label="About New from policy"');
+  });
+
+  test("50b: the description paragraph is gone", () => {
+    expect(body()).not.toContain("The AI reads the policy and proposes");
+  });
+
+  test("50c: elapsedText gives m:ss of the whole seconds", () => {
+    expect(elapsedText(0)).toBe("0:00");
+    expect(elapsedText(59.9)).toBe("0:59");
+    expect(elapsedText(65)).toBe("1:05");
+    expect(elapsedText(3600)).toBe("60:00");
+  });
+
+  test("50d: a negative or non-finite value gives 0:00", () => {
+    expect(elapsedText(-1)).toBe("0:00");
+    expect(elapsedText(NaN)).toBe("0:00");
+    expect(elapsedText(Infinity)).toBe("0:00");
+  });
+
+  const progress = (paragraphs: number, seconds: number) =>
+    renderToString(createElement(AnalyzeProgress, { paragraphs, seconds }));
+
+  test("50e: the status block holds the spinner text, the size and the time", () => {
+    const html = progress(42, 18);
+    expect(html).toContain('role="status"');
+    expect(html).toContain("Analyzing the policy");
+    expect(html).toContain("The AI reads 42 paragraphs and drafts the process.");
+    expect(html).toContain("Elapsed 0:18");
+  });
+
+  test("50f: one paragraph is singular", () => {
+    expect(progress(1, 0)).toContain("The AI reads 1 paragraph and drafts the process.");
+  });
+
+  test("50g: zero paragraphs and zero seconds", () => {
+    const html = progress(0, 0);
+    expect(html).toContain("The AI reads 0 paragraphs");
+    expect(html).toContain("Elapsed 0:00");
+  });
+
+  test("50h: the block holds the bar and the spinner", () => {
+    const html = progress(42, 18);
+    expect(html).toContain('data-testid="analyze-bar"');
+    expect(html).toContain("animate-spin");
+  });
+
+  test("50i: policyToProcess passes the signal only when given", async () => {
+    const inits: (RequestInit | undefined)[] = [];
+    vi.stubGlobal("fetch", (_path: string, init?: RequestInit) => {
+      inits.push(init);
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ definition: miniDefinition, attempts: 1 }),
+      });
+    });
+    const ctrl = new AbortController();
+    await policyToProcess("Home loan", [], ctrl.signal);
+    await policyToProcess("Home loan", []);
+    expect(inits[0]?.signal).toBe(ctrl.signal);
+    expect(inits[1] && "signal" in inits[1]).toBe(false);
+  });
+
+  test("50j: an abort rejects, and isAbort marks it as no error", async () => {
+    vi.stubGlobal("fetch", () =>
+      Promise.reject(new DOMException("aborted", "AbortError")),
+    );
+    const err = await policyToProcess("Home loan", []).catch((e: unknown) => e);
+    expect(isAbort(err)).toBe(true);
+    expect(isAbort(new DOMException("x", "AbortError"))).toBe(true);
+    expect(isAbort(new Error("x"))).toBe(false);
   });
 });
