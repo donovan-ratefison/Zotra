@@ -844,7 +844,18 @@ export function TopBar({
       <img src="/zotra-wordmark.svg" alt="Zotra" width={76} height={22} className="shrink-0" />
       <span className="h-5 w-px shrink-0" style={{ background: "var(--border)" }} />
       <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1 text-[13px]">
-        <span className="truncate">{def.theme.brand_name}</span>
+        <a
+          href="/processes"
+          title="All processes"
+          className="truncate hover:underline"
+          onClick={(e) => {
+            if (dirty && !window.confirm("The draft has unsaved changes. Leave the studio?")) {
+              e.preventDefault();
+            }
+          }}
+        >
+          {def.theme.brand_name}
+        </a>
         <ChevronRight size={14} className="shrink-0" />
         <span className="truncate font-semibold">{proposalName ?? def.name}</span>
         {proposalName !== undefined && (

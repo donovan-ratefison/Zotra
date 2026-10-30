@@ -107,7 +107,7 @@ export interface ProcessesBody {
   processes: ProcessSummary[];
 }
 export interface VersionsBody {
-  versions: VersionSummary[];
+  versions: Version[];
 }
 export interface VersionBody {
   version: Version;

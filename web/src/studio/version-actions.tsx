@@ -148,13 +148,13 @@ export function NewDraftDialogBody({ version, busy, onCreate, onCancel }: {
   );
 }
 
-const STATUS_BADGE: Record<VersionSummary["status"], [text: string, cls: string]> = {
+export const STATUS_BADGE: Record<VersionSummary["status"], [text: string, cls: string]> = {
   draft: ["Draft", "border-amber-300 bg-amber-50 text-amber-800"],
   frozen: ["Frozen", "border-blue-300 bg-blue-50 text-blue-800"],
   published: ["Published", "border-emerald-300 bg-emerald-50 text-emerald-800"],
 };
 
-function dateText(iso: string): string {
+export function dateText(iso: string): string {
   return new Date(iso).toLocaleString("en-GB", {
     day: "numeric",
     month: "short",

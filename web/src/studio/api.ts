@@ -7,7 +7,6 @@ import type {
   ProcessesBody,
   Version,
   VersionBody,
-  VersionSummary,
   VersionsBody,
 } from "./types";
 import type { Paragraph } from "./policy";
@@ -101,7 +100,7 @@ export async function listProcesses(): Promise<ProcessSummary[]> {
   return body.processes;
 }
 
-export async function listVersions(processId: string): Promise<VersionSummary[]> {
+export async function listVersions(processId: string): Promise<Version[]> {
   const body = await getJson<VersionsBody>(
     `/api/processes/${encodeURIComponent(processId)}/versions`,
   );
