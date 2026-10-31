@@ -1,12 +1,14 @@
 // The supervision screen: the key figures and the flow of the
-// published versions, the live flow diagram of their open cases, the
-// panel of the selected step and the load per participant. The view
-// is read only. AppShell owns the supervision answer and passes it
-// down with the users list.
+// published versions. The "Live flow" tab shows the live flow diagram
+// of their open cases, the panel of the selected step and the load per
+// participant. The "Case flow" tab shows the passes of the last days.
+// The view is read only. AppShell owns the supervision answer and
+// passes it down with the users list.
 
 import { useEffect, useState } from "react";
 import { Activity, ChevronRight, Split, TriangleAlert, X } from "lucide-react";
 import { moneyText, pickField } from "./InboxScreen";
+import { CaseFlowCard } from "./CaseFlow";
 import { FlowLegend, haloOf, LiveDiagram } from "./LiveFlow";
 import { weightedLead } from "./sup-api";
 import type { Flow, SupCase, Supervision } from "./sup-api";
@@ -290,6 +292,9 @@ export function initials(name: string): string {
 
 const FILL_CLASS = { ok: "bg-primary", near: "bg-[#d97706]", late: "bg-[#dc2626]" };
 const LEFT_CLASS = { ok: "", near: "text-[#d97706]", late: "text-[#dc2626]" };
+const TAB_CLASS = "inline-flex h-7 items-center gap-[7px] rounded-[5px] px-3 text-sm font-medium";
+const TAB_ON = "bg-white shadow-sm ring-1 ring-inset ring-border";
+const TAB_OFF = "text-muted-foreground hover:text-foreground";
 const LIST_GRID = "grid grid-cols-[170px_minmax(0,1fr)_72px_24px] items-center gap-2.5";
 
 // StepPanel is the side panel of the selected step: its figures, the
@@ -442,13 +447,16 @@ export function SupervisionScreen({
   supervision,
   flow,
   selectedNodeId,
+  initialTab = "live",
 }: {
   def: ProcessDefinition;
   users: UserDTO[];
   supervision: Supervision;
   flow: Flow;
   selectedNodeId?: string | null;
+  initialTab?: "live" | "flow";
 }) {
+  const [tab, setTab] = useState(initialTab);
   const [selected, setSelected] = useState<string | null>(
     selectedNodeId ?? null,
   );
@@ -498,8 +506,9 @@ export function SupervisionScreen({
           <button
             type="button"
             role="tab"
-            aria-selected="true"
-            className="inline-flex h-7 items-center gap-[7px] rounded-[5px] bg-card px-3 text-sm font-medium ring-1 ring-inset ring-border"
+            aria-selected={tab === "live"}
+            onClick={() => setTab("live")}
+            className={`${TAB_CLASS} ${tab === "live" ? TAB_ON : TAB_OFF}`}
           >
             <Activity aria-hidden className="size-4" />
             Live flow
@@ -507,9 +516,9 @@ export function SupervisionScreen({
           <button
             type="button"
             role="tab"
-            aria-selected="false"
-            disabled
-            className="inline-flex h-7 items-center gap-[7px] rounded-[5px] px-3 text-sm font-medium text-muted-foreground disabled:cursor-not-allowed"
+            aria-selected={tab === "flow"}
+            onClick={() => setTab("flow")}
+            className={`${TAB_CLASS} ${tab === "flow" ? TAB_ON : TAB_OFF}`}
           >
             <Split aria-hidden className="size-4" />
             Case flow
@@ -523,135 +532,141 @@ export function SupervisionScreen({
         ))}
       </div>
 
-      <div className="mb-3 grid grid-cols-2 items-start gap-3">
-        {block !== null && (
-          <div className="rounded-lg border border-[#fecaca] border-l-[3px] border-l-[#dc2626] bg-[#fef2f2] px-3.5 py-2.5">
-            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-[#dc2626]">
-              <TriangleAlert aria-hidden className="size-3.5" />
-              Where it blocks
+      {tab === "flow" ? (
+        <CaseFlowCard def={def} flow={flow} />
+      ) : (
+        <>
+          <div className="mb-3 grid grid-cols-2 items-start gap-3">
+            {block !== null && (
+              <div className="rounded-lg border border-[#fecaca] border-l-[3px] border-l-[#dc2626] bg-[#fef2f2] px-3.5 py-2.5">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-[#dc2626]">
+                  <TriangleAlert aria-hidden className="size-3.5" />
+                  Where it blocks
+                </div>
+                <h2 className="mt-0.5 text-[15px] font-semibold">{block.name}</h2>
+                <p className="text-[12.5px] text-[#3f3f46]">{block.text}</p>
+                <button
+                  type="button"
+                  onClick={() => setSelected(block.nodeId)}
+                  className="mt-1.5 inline-flex items-center gap-1 text-[12.5px] font-medium text-[#b91c1c] hover:underline"
+                >
+                  Open the step
+                  <ChevronRight aria-hidden className="size-3.5" />
+                </button>
+              </div>
+            )}
+            <div className="col-start-2 rounded-lg border bg-[#fafaf9] px-3.5 py-2.5">
+              <h3 className="mb-2 text-[11.5px] font-medium text-muted-foreground">
+                Who decided today, since 00:00 UTC
+              </h3>
+              <div className="grid grid-cols-3 gap-2.5">
+                <div className="border-l-2 border-border pl-2.5">
+                  <b className="block text-xl font-semibold">{flow.today.people}</b>
+                  <span className="text-[11.5px] text-muted-foreground">
+                    People: entries, decisions, signatures
+                  </span>
+                </div>
+                <div className="border-l-2 border-border pl-2.5">
+                  <b className="block text-xl font-semibold">{flow.today.rules}</b>
+                  <span className="text-[11.5px] text-muted-foreground">
+                    Rules: routing at the gateways
+                  </span>
+                </div>
+                <div className="border-l-2 border-[#a1a1aa] pl-2.5">
+                  <b className="block text-xl font-semibold text-muted-foreground">
+                    0
+                  </b>
+                  <span className="text-[11.5px] text-muted-foreground">AI</span>
+                </div>
+              </div>
+              <p className="mt-2 text-[11.5px] text-muted-foreground">
+                The AI never decides. It only proposes and checks.
+              </p>
             </div>
-            <h2 className="mt-0.5 text-[15px] font-semibold">{block.name}</h2>
-            <p className="text-[12.5px] text-[#3f3f46]">{block.text}</p>
-            <button
-              type="button"
-              onClick={() => setSelected(block.nodeId)}
-              className="mt-1.5 inline-flex items-center gap-1 text-[12.5px] font-medium text-[#b91c1c] hover:underline"
-            >
-              Open the step
-              <ChevronRight aria-hidden className="size-3.5" />
-            </button>
           </div>
-        )}
-        <div className="col-start-2 rounded-lg border bg-[#fafaf9] px-3.5 py-2.5">
-          <h3 className="mb-2 text-[11.5px] font-medium text-muted-foreground">
-            Who decided today, since 00:00 UTC
-          </h3>
-          <div className="grid grid-cols-3 gap-2.5">
-            <div className="border-l-2 border-border pl-2.5">
-              <b className="block text-xl font-semibold">{flow.today.people}</b>
-              <span className="text-[11.5px] text-muted-foreground">
-                People: entries, decisions, signatures
-              </span>
-            </div>
-            <div className="border-l-2 border-border pl-2.5">
-              <b className="block text-xl font-semibold">{flow.today.rules}</b>
-              <span className="text-[11.5px] text-muted-foreground">
-                Rules: routing at the gateways
-              </span>
-            </div>
-            <div className="border-l-2 border-[#a1a1aa] pl-2.5">
-              <b className="block text-xl font-semibold text-muted-foreground">
-                0
-              </b>
-              <span className="text-[11.5px] text-muted-foreground">AI</span>
-            </div>
-          </div>
-          <p className="mt-2 text-[11.5px] text-muted-foreground">
-            The AI never decides. It only proposes and checks.
-          </p>
-        </div>
-      </div>
 
-      <div className="mb-4 rounded-lg border bg-card">
-        <div className="flex h-10 items-center justify-between gap-4 border-b px-4">
-          <h2 className="truncate text-[13.5px] font-semibold">
-            {`${def.name}, live flow of the open cases`}
-          </h2>
-          <p className="truncate text-xs text-muted-foreground">
-            {`More dots where more cases pass (last ${flow.days} days). The halo shows the case ages against the step deadline.`}
-          </p>
-        </div>
-        <div className="px-4 py-4">
-          {layoutFailed ? (
-            <p className="text-sm text-muted-foreground">
-              The diagram could not be drawn.
-            </p>
-          ) : layout === null ? (
-            <p className="text-sm text-muted-foreground">Drawing the diagram.</p>
-          ) : (
-            <LiveDiagram
+          <div className="mb-4 rounded-lg border bg-card">
+            <div className="flex h-10 items-center justify-between gap-4 border-b px-4">
+              <h2 className="truncate text-[13.5px] font-semibold">
+                {`${def.name}, live flow of the open cases`}
+              </h2>
+              <p className="truncate text-xs text-muted-foreground">
+                {`More dots where more cases pass (last ${flow.days} days). The halo shows the case ages against the step deadline.`}
+              </p>
+            </div>
+            <div className="px-4 py-4">
+              {layoutFailed ? (
+                <p className="text-sm text-muted-foreground">
+                  The diagram could not be drawn.
+                </p>
+              ) : layout === null ? (
+                <p className="text-sm text-muted-foreground">Drawing the diagram.</p>
+              ) : (
+                <LiveDiagram
+                  def={def}
+                  layout={layout}
+                  sup={supervision}
+                  flow={flow}
+                  selected={selected}
+                  onSelect={setSelected}
+                />
+              )}
+            </div>
+            <div className="border-t px-4 py-2">
+              <FlowLegend />
+            </div>
+          </div>
+
+          <div className="max-w-[480px] rounded-lg border bg-card">
+            <div className="border-b px-4 py-3">
+              <h2 className="text-sm font-semibold">Load per participant</h2>
+            </div>
+            {supervision.people.length === 0 ? (
+              <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+                No case is assigned.
+              </p>
+            ) : (
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+                    <th className="px-4 py-2.5 font-medium">Participant</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Open</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Late</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {supervision.people.map((person) => (
+                    <tr key={person.user_id} className="border-b last:border-b-0">
+                      <td className="px-4 py-3 text-sm">
+                        {userNameOf(users, person.user_id)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-sm">
+                        {person.open}
+                      </td>
+                      <td className="px-4 py-3 text-right text-sm">
+                        {person.late > 0 ? (
+                          <span className="text-destructive">{person.late}</span>
+                        ) : (
+                          person.late
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {selected !== null && (
+            <StepPanel
               def={def}
-              layout={layout}
+              users={users}
               sup={supervision}
-              flow={flow}
-              selected={selected}
-              onSelect={setSelected}
+              nodeId={selected}
+              onClose={() => setSelected(null)}
             />
           )}
-        </div>
-        <div className="border-t px-4 py-2">
-          <FlowLegend />
-        </div>
-      </div>
-
-      <div className="max-w-[480px] rounded-lg border bg-card">
-        <div className="border-b px-4 py-3">
-          <h2 className="text-sm font-semibold">Load per participant</h2>
-        </div>
-        {supervision.people.length === 0 ? (
-          <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-            No case is assigned.
-          </p>
-        ) : (
-          <table className="w-full">
-            <thead>
-              <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <th className="px-4 py-2.5 font-medium">Participant</th>
-                <th className="px-4 py-2.5 text-right font-medium">Open</th>
-                <th className="px-4 py-2.5 text-right font-medium">Late</th>
-              </tr>
-            </thead>
-            <tbody>
-              {supervision.people.map((person) => (
-                <tr key={person.user_id} className="border-b last:border-b-0">
-                  <td className="px-4 py-3 text-sm">
-                    {userNameOf(users, person.user_id)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-sm">
-                    {person.open}
-                  </td>
-                  <td className="px-4 py-3 text-right text-sm">
-                    {person.late > 0 ? (
-                      <span className="text-destructive">{person.late}</span>
-                    ) : (
-                      person.late
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-
-      {selected !== null && (
-        <StepPanel
-          def={def}
-          users={users}
-          sup={supervision}
-          nodeId={selected}
-          onClose={() => setSelected(null)}
-        />
+        </>
       )}
     </div>
   );

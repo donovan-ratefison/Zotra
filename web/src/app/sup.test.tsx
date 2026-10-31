@@ -268,6 +268,7 @@ function seedShell(client: QueryClient) {
 function renderSupervision(
   sup: Supervision,
   selectedNodeId?: string | null,
+  initialTab?: "live" | "flow",
 ): string {
   return renderToString(
     createElement(SupervisionScreen, {
@@ -276,6 +277,7 @@ function renderSupervision(
       supervision: sup,
       flow: flowFixture,
       selectedNodeId,
+      initialTab,
     }),
   );
 }
@@ -1019,5 +1021,13 @@ describe("step panel", () => {
     );
     const last = html.slice(html.lastIndexOf("CASE-2026-0001"));
     expect(last).toContain("bg-[#d97706]");
+  });
+
+  test("14.4 row W14: the Case flow tab shows the case flow card", () => {
+    const html = renderSupervision(supAnswer, null, "flow");
+    expect(html).toContain("Case flow, last 30 days");
+    expect(html).not.toContain("Where it blocks");
+    expect(html).toMatch(/aria-selected="true"[^>]*><svg[^>]*>.*?<\/svg>Case flow/);
+    expect(html).not.toContain("disabled");
   });
 });
