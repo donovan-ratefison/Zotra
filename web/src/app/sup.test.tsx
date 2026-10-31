@@ -15,10 +15,18 @@ import {
   fetchSupervisionAll,
   fetchAudit,
   fetchAuditVerify,
+  fetchFlow,
+  fetchFlowAll,
+  mergeFlow,
   mergeSupervision,
 } from "./sup-api";
-import type { AuditEvent, AuditVerify, Supervision } from "./sup-api";
-import { heatColor, SupervisionScreen } from "./SupervisionScreen";
+import type { AuditEvent, AuditVerify, Flow, Supervision } from "./sup-api";
+import {
+  blockOf,
+  heatColor,
+  SupervisionScreen,
+  tileFigures,
+} from "./SupervisionScreen";
 import { AuditScreen } from "./AuditScreen";
 import { AppShell, viewSearch } from "./AppShell";
 import type { InboxCase } from "./app-api";
@@ -149,6 +157,7 @@ const supCase = {
   assignee: "u-advisor",
   age_hours: 25,
   late: true,
+  returned: false,
   data: { amount: 240000, client_name: "Hanta Rakotobe" },
 };
 
@@ -173,6 +182,26 @@ const supAnswer: Supervision = {
   ],
   people: [{ user_id: "u-advisor", open: 1, late: 1 }],
   cases: [supCase, supCase2],
+};
+
+// The flow answer of lot 14.2, every value exact.
+const flowFixture: Flow = {
+  days: 30,
+  closed: 4,
+  ends: [
+    { node_id: "released", cases: 3, avg_lead_hours: 36 },
+    { node_id: "refused", cases: 1, avg_lead_hours: 12 },
+  ],
+  edges: [
+    { edge_id: "e1", passes: 5 },
+    { edge_id: "e2", passes: 5 },
+    { edge_id: "e3", passes: 4 },
+    { edge_id: "e4", passes: 3 },
+    { edge_id: "e5", passes: 1 },
+    { edge_id: "e6", passes: 1 },
+  ],
+  returns: 1,
+  today: { people: 6, rules: 9 },
 };
 
 const auditEvent: AuditEvent = {
@@ -239,6 +268,7 @@ function renderSupervision(
       def: defFixture,
       users: usersFixture,
       supervision: sup,
+      flow: flowFixture,
       selectedNodeId,
     }),
   );
@@ -262,6 +292,26 @@ function renderAudit(
   );
 }
 
+// The supervision of rows T3, B2 and W2c: no late case.
+const noLate: Supervision = {
+  ...supAnswer,
+  total_late: 0,
+  nodes: supAnswer.nodes.map((n) => ({ ...n, late: 0 })),
+  cases: supAnswer.cases.map((c) => ({ ...c, late: false })),
+};
+
+// The supervision of rows T3 and B4: one late case on review (listed
+// first) and one on entry.
+const twoLate: Supervision = {
+  ...supAnswer,
+  total_late: 2,
+  nodes: [
+    { node_id: "review", open: 1, late: 1, median_hours: 30 },
+    { node_id: "entry", open: 1, late: 1, median_hours: 25 },
+  ],
+  cases: [{ ...supCase2, node_id: "review", age_hours: 30 }, supCase],
+};
+
 afterEach(() => {
   seen.length = 0;
   vi.unstubAllGlobals();
@@ -277,17 +327,22 @@ describe("heat color", () => {
 });
 
 describe("supervision screen", () => {
-  test("6.3 row W2: the head, the tiles, the flow and the load card render", () => {
+  test("14.2 row W2: the head, the tabs, the tiles, the cards, the flow and the load card render", () => {
     const html = renderSupervision(supAnswer);
     expect(html).toContain("Supervision");
-    expect(html).toContain("Read only view of the open cases of every published version.");
-    expect(html).toContain("Open cases");
-    // The tile value, as one whole span text (the Open cases tile; the
-    // class names the tile value span, the chips carry their own).
+    expect(html).toContain("Live flow");
+    expect(html).toContain("Case flow");
+    expect(html).toContain('aria-selected="true"');
+    expect(html).toContain("Cases in progress");
+    // The tile value, as one whole span text (the Cases in progress
+    // tile; the class names the tile value span, the chips carry their
+    // own).
     expect(html).toContain('class="text-2xl font-semibold">2</span>');
-    expect(html).toContain("across 1 steps");
-    expect(html).toContain("Late");
-    expect(html).toContain("past the step deadline");
+    expect(html).toContain("Where it blocks");
+    expect(html).toContain("Who decided today, since 00:00 UTC");
+    expect(html).toContain("The AI never decides. It only proposes and checks.");
+    expect(html).not.toContain("Open cases");
+    expect(html).not.toContain("across 1 steps");
     expect(html).toContain("Steps and indicators");
     expect(html).toContain("Application entry");
     expect(html).toContain("File complete?");
@@ -296,6 +351,10 @@ describe("supervision screen", () => {
     expect(html).toContain("Demo Advisor");
     expect(html).toContain("→");
     expect(html).toContain("aria-hidden");
+  });
+
+  test("14.2 row W2c: no late case shows no block card", () => {
+    expect(renderSupervision(noLate)).not.toContain("Where it blocks");
   });
 
   test("6.3 row W2b: the selected step shows its case rows", () => {
@@ -429,13 +488,14 @@ describe("app shell views", () => {
     const other = newClient();
     seedShell(other);
     other.setQueryData(["supervision", "v1"], supAnswer);
+    other.setQueryData(["flow", "v1"], flowFixture);
     other.setQueryData(["audit"], auditAnswer);
     vi.stubGlobal("location", {
       pathname: "/app",
       search: "?user=u-advisor&view=supervision",
     });
     const sup = renderApp(other);
-    expect(sup).toContain("Open cases");
+    expect(sup).toContain("Cases in progress");
     expect(sup).not.toContain("Cases that wait");
   });
 
@@ -450,6 +510,19 @@ describe("app shell views", () => {
     expect(html).toContain("Loading");
     expect(html).not.toContain("Open cases");
     expect(html).not.toContain("Cases that wait");
+  });
+
+  test("14.2 row W9d: a pending flow query loads in the main area", () => {
+    vi.stubGlobal("location", {
+      pathname: "/app",
+      search: "?user=u-advisor&view=supervision",
+    });
+    const client = newClient();
+    seedShell(client);
+    client.setQueryData(["supervision", "v1"], supAnswer);
+    const html = renderApp(client);
+    expect(html).toContain("Loading");
+    expect(html).not.toContain("Cases in progress");
   });
 
   test("6.3 row W9c: a pending audit query loads in the main area", () => {
@@ -482,6 +555,7 @@ describe("app shell views", () => {
     const client = newClient();
     seedShell(client);
     client.setQueryData(["supervision", "v1"], supAnswer);
+    client.setQueryData(["flow", "v1"], flowFixture);
     const html = renderApp(client);
     expect(html).toMatch(INBOX_OFF);
     expect(html).toMatch(SUP_ON);
@@ -529,6 +603,7 @@ const mc1 = {
   assignee: "u-advisor",
   age_hours: 30,
   late: true,
+  returned: false,
   data: {},
 };
 const mc2 = { ...mc1, case_id: "c2", reference: "CASE-2026-0002", assignee: "", age_hours: 10, late: false };
@@ -646,8 +721,168 @@ describe("supervision of every published version", () => {
       definition: defFixture,
     });
     client.setQueryData(["supervision", "v1,v2"], mergedAB);
+    client.setQueryData(["flow", "v1,v2"], flowFixture);
     const html = renderApp(client);
-    expect(html).toContain("Open cases");
+    expect(html).toContain("Cases in progress");
     expect(html).toContain('class="text-2xl font-semibold">3</span>');
+  });
+});
+
+// The flow answers of row F3, every value exact.
+const flowA: Flow = {
+  days: 30,
+  closed: 2,
+  ends: [
+    { node_id: "released", cases: 1, avg_lead_hours: 30 },
+    { node_id: "refused", cases: 1, avg_lead_hours: 20 },
+  ],
+  edges: [
+    { edge_id: "e01", passes: 3 },
+    { edge_id: "e04", passes: 1 },
+  ],
+  returns: 1,
+  today: { people: 2, rules: 1 },
+};
+
+const flowB: Flow = {
+  days: 30,
+  closed: 3,
+  ends: [
+    { node_id: "released", cases: 3, avg_lead_hours: 10 },
+    { node_id: "refused", cases: 0, avg_lead_hours: 0 },
+  ],
+  edges: [
+    { edge_id: "e01", passes: 3 },
+    { edge_id: "e04", passes: 0 },
+  ],
+  returns: 0,
+  today: { people: 1, rules: 0 },
+};
+
+describe("flow api", () => {
+  test("14.2 row F1: fetchFlow reads the flow of 30 days", async () => {
+    stubFetch(200, flowFixture);
+    await expect(fetchFlow("v1")).resolves.toEqual(flowFixture);
+    expect(seen.map((s) => s.url)).toEqual(["/api/versions/v1/flow?days=30"]);
+  });
+
+  test("14.2 row F2: a bad days value rejects as ApiError", async () => {
+    stubFetch(400, {
+      error: { code: "invalid_query", message: "days must hold 1 to 90" },
+    });
+    const err = await fetchFlow("v1", 7).then(
+      () => null,
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.code).toBe("invalid_query");
+    expect(seen[0]!.url.endsWith("?days=7")).toBe(true);
+  });
+
+  test("14.2 row F3: two answers add up, the lead time is weighted", () => {
+    expect(mergeFlow([flowA, flowB])).toEqual({
+      days: 30,
+      closed: 5,
+      ends: [
+        { node_id: "released", cases: 4, avg_lead_hours: 15 },
+        { node_id: "refused", cases: 1, avg_lead_hours: 20 },
+      ],
+      edges: [
+        { edge_id: "e01", passes: 6 },
+        { edge_id: "e04", passes: 1 },
+      ],
+      returns: 1,
+      today: { people: 3, rules: 1 },
+    });
+  });
+
+  test("14.2 row F4: no answer gives an empty flow, one answer merges to itself", () => {
+    expect(mergeFlow([])).toEqual({
+      days: 30,
+      closed: 0,
+      ends: [],
+      edges: [],
+      returns: 0,
+      today: { people: 0, rules: 0 },
+    });
+    expect(mergeFlow([flowA])).toEqual(flowA);
+  });
+
+  test("14.2 row F5: one failed read rejects with its ApiError", async () => {
+    stubFetchByUrl({
+      "/api/versions/v1/flow?days=30": [200, flowFixture],
+      "/api/versions/v2/flow?days=30": [
+        404,
+        { error: { code: "not_found", message: "version not found" } },
+      ],
+    });
+    const err = await fetchFlowAll(["v1", "v2"]).then(
+      () => null,
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.code).toBe("not_found");
+  });
+});
+
+describe("key figures and block card", () => {
+  test("14.2 row T1: the 4 tiles of the fixtures", () => {
+    expect(tileFigures(defFixture, supAnswer, flowFixture)).toEqual([
+      { label: "Cases in progress", value: "2", unit: "", sub: "On 1 step, 1 not assigned", bad: false },
+      { label: "Average lead time", value: "1.5", unit: "days", sub: "Approved cases, last 30 days", bad: false },
+      { label: "Cases late", value: "2", unit: "", sub: "All at Application entry", bad: true },
+      { label: "Return rate", value: "25", unit: "%", sub: "1 return on 4 closed cases", bad: false },
+    ]);
+  });
+
+  test("14.2 row T2: no closed case gives no lead time and no rate", () => {
+    const flow: Flow = {
+      ...flowFixture,
+      closed: 0,
+      ends: flowFixture.ends.map((e) => ({ ...e, cases: 0 })),
+    };
+    const [, lead, , rate] = tileFigures(defFixture, supAnswer, flow);
+    expect(lead).toEqual({
+      label: "Average lead time", value: "-", unit: "", sub: "No approved case in 30 days", bad: false,
+    });
+    expect(rate).toEqual({
+      label: "Return rate", value: "-", unit: "", sub: "No closed case in 30 days", bad: false,
+    });
+  });
+
+  test("14.2 row T3: the late tile with no late case, then on 2 steps", () => {
+    const none = tileFigures(defFixture, noLate, flowFixture)[2]!;
+    expect(none.sub).toBe("None past the deadline");
+    expect(none.bad).toBe(false);
+    expect(tileFigures(defFixture, twoLate, flowFixture)[2]!.sub).toBe("On 2 steps");
+  });
+
+  test("14.2 row B1: the step with the most late cases", () => {
+    expect(blockOf(defFixture, supAnswer, usersFixture)).toEqual({
+      nodeId: "entry",
+      name: "Application entry",
+      text: "2 cases wait. 2 are late. 1 has no assignee. Demo Advisor holds 1 of them.",
+    });
+  });
+
+  test("14.2 row B2: no late case gives null", () => {
+    expect(blockOf(defFixture, noLate, usersFixture)).toBeNull();
+  });
+
+  test("14.2 row B3: one case, an unknown assignee stays raw", () => {
+    const sup: Supervision = {
+      ...supAnswer,
+      total_open: 1,
+      total_late: 1,
+      nodes: [{ node_id: "entry", open: 1, late: 1, median_hours: 25 }],
+      cases: [{ ...supCase, assignee: "u-ghost" }],
+    };
+    expect(blockOf(defFixture, sup, usersFixture)?.text).toBe(
+      "1 case waits. 1 is late. u-ghost holds 1 of them.",
+    );
+  });
+
+  test("14.2 row B4: a tie takes the first step of the definition", () => {
+    expect(blockOf(defFixture, twoLate, usersFixture)?.nodeId).toBe("entry");
   });
 });

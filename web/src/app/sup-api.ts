@@ -44,6 +44,7 @@ export interface SupCase {
   assignee: string;
   age_hours: number;
   late: boolean;
+  returned: boolean;
   data: Record<string, unknown>;
 }
 
@@ -124,6 +125,96 @@ export async function fetchSupervisionAll(
   versionIds: string[],
 ): Promise<Supervision> {
   return mergeSupervision(await Promise.all(versionIds.map(fetchSupervision)));
+}
+
+export interface FlowEnd {
+  node_id: string;
+  cases: number;
+  avg_lead_hours: number;
+}
+
+export interface FlowPass {
+  edge_id: string;
+  passes: number;
+}
+
+export interface Flow {
+  days: number;
+  closed: number;
+  ends: FlowEnd[];
+  edges: FlowPass[];
+  returns: number;
+  today: { people: number; rules: number };
+}
+
+// fetchFlow reads GET /api/versions/<id>/flow?days=<days>: the closed
+// cases per end, the passes per edge, the returns and the work of
+// today.
+export async function fetchFlow(versionId: string, days = 30): Promise<Flow> {
+  const res = await fetch(`/api/versions/${versionId}/flow?days=${days}`);
+  if (res.ok) {
+    return (await res.json()) as Flow;
+  }
+  throw await apiError(res);
+}
+
+// weightedLead gives the mean lead time of end rows, weighted by their
+// cases, to one decimal. It gives 0 when the rows hold no case.
+export function weightedLead(rows: FlowEnd[]): number {
+  const cases = rows.reduce((sum, row) => sum + row.cases, 0);
+  if (cases === 0) {
+    return 0;
+  }
+  const hours = rows.reduce((sum, row) => sum + row.avg_lead_hours * row.cases, 0);
+  return Math.round((hours / cases) * 10) / 10;
+}
+
+// mergeFlow merges the flow answers of several versions into one. The
+// counts add up per end and per edge, in first-seen order.
+export function mergeFlow(answers: Flow[]): Flow {
+  const ends = new Map<string, FlowEnd[]>();
+  const edges = new Map<string, FlowPass>();
+  const merged: Flow = {
+    days: answers[0]?.days ?? 30,
+    closed: 0,
+    ends: [],
+    edges: [],
+    returns: 0,
+    today: { people: 0, rules: 0 },
+  };
+  for (const a of answers) {
+    merged.closed += a.closed;
+    merged.returns += a.returns;
+    merged.today.people += a.today.people;
+    merged.today.rules += a.today.rules;
+    for (const end of a.ends) {
+      ends.set(end.node_id, [...(ends.get(end.node_id) ?? []), end]);
+    }
+    for (const edge of a.edges) {
+      const row = edges.get(edge.edge_id);
+      if (row) {
+        row.passes += edge.passes;
+      } else {
+        edges.set(edge.edge_id, { ...edge });
+      }
+    }
+  }
+  merged.ends = [...ends].map(([nodeId, rows]) => ({
+    node_id: nodeId,
+    cases: rows.reduce((sum, row) => sum + row.cases, 0),
+    avg_lead_hours: weightedLead(rows),
+  }));
+  merged.edges = [...edges.values()];
+  return merged;
+}
+
+// fetchFlowAll reads the flow of each version and merges the answers.
+// One failed read rejects with its ApiError.
+export async function fetchFlowAll(
+  versionIds: string[],
+  days = 30,
+): Promise<Flow> {
+  return mergeFlow(await Promise.all(versionIds.map((id) => fetchFlow(id, days))));
 }
 
 export interface AuditEvent {

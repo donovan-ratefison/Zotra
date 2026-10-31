@@ -15,7 +15,13 @@ import {
 } from "../studio/api";
 import { listUsers } from "../studio/case-api";
 import { fetchInbox } from "./app-api";
-import { fetchAudit, fetchAuditVerify, fetchSupervisionAll, type AuditVerify } from "./sup-api";
+import {
+  fetchAudit,
+  fetchAuditVerify,
+  fetchFlowAll,
+  fetchSupervisionAll,
+  type AuditVerify,
+} from "./sup-api";
 import { AuditScreen } from "./AuditScreen";
 import { CaseScreen } from "./CaseScreen";
 import { InboxScreen } from "./InboxScreen";
@@ -251,11 +257,16 @@ export function AppShell() {
     queryFn: () => fetchInbox(effectiveUserId),
     enabled: usersQuery.data !== undefined && effectiveUserId !== "",
   });
-  // The two supervisor queries, gated on the view: the inbox rows run
+  // The supervisor queries, gated on the view: the inbox rows run
   // no new fetch. The verify state holds the last chain check.
   const supervisionQuery = useQuery({
     queryKey: ["supervision", publishedIds(versionsQuery.data).join(",")],
     queryFn: () => fetchSupervisionAll(publishedIds(versionsQuery.data)),
+    enabled: view === "supervision" && versionQuery.data !== undefined,
+  });
+  const flowQuery = useQuery({
+    queryKey: ["flow", publishedIds(versionsQuery.data).join(",")],
+    queryFn: () => fetchFlowAll(publishedIds(versionsQuery.data)),
     enabled: view === "supervision" && versionQuery.data !== undefined,
   });
   const auditQuery = useQuery({
@@ -463,7 +474,14 @@ export function AppShell() {
           error={supervisionQuery.error}
         />
       );
-    } else if (supervisionQuery.isPending) {
+    } else if (flowQuery.isError) {
+      main = (
+        <ErrorScreen
+          heading="The supervision did not load."
+          error={flowQuery.error}
+        />
+      );
+    } else if (supervisionQuery.isPending || flowQuery.isPending) {
       main = <Loading text="Loading" />;
     } else {
       main = (
@@ -471,6 +489,7 @@ export function AppShell() {
           def={def}
           users={users}
           supervision={supervisionQuery.data}
+          flow={flowQuery.data}
         />
       );
     }
