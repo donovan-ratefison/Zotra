@@ -23,7 +23,6 @@ import {
 import type { AuditEvent, AuditVerify, Flow, Supervision } from "./sup-api";
 import {
   blockOf,
-  heatColor,
   SupervisionScreen,
   tileFigures,
 } from "./SupervisionScreen";
@@ -317,17 +316,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("heat color", () => {
-  test("6.3 row W1: heatColor maps the ratio bands and the null deadline", () => {
-    expect(heatColor(10, 24)).toBe("#16a34a");
-    expect(heatColor(20, 24)).toBe("#d97706");
-    expect(heatColor(25, 24)).toBe("#dc2626");
-    expect(heatColor(10, null)).toBe("#71717a");
-  });
-});
-
 describe("supervision screen", () => {
-  test("14.2 row W2: the head, the tabs, the tiles, the cards, the flow and the load card render", () => {
+  test("14.2b row W2: the head, the tabs, the tiles, the cards, the live card and the load card render", () => {
     const html = renderSupervision(supAnswer);
     expect(html).toContain("Supervision");
     expect(html).toContain("Live flow");
@@ -343,13 +333,15 @@ describe("supervision screen", () => {
     expect(html).toContain("The AI never decides. It only proposes and checks.");
     expect(html).not.toContain("Open cases");
     expect(html).not.toContain("across 1 steps");
-    expect(html).toContain("Steps and indicators");
+    expect(html).not.toContain("Steps and indicators");
+    expect(html).toContain("Home loan, live flow of the open cases");
+    // The layout runs in an effect, so the server render shows the wait text.
+    expect(html).toContain("Drawing the diagram.");
+    expect(html).toContain("Case goes back");
     expect(html).toContain("Application entry");
-    expect(html).toContain("File complete?");
     expect(html).toContain("Select a step to see its cases.");
     expect(html).toContain("Load per participant");
     expect(html).toContain("Demo Advisor");
-    expect(html).toContain("→");
     expect(html).toContain("aria-hidden");
   });
 

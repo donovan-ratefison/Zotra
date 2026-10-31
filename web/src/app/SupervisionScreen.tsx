@@ -1,35 +1,19 @@
 // The supervision screen: the key figures and the flow of the
-// published versions, and their open cases per step, with the heat
-// per step and the load per participant. The view is read only. AppShell owns the supervision
-// answer and passes it down with the users list.
+// published versions, the live flow diagram of their open cases, the
+// cases of the selected step and the load per participant. The view
+// is read only. AppShell owns the supervision answer and passes it
+// down with the users list.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Activity, Split, TriangleAlert } from "lucide-react";
 import { moneyText, pickField } from "./InboxScreen";
+import { FlowLegend, LiveDiagram } from "./LiveFlow";
 import { weightedLead } from "./sup-api";
 import type { Flow, SupCase, Supervision } from "./sup-api";
 import type { UserDTO } from "../studio/case-api";
-import type { ProcessDefinition, ProcessNode } from "../studio/types";
-
-// heatColor gives the heat color of one step: the ratio of the median
-// time on the step to its deadline. A step with no deadline stays
-// gray.
-export function heatColor(
-  medianHours: number,
-  deadline: number | null,
-): string {
-  if (deadline === null) {
-    return "#71717a";
-  }
-  const ratio = medianHours / deadline;
-  if (ratio < 0.5) {
-    return "#16a34a";
-  }
-  if (ratio < 1) {
-    return "#d97706";
-  }
-  return "#dc2626";
-}
+import { layoutProcess } from "../studio/layout";
+import type { Layout } from "../studio/layout";
+import type { ProcessDefinition } from "../studio/types";
 
 export interface TileFigure {
   label: string;
@@ -185,40 +169,6 @@ function Tile({ figure }: { figure: TileFigure }) {
   );
 }
 
-// StepChip is one button of the step flow: the node name, the open
-// count, and the heat bar. A step with no open case renders dimmed.
-function StepChip({ node, row, pressed, onSelect }: {
-  node: ProcessNode;
-  row: Supervision["nodes"][number] | undefined;
-  pressed: boolean;
-  onSelect: (nodeId: string) => void;
-}) {
-  const open = row?.open ?? 0;
-  return (
-    <button
-      type="button"
-      aria-pressed={pressed}
-      onClick={() => onSelect(node.id)}
-      className={`flex min-w-[120px] flex-col items-start gap-1 rounded-lg border bg-card px-3 py-2 text-left ${
-        pressed ? "border-primary bg-accent" : ""
-      } ${open === 0 ? "opacity-60" : ""}`}
-    >
-      <span className="text-[13px] font-medium">{node.name}</span>
-      <span className="font-mono text-sm">{open}</span>
-      <span
-        aria-hidden
-        className="h-1 w-full rounded-full"
-        style={{
-          backgroundColor: heatColor(
-            row?.median_hours ?? 0,
-            node.deadline_hours,
-          ),
-        }}
-      />
-    </button>
-  );
-}
-
 // clientOf gives the first string field of the case data, - when
 // absent.
 function clientOf(def: ProcessDefinition, data: Record<string, unknown>) {
@@ -331,8 +281,34 @@ export function SupervisionScreen({
   const [selected, setSelected] = useState<string | null>(
     selectedNodeId ?? null,
   );
-  const flowNodes = def.nodes.filter((node) => node.type !== "start");
+  // The layout keeps its definition, so a new definition shows the
+  // wait text, not the diagram of the previous process.
+  const [drawn, setDrawn] = useState<{
+    def: ProcessDefinition;
+    layout: Layout | null;
+  } | null>(null);
+  const layout = drawn?.def === def ? drawn.layout : null;
+  const layoutFailed = drawn?.def === def && drawn.layout === null;
   const block = blockOf(def, supervision, users);
+
+  useEffect(() => {
+    let live = true;
+    layoutProcess(def).then(
+      (next) => {
+        if (live) {
+          setDrawn({ def, layout: next });
+        }
+      },
+      () => {
+        if (live) {
+          setDrawn({ def, layout: null });
+        }
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [def]);
 
   return (
     <div className="w-full px-4 py-3">
@@ -418,25 +394,34 @@ export function SupervisionScreen({
       </div>
 
       <div className="mb-4 rounded-lg border bg-card">
-        <div className="border-b px-4 py-3">
-          <h2 className="text-sm font-semibold">Steps and indicators</h2>
+        <div className="flex h-10 items-center justify-between gap-4 border-b px-4">
+          <h2 className="truncate text-[13.5px] font-semibold">
+            {`${def.name}, live flow of the open cases`}
+          </h2>
+          <p className="truncate text-xs text-muted-foreground">
+            {`More dots where more cases pass (last ${flow.days} days). The halo shows the case ages against the step deadline.`}
+          </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 px-4 py-4">
-          {flowNodes.map((node, index) => (
-            <span key={node.id} className="contents">
-              {index > 0 && (
-                <span aria-hidden className="text-muted-foreground">
-                  {"→"}
-                </span>
-              )}
-              <StepChip
-                node={node}
-                row={supervision.nodes.find((n) => n.node_id === node.id)}
-                pressed={selected === node.id}
-                onSelect={setSelected}
-              />
-            </span>
-          ))}
+        <div className="px-4 py-4">
+          {layoutFailed ? (
+            <p className="text-sm text-muted-foreground">
+              The diagram could not be drawn.
+            </p>
+          ) : layout === null ? (
+            <p className="text-sm text-muted-foreground">Drawing the diagram.</p>
+          ) : (
+            <LiveDiagram
+              def={def}
+              layout={layout}
+              sup={supervision}
+              flow={flow}
+              selected={selected}
+              onSelect={setSelected}
+            />
+          )}
+        </div>
+        <div className="border-t px-4 py-2">
+          <FlowLegend />
         </div>
       </div>
 

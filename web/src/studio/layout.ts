@@ -340,7 +340,7 @@ export function mainPath(def: ProcessDefinition): string[] | null {
 // A depth-first walk from the start: the back links (to a node on
 // the walk stack, so a loop) and a topological order of the other
 // links, so every node comes after the nodes that lead to it.
-function walk(def: ProcessDefinition, startId: string): { order: string[]; back: Set<string> } {
+export function walk(def: ProcessDefinition, startId: string): { order: string[]; back: Set<string> } {
   const back = new Set<string>();
   const state = new Map<string, "open" | "done">();
   const post: string[] = [];
