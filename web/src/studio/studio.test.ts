@@ -1305,6 +1305,29 @@ describe("top bar", () => {
     expect(html).toContain("Monitor");
   });
 
+  test("fix-monitor row M6: Monitor links to the app supervision of the process", () => {
+    const html = renderToString(
+      createElement(TopBar, {
+        def: miniDefinition,
+        version: versionRow(1, "published"),
+        processId: "p1",
+      }),
+    );
+    expect(html).toMatch(
+      /<a href="\/app\?view=supervision&amp;process=p1"[^>]*>Monitor<\/a>/,
+    );
+    expect(html).not.toMatch(/<button[^>]*disabled[^>]*>Monitor</);
+  });
+
+  test("fix-monitor row M7: with no process, Monitor is a disabled button", () => {
+    const html = renderToString(
+      createElement(TopBar, { def: miniDefinition, version: versionRow(1, "published") }),
+    );
+    expect(html).toMatch(
+      /<button[^>]*disabled=""[^>]*title="Open a process first"[^>]*>Monitor<\/button>/,
+    );
+  });
+
   test("16: a draft version reads v2 · Draft", () => {
     const html = renderToString(
       createElement(TopBar, {

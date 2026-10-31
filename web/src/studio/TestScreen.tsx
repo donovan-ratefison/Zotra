@@ -461,7 +461,9 @@ export function TestScreen({ def, version }: {
               <span aria-hidden className="h-5 w-px bg-border" />
             </>
           )}
-          <span className="text-muted-foreground">Test case</span>
+          <span className="text-muted-foreground">
+            {loaded.case.is_test ? "Test case" : "Case"}
+          </span>
           <span className="font-medium">{loaded.case.reference}</span>
           <Badge variant="secondary">{`v${version.number}`}</Badge>
           <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>

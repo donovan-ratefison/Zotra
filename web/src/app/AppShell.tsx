@@ -118,12 +118,23 @@ export function viewUrl(userId: string, view: AppView): string {
   return `/app${viewSearch(userId, view)}`;
 }
 
-// pickProcess takes the earliest process that is not archived, then
-// the lowest id (the StudioShell rule).
-function pickProcess(
+// processUrlOf gives the process query value of one URL, or null.
+export function processUrlOf(search: string): string | null {
+  return new URLSearchParams(search).get("process") || null;
+}
+
+// pickProcess takes the wanted process when it is not archived. Else
+// it takes the earliest process that is not archived, then the lowest
+// id (the StudioShell rule).
+export function pickProcess(
   rows: ProcessSummary[] | undefined,
+  wanted: string | null,
 ): ProcessSummary | null {
   const active = rows?.filter((row) => row.archived_at == null) ?? [];
+  const match = active.find((row) => row.id === wanted);
+  if (match !== undefined) {
+    return match;
+  }
   if (active.length === 0) {
     return null;
   }
@@ -227,7 +238,10 @@ export function AppShell() {
     queryKey: ["processes"],
     queryFn: listProcesses,
   });
-  const process = pickProcess(processesQuery.data);
+  const [wantedProcess] = useState(() =>
+    typeof location === "undefined" ? null : processUrlOf(location.search),
+  );
+  const process = pickProcess(processesQuery.data, wantedProcess);
   const versionsQuery = useQuery({
     queryKey: ["versions", process?.id],
     queryFn: () => listVersions(process!.id),

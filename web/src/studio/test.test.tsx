@@ -273,12 +273,12 @@ function renderStep(state: CaseState, props?: {
 
 // renderTestScreen renders TestScreen with both queries pre-seeded
 // and the store set to the test mode with case c1.
-function renderTestScreen(state: CaseState = stateFixture): string {
+function renderTestScreen(state: CaseState = stateFixture, isTest = true): string {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   client.setQueryData(["users"], usersFixture);
-  client.setQueryData(["case", "c1"], { case: caseFixture, state });
+  client.setQueryData(["case", "c1"], { case: { ...caseFixture, is_test: isTest }, state });
   setStudioStore({
     selectedNodeId: null,
     tab: "general",
@@ -565,6 +565,12 @@ describe("test screen", () => {
     expect(html).toContain("New test case");
     expect(html).toContain("Demo Advisor");
     expect(html).toMatch(/<button(?![^>]*\bdisabled=)[^>]*aria-label="Act as"/);
+  });
+
+  test("fix-monitor row M8: a real case reads Case, a test case reads Test case", () => {
+    expect(renderTestScreen(stateFixture, false)).toContain(">Case<");
+    expect(renderTestScreen(stateFixture, false)).not.toContain(">Test case<");
+    expect(renderTestScreen(stateFixture, true)).toContain(">Test case<");
   });
 
   test("pol-10 row T1: a closed case keeps a disabled act-as pick and shows the final data", () => {

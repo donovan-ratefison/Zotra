@@ -734,6 +734,7 @@ export function StudioShell() {
     content = (
       <div className="flex h-screen flex-col">
         <TopBar
+          processId={processId}
           def={proposal.definition}
           version={undefined}
           proposalName={proposal.name}
@@ -816,6 +817,7 @@ export function StudioShell() {
     content = (
       <div className="flex h-screen flex-col">
         <TopBar
+          processId={processId}
           def={loaded.definition}
           version={version}
           onNewFromPolicy={() => setImportOpen(true)}
@@ -1009,6 +1011,7 @@ export function TopBar({
   onUpdatePolicy,
   onUndo,
   canUndo = false,
+  processId,
 }: {
   def: ProcessDefinition;
   version?: VersionSummary;
@@ -1028,6 +1031,8 @@ export function TopBar({
   onUpdatePolicy?: () => void;
   onUndo?: () => void;
   canUndo?: boolean;
+  // The opened process. The Monitor link opens its app supervision.
+  processId?: string | null;
 }) {
   const list = version === undefined ? [] : versions.length > 0 ? versions : [version];
   const newest = newestPublished(list);
@@ -1154,14 +1159,24 @@ export function TopBar({
         >
           Test
         </button>
-        <button
-          type="button"
-          disabled
-          title="The monitor screen is not built yet"
-          className="px-2.5 py-1 text-[12.5px] text-muted-foreground"
-        >
-          Monitor
-        </button>
+        {processId ? (
+          <a
+            href={`/app?view=supervision&process=${encodeURIComponent(processId)}`}
+            title="Open the live supervision of this process in the app"
+            className="rounded px-2.5 py-1 text-[12.5px] font-medium"
+          >
+            Monitor
+          </a>
+        ) : (
+          <button
+            type="button"
+            disabled
+            title="Open a process first"
+            className="px-2.5 py-1 text-[12.5px] text-muted-foreground"
+          >
+            Monitor
+          </button>
+        )}
       </div>
       {version !== undefined && (
         <div className="shrink-0">

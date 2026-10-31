@@ -11,7 +11,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApiError } from "../studio/api";
 import { fetchInbox } from "./app-api";
-import { AppShell, brandVars, hslOf } from "./AppShell";
+import { AppShell, brandVars, hslOf, pickProcess, processUrlOf } from "./AppShell";
 import { CaseScreen } from "./CaseScreen";
 import { dayTimeText, InboxScreen, moneyText, pickField } from "./InboxScreen";
 import type { InboxCase, InboxUser } from "./app-api";
@@ -298,6 +298,32 @@ describe("format helpers", () => {
     expect(pickField(defFixture, "string")?.name).toBe("client_name");
     expect(pickField(defFixture, "money")?.name).toBe("amount");
     expect(pickField(defFixture, "date")).toBeNull();
+  });
+});
+
+describe("process of the URL", () => {
+  const p1 = { id: "p1", name: "One", created_at: "2026-10-01T00:00:00Z" };
+  const p2 = { id: "p2", name: "Two", created_at: "2026-10-02T00:00:00Z" };
+
+  test("fix-monitor row M1: processUrlOf reads the process value", () => {
+    expect(processUrlOf("?view=supervision&process=p2")).toBe("p2");
+  });
+
+  test("fix-monitor row M2: processUrlOf with no value gives null", () => {
+    expect(processUrlOf("?view=supervision")).toBeNull();
+  });
+
+  test("fix-monitor row M3: pickProcess takes the wanted process", () => {
+    expect(pickProcess([p1, p2], "p2")).toBe(p2);
+  });
+
+  test("fix-monitor row M4: an archived wanted process falls back to the earliest", () => {
+    const archived = { ...p2, archived_at: "2026-10-03T00:00:00Z" };
+    expect(pickProcess([p1, archived], "p2")).toBe(p1);
+  });
+
+  test("fix-monitor row M5: an unknown wanted process falls back to the earliest", () => {
+    expect(pickProcess([p1], "nope")).toBe(p1);
   });
 });
 
