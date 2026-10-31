@@ -1,7 +1,7 @@
 // The step screen: the step the case rests on, the act-as pick, the
 // form from the fields and the scope, and the actions. It renders
-// one command at a time through onCommand; TestScreen owns the case
-// and the command answers.
+// one command through onCommand, or a decision chain through
+// onDecide. The parent owns the case and the command answers.
 //
 // Layout rule: the form is compact (two columns, read values as a
 // short summary) and the actions sit in a footer that sticks to the
@@ -10,8 +10,10 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/ui/button";
+import { Dialog, DialogContent } from "@/ui/dialog";
 import { Hint } from "@/ui/hint";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
+import { decisionLabel } from "../app/triage";
 import { FieldInput } from "./field-inputs";
 import { valueText } from "./format";
 import { roleColor } from "./layout";
@@ -151,16 +153,15 @@ function Footer({ children }: { children: ReactNode }) {
   );
 }
 
-export function StepScreen({ def, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly = false, actorLocked = false, actorInBar = false, showHeader = true, finalData = false, documents, documentsError, events, uploading, onUpload }: {
+export function StepScreen({ def, state, users, actor, onActorChange, onCommand, onDecide, failedChecks, readOnly = false, actorLocked = false, actorInBar = false, showHeader = true, finalData = false, documents, documentsError, events, uploading, onUpload }: {
   def: ProcessDefinition;
   state: CaseState;
   users: UserDTO[];
   actor: string;
   onActorChange: (id: string) => void;
   onCommand: (cmd: CommandInput) => void;
+  onDecide: (cmds: CommandInput[]) => void;
   failedChecks: { id: string; message: string }[];
-  decisionEnabled: boolean;
-  onValueChange: () => void;
   readOnly?: boolean;
   actorLocked?: boolean;
   actorInBar?: boolean; // the caller renders ActorSelect in its toolbar
@@ -222,9 +223,8 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
           actor={actor}
           onActorChange={onActorChange}
           onCommand={onCommand}
+          onDecide={onDecide}
           failedChecks={failedChecks}
-          decisionEnabled={decisionEnabled}
-          onValueChange={onValueChange}
           readOnly={readOnly}
           actorLocked={actorLocked}
           actorInBar={actorInBar}
@@ -242,7 +242,7 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
 // TaskBody is the task-only part: the Act as pick, then the take
 // button or the form with the actions. A replay disables the pick and
 // hides the commands.
-function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly, actorLocked, actorInBar, documents, documentsError, events, uploading, onUpload }: {
+function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, onDecide, failedChecks, readOnly, actorLocked, actorInBar, documents, documentsError, events, uploading, onUpload }: {
   def: ProcessDefinition;
   node: ProcessNode;
   state: CaseState;
@@ -250,9 +250,8 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, fa
   actor: string;
   onActorChange: (id: string) => void;
   onCommand: (cmd: CommandInput) => void;
+  onDecide: (cmds: CommandInput[]) => void;
   failedChecks: { id: string; message: string }[];
-  decisionEnabled: boolean;
-  onValueChange: () => void;
   readOnly: boolean;
   actorLocked: boolean;
   actorInBar: boolean;
@@ -342,9 +341,8 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, fa
       state={state}
       actorLine={actorLine}
       onCommand={onCommand}
+      onDecide={onDecide}
       failedChecks={failedChecks}
-      decisionEnabled={decisionEnabled}
-      onValueChange={onValueChange}
       readOnly={readOnly}
       documents={documents}
       documentsError={documentsError}
@@ -406,6 +404,45 @@ function DataList({ def, state, fields, label }: {
   );
 }
 
+// nextStepText tells where a decision sends the case: a task, a
+// closing result, or a gateway that the rules resolve later.
+export function nextStepText(def: ProcessDefinition, nodeId: string, decision: string): string {
+  const edge = def.edges.find((e) => e.from === nodeId && e.decision === decision);
+  const target = def.nodes.find((n) => n.id === edge?.to);
+  if (target?.type === "task") return `Next step by rule: ${target.name}.`;
+  if (target?.type === "end" && target.end_result !== null) return `The case closes: ${target.end_result}.`;
+  return "The rules of the process choose the next step.";
+}
+
+// decisionCommands gives the commands of one decision click: the form
+// values first (null sends none), then the decision.
+export function decisionCommands(decision: string, values: Record<string, unknown> | null): CommandInput[] {
+  const decide: CommandInput = { type: "decide", decision };
+  return values === null ? [decide] : [{ type: "submit", values }, decide];
+}
+
+// DecisionConfirmBody is the body of the decision confirmation dialog.
+export function DecisionConfirmBody({ decision, text, onCancel, onConfirm }: {
+  decision: string;
+  text: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const label = decisionLabel(decision);
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
+        <h2 className="text-lg font-semibold leading-none">{`${label} this case?`}</h2>
+        <p className="text-sm text-muted-foreground">{text}</p>
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={onCancel}>Cancel</Button>
+        <Button onClick={onConfirm}>{label}</Button>
+      </div>
+    </div>
+  );
+}
+
 // sendsBack tells if the link of a decision goes to a step that the case
 // entered before its first entry in the current step. Such a link sends
 // the case back, so the gate of the current step does not apply to that
@@ -426,15 +463,14 @@ export function sendsBack(def: ProcessDefinition, nodeId: string, decision: stri
 // fields with the local values, the documents, and the sticky
 // actions. The key on the parent render resets the values at each
 // step change. A replay disables the inputs and hides the actions.
-function StepForm({ def, node, state, actorLine, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly, documents, documentsError, events, uploading, onUpload }: {
+function StepForm({ def, node, state, actorLine, onCommand, onDecide, failedChecks, readOnly, documents, documentsError, events, uploading, onUpload }: {
   def: ProcessDefinition;
   node: ProcessNode;
   state: CaseState;
   actorLine: ReactNode;
   onCommand: (cmd: CommandInput) => void;
+  onDecide: (cmds: CommandInput[]) => void;
   failedChecks: { id: string; message: string }[];
-  decisionEnabled: boolean;
-  onValueChange: () => void;
   readOnly: boolean;
   documents: DocumentDTO[] | null;
   documentsError: string | null;
@@ -443,6 +479,8 @@ function StepForm({ def, node, state, actorLine, onCommand, failedChecks, decisi
   onUpload: (file: File, targetName: string) => void;
 }) {
   const [values, setValues] = useState<Record<string, unknown>>({});
+  // asked is the decision that waits for its confirmation.
+  const [asked, setAsked] = useState<string | null>(null);
 
   // fillTargets is the field list the read route needs: the write
   // fields of the node in def.fields order, as name, label and type.
@@ -464,9 +502,7 @@ function StepForm({ def, node, state, actorLine, onCommand, failedChecks, decisi
   // fillFormValues merges the read values into the local values, one
   // key per rendered input: write access and no computed expression.
   // The other keys of the given record are dropped, and the read-only
-  // and computed fields stay untouched (the lot 3.1 rule). The fill
-  // is one setValues merge, then one onValueChange call: every value
-  // change disables the decision buttons until the next submit.
+  // and computed fields stay untouched (the lot 3.1 rule).
   const fillFormValues = (filled: Record<string, unknown>) => {
     setValues((old) => {
       const next = { ...old };
@@ -481,7 +517,6 @@ function StepForm({ def, node, state, actorLine, onCommand, failedChecks, decisi
       }
       return next;
     });
-    onValueChange();
   };
 
   // The document gate: each required name is provided by one scan,
@@ -549,10 +584,7 @@ function StepForm({ def, node, state, actorLine, onCommand, failedChecks, decisi
                 <FieldInput
                   field={field}
                   value={valueOf(field)}
-                  onChange={(v) => {
-                    setValues((old) => ({ ...old, [field.name]: v }));
-                    onValueChange();
-                  }}
+                  onChange={(v) => setValues((old) => ({ ...old, [field.name]: v }))}
                   disabled={readOnly}
                   scans={list.map((d) => ({ id: d.id, name: d.name }))}
                 />
@@ -587,29 +619,50 @@ function StepForm({ def, node, state, actorLine, onCommand, failedChecks, decisi
             </p>
           )}
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant={node.decisions.length > 0 ? "outline" : "default"}
-              disabled={blocked}
-              onClick={() => onCommand({ type: "submit", values: submitted() })}
-            >
-              Submit
-            </Button>
+            {node.decisions.length === 0 && (
+              <Button
+                disabled={blocked}
+                onClick={() => onCommand({ type: "submit", values: submitted() })}
+              >
+                Submit
+              </Button>
+            )}
             {node.decisions.map((decision) => (
               <Button
                 key={decision}
                 className="capitalize"
-                disabled={!sendsBack(def, node.id, decision, events) && (!decisionEnabled || blocked)}
-                onClick={() => onCommand({ type: "decide", decision })}
+                disabled={!sendsBack(def, node.id, decision, events) && blocked}
+                onClick={() => setAsked(decision)}
               >
                 {decision}
               </Button>
             ))}
             {node.decisions.length > 0 && (
               <Hint label="How to decide">
-                Submit the values first. The decisions open when the checks pass. A decision that sends the case back to an earlier step is always open.
+                A decision sends the values of the form, then moves the case, after a confirmation. A decision that sends the case back to an earlier step is always open.
               </Hint>
             )}
           </div>
+          <Dialog open={asked !== null} onOpenChange={(open) => { if (!open) setAsked(null); }}>
+            <DialogContent
+              aria-label={asked === null ? undefined : `${decisionLabel(asked)} this case?`}
+              showCloseButton={false}
+              className="sm:max-w-[420px]"
+            >
+              {asked !== null && (
+                <DecisionConfirmBody
+                  decision={asked}
+                  text={nextStepText(def, node.id, asked)}
+                  onCancel={() => setAsked(null)}
+                  onConfirm={() => {
+                    // A send-back decision sends no values (the form may be incomplete).
+                    onDecide(decisionCommands(asked, sendsBack(def, node.id, asked, events) || inputs.length === 0 ? null : submitted()));
+                    setAsked(null);
+                  }}
+                />
+              )}
+            </DialogContent>
+          </Dialog>
         </Footer>
       )}
     </>

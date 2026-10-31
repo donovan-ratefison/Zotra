@@ -44,6 +44,7 @@ import { ReplayDialog } from "./ReplayDialog";
 import { commandsOf, runCopy } from "./replay";
 import { ProcessDiagram } from "./diagram";
 import { ActorSelect, StepHeader, StepScreen } from "./StepScreen";
+import { sendDecision } from "../app/triage";
 import { TimelineBar } from "./TimelineBar";
 import { useStudioStore } from "./store";
 import type { ProcessDefinition, VersionSummary } from "./types";
@@ -196,7 +197,6 @@ export function TestScreen({ def, version }: {
     events: CaseEvent[];
     state: CaseState;
   } | null>(null);
-  const [valuesChanged, setValuesChanged] = useState(false);
 
   // The failed checks of the last command answer: one entry per
   // check_evaluated event with result false. The message comes from
@@ -213,31 +213,18 @@ export function TestScreen({ def, version }: {
       return { id, message };
     });
 
-  // decisionEnabled: the last answer submitted the values of the
-  // current node, no check failed, the case still rests on the node,
-  // and no value changed since.
-  const state = caseQuery.data?.state;
-  const decisionEnabled =
-    lastAnswer !== null &&
-    state !== undefined &&
-    lastAnswer.events.some(
-      (e) => e.type === "data_submitted" && e.payload.node_id === state.node_id,
-    ) &&
-    failedChecks.length === 0 &&
-    lastAnswer.state.node_id === state.node_id &&
-    !valuesChanged;
-
-  // onCommand runs one command. The failed list clears while it
-  // runs; the answer merges into the case cache (the state only, the
-  // case row stays), and a failure keeps the last state.
-  async function onCommand(cmd: CommandInput) {
+  // onCommands runs a command chain (one command, or a submit and a
+  // decide). The failed list clears while it runs; the merged answer
+  // goes into the case cache (the state only, the case row stays).
+  // A failure refetches the case: a submit can be stored before the
+  // decide fails.
+  async function onCommands(cmds: CommandInput[]) {
     if (testCaseId === null || at !== null) {
       return;
     }
     setLastAnswer(null);
-    setValuesChanged(false);
     try {
-      const answer = await runCommand(testCaseId, effectiveActor, cmd);
+      const answer = await sendDecision(testCaseId, effectiveActor, cmds, runCommand);
       setLastAnswer(answer);
       queryClient.setQueryData<{
         case: CaseDTO;
@@ -255,6 +242,8 @@ export function TestScreen({ def, version }: {
       });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : String(err));
+      void queryClient.invalidateQueries({ queryKey: ["case", testCaseId] });
+      void queryClient.invalidateQueries({ queryKey: ["events", testCaseId] });
     }
   }
 
@@ -622,10 +611,9 @@ export function TestScreen({ def, version }: {
                 users={usersQuery.data}
                 actor={effectiveActor}
                 onActorChange={setActor}
-                onCommand={(cmd) => void onCommand(cmd)}
+                onCommand={(cmd) => void onCommands([cmd])}
+                onDecide={(cmds) => void onCommands(cmds)}
                 failedChecks={failedChecks}
-                decisionEnabled={decisionEnabled}
-                onValueChange={() => setValuesChanged(true)}
                 readOnly={at !== null}
                 documents={documentsQuery.data ?? null}
                 documentsError={

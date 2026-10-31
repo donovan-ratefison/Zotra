@@ -24,7 +24,7 @@ import {
 import { FieldInput } from "./field-inputs";
 import { ScanDialogBody, ZoneOverlay, zoneStyle } from "./ScanDialog";
 import { documentProvides, StepDocuments } from "./StepDocuments";
-import { sendsBack, StepScreen } from "./StepScreen";
+import { decisionCommands, DecisionConfirmBody, nextStepText, sendsBack, StepScreen } from "./StepScreen";
 import { TestScreen } from "./TestScreen";
 import { useStudioStore, type StudioMode } from "./store";
 import type { ProcessDefinition, ProcessNode, VersionSummary } from "./types";
@@ -281,7 +281,6 @@ function renderDocs(props?: {
 function renderStep(state: CaseState, props?: {
   documents?: DocumentDTO[] | null;
   events?: CaseEvent[];
-  decisionEnabled?: boolean;
   actor?: string;
   def?: ProcessDefinition;
   readOnly?: boolean;
@@ -296,8 +295,7 @@ function renderStep(state: CaseState, props?: {
       onActorChange: () => {},
       onCommand: () => {},
       failedChecks: [],
-      decisionEnabled: props?.decisionEnabled ?? false,
-      onValueChange: () => {},
+      onDecide: () => {},
       documents:
         props && props.documents !== undefined ? props.documents : [scan()],
       documentsError: null,
@@ -670,19 +668,18 @@ describe("step screen gate", () => {
 
   test("5.2 row 18: a missing signature disables the decisions", () => {
     const html = renderStep(signoffState, {
-      decisionEnabled: true,
       events: [],
     });
     expect(html).toMatch(/<button[^>]*disabled[^>]*>[^<]*approve/);
     expect(html).toMatch(/<button[^>]*disabled[^>]*>[^<]*refuse/);
     expect(html).toMatch(/Missing: [^<]*signature/);
     const variant = renderStep(signoffState, {
-      decisionEnabled: true,
       events: [signatureEvent],
     });
     expect(variant).toMatch(/<button(?![^>]*\bdisabled=)[^>]*>[^<]*approve/);
     expect(variant).toMatch(/<button(?![^>]*\bdisabled=)[^>]*>[^<]*refuse/);
     expect(variant).not.toMatch(/Missing: [^<]*signature/);
+    expect(html).not.toMatch(/<button[^>]*>[^<]*Submit</);
   });
 
   test("5.2 row 26: a loading list counts every name as missing", () => {
@@ -751,19 +748,17 @@ describe("send-back decision", () => {
   test("fb-023 row R5: the send-back decision is open with no signature", () => {
     const html = renderStep(signoffState, {
       def: backDefinition,
-      decisionEnabled: false,
       events: toSignoff,
     });
     expect(html).toMatch(/<button(?![^>]*\bdisabled=)[^>]*>[^<]*back</);
     expect(html).toMatch(/<button[^>]*disabled[^>]*>[^<]*approve/);
     expect(html).toMatch(/Missing: [^<]*signature/);
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>[^<]*Submit/);
+    expect(html).not.toMatch(/<button[^>]*>[^<]*Submit</);
   });
 
   test("fb-023 row R6: a read-only step shows no decision", () => {
     const html = renderStep(signoffState, {
       def: backDefinition,
-      decisionEnabled: false,
       events: toSignoff,
       readOnly: true,
     });
@@ -873,5 +868,85 @@ describe("test screen wiring", () => {
     expect(html).toContain("Documents");
     expect(html).toContain("1 of 2 required");
     expect(html).toContain("image/png · 27/10/2026, 12:00:00");
+  });
+});
+
+describe("decision confirm", () => {
+  const generic = "The rules of the process choose the next step.";
+
+  test("fb-025 row C1: a task target gives its name", () => {
+    expect(nextStepText(docsDefinition, "analysis", "favorable")).toBe("Next step by rule: Sign off.");
+  });
+
+  test("fb-025 row C2: an end target gives its result", () => {
+    expect(nextStepText(docsDefinition, "signoff", "refuse")).toBe("The case closes: refused.");
+  });
+
+  test("fb-025 row C3: a gateway target gives the generic text", () => {
+    expect(nextStepText(docsDefinition, "signoff", "approve")).toBe(generic);
+  });
+
+  test("fb-025 row C4: a decision with no edge is refused", () => {
+    expect(nextStepText(docsDefinition, "signoff", "nope")).toBe(generic);
+  });
+
+  test("fb-025 row C5: an end with a null result is refused", () => {
+    const def: ProcessDefinition = {
+      ...docsDefinition,
+      nodes: docsDefinition.nodes.map((n) => (n.id === "refused" ? { ...n, end_result: null } : n)),
+    };
+    expect(nextStepText(def, "signoff", "refuse")).toBe(generic);
+  });
+
+  test("fb-025 row C6: an unknown target node is refused", () => {
+    const def: ProcessDefinition = {
+      ...docsDefinition,
+      edges: docsDefinition.edges.map((e) => (e.id === "e10" ? { ...e, to: "ghost" } : e)),
+    };
+    expect(nextStepText(def, "signoff", "refuse")).toBe(generic);
+  });
+
+  test("fb-025 row C7: values give a submit, then the decide", () => {
+    expect(decisionCommands("approve", { amount: 5 })).toEqual([
+      { type: "submit", values: { amount: 5 } },
+      { type: "decide", decision: "approve" },
+    ]);
+  });
+
+  test("fb-025 row C8: no values give the decide only", () => {
+    expect(decisionCommands("back", null)).toEqual([{ type: "decide", decision: "back" }]);
+  });
+
+  test("fb-025 row C9: the dialog body shows the title, the text and the buttons", () => {
+    const html = renderToString(
+      createElement(DecisionConfirmBody, {
+        decision: "approve",
+        text: "Next step by rule: Sign off.",
+        onCancel: () => {},
+        onConfirm: () => {},
+      }),
+    );
+    expect(html).toContain(">Approve this case?</h2>");
+    expect(html).toContain(">Next step by rule: Sign off.</p>");
+    expect(html).toContain(">Cancel</button>");
+    expect(html).toContain(">Approve</button>");
+    expect(html.indexOf(">Cancel</button>")).toBeLessThan(html.indexOf(">Approve</button>"));
+  });
+
+  test("fb-025 row C10: a signed step shows open decisions and no Submit", () => {
+    const html = renderStep(signoffState, { events: [signatureEvent] });
+    expect(html).toMatch(/<button(?![^>]*\bdisabled=)[^>]*>[^<]*approve/);
+    expect(html).toMatch(/<button(?![^>]*\bdisabled=)[^>]*>[^<]*refuse/);
+    expect(html).not.toMatch(/<button[^>]*>[^<]*Submit</);
+    expect(html).not.toContain("this case?");
+    expect(html).not.toContain("Missing:");
+  });
+
+  test("fb-025 row C11: a step with no decision keeps Submit", () => {
+    const html = renderStep(takenState, {
+      documents: [scan(), scan({ id: "d2", name: "Salary slips.png" })],
+    });
+    expect(html).toMatch(/<button(?![^>]*\bdisabled=)[^>]*>[^<]*Submit/);
+    expect(html).not.toContain('aria-label="How to decide"');
   });
 });

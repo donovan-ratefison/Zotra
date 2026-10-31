@@ -247,7 +247,6 @@ function stubFetch(status: number, body: unknown) {
 function renderStep(state: CaseState, props?: {
   actor?: string;
   failedChecks?: { id: string; message: string }[];
-  decisionEnabled?: boolean;
   actorLocked?: boolean;
   finalData?: boolean;
 }): string {
@@ -260,8 +259,7 @@ function renderStep(state: CaseState, props?: {
       onActorChange: () => {},
       onCommand: () => {},
       failedChecks: props?.failedChecks ?? [],
-      decisionEnabled: props?.decisionEnabled ?? false,
-      onValueChange: () => {},
+      onDecide: () => {},
       actorLocked: props?.actorLocked ?? false,
       finalData: props?.finalData ?? false,
       documents: [scanRow],
@@ -505,17 +503,11 @@ describe("step screen", () => {
     expect(html).not.toContain("Take the step");
   });
 
-  test("3.1 row 16: the decisions wait while decisionEnabled is false", () => {
-    const html = renderStep(analysisState, { decisionEnabled: false });
-    expect(html).toContain("Submit");
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>[^<]*favorable/);
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>[^<]*unfavorable/);
-  });
-
-  test("3.1 row 17: the decisions enable when decisionEnabled is true", () => {
-    const html = renderStep(analysisState, { decisionEnabled: true });
+  test("3.1 row 16: a task with decisions has open decisions and no Submit", () => {
+    const html = renderStep(analysisState);
     expect(html).toMatch(/<button(?![^>]*\bdisabled=)[^>]*>[^<]*favorable/);
     expect(html).toMatch(/<button(?![^>]*\bdisabled=)[^>]*>[^<]*unfavorable/);
+    expect(html).not.toMatch(/<button[^>]*>[^<]*Submit</);
   });
 
   test("3.1 row 18: a closed case shows the result, the final data and no act-as pick", () => {

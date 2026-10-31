@@ -25,7 +25,7 @@ import {
 import { StepScreen } from "../studio/StepScreen";
 import { Button } from "@/ui/button";
 import { dayTimeText, moneyText, pickField } from "./InboxScreen";
-import { leftStep } from "./triage";
+import { leftStep, sendDecision } from "./triage";
 
 // Loading is the pending stage of the case or of its version.
 function Loading() {
@@ -87,7 +87,6 @@ export function CaseScreen({
     events: CaseEvent[];
     state: CaseState;
   } | null>(null);
-  const [valuesChanged, setValuesChanged] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   const def = versionQuery.data?.definition;
@@ -108,28 +107,15 @@ export function CaseScreen({
       return { id, message };
     });
 
-  // decisionEnabled: the last answer submitted the values of the
-  // current node, no check failed, the case still rests on the node,
-  // and no value changed since.
-  const decisionEnabled =
-    lastAnswer !== null &&
-    state !== undefined &&
-    lastAnswer.events.some(
-      (e) =>
-        e.type === "data_submitted" && e.payload.node_id === state.node_id,
-    ) &&
-    failedChecks.length === 0 &&
-    lastAnswer.state.node_id === state.node_id &&
-    !valuesChanged;
-
-  // onCommand runs one command. The answer merges into the case
-  // cache (the state only, the case row stays), and the event list
-  // invalidates (the pattern of lot 3.2).
-  async function onCommand(cmd: CommandInput) {
+  // onCommands runs a command chain (one command, or a submit and a
+  // decide). The merged answer goes into the case cache (the state
+  // only, the case row stays), and the event list invalidates (the
+  // pattern of lot 3.2). A failure refetches the case: a submit can
+  // be stored before the decide fails.
+  async function onCommands(cmds: CommandInput[]) {
     setLastAnswer(null);
-    setValuesChanged(false);
     try {
-      const answer = await runCommand(caseId, userId, cmd);
+      const answer = await sendDecision(caseId, userId, cmds, runCommand);
       setLastAnswer(answer);
       queryClient.setQueryData<{ case: CaseDTO; state: CaseState }>(
         ["case", caseId],
@@ -139,6 +125,8 @@ export function CaseScreen({
       void queryClient.invalidateQueries({ queryKey: ["events", caseId] });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : String(err));
+      void queryClient.invalidateQueries({ queryKey: ["case", caseId] });
+      void queryClient.invalidateQueries({ queryKey: ["events", caseId] });
     }
   }
 
@@ -248,10 +236,9 @@ export function CaseScreen({
           users={users}
           actor={userId}
           onActorChange={() => {}}
-          onCommand={(cmd) => void onCommand(cmd)}
+          onCommand={(cmd) => void onCommands([cmd])}
+          onDecide={(cmds) => void onCommands(cmds)}
           failedChecks={failedChecks}
-          decisionEnabled={decisionEnabled}
-          onValueChange={() => setValuesChanged(true)}
           documents={documentsQuery.data ?? null}
           documentsError={
             documentsQuery.error instanceof ApiError
