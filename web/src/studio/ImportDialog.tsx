@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import { BrandLoader } from "@/components/BrandLoader";
 import { Button } from "@/ui/button";
-import { Dialog, DialogContent } from "@/ui/dialog";
+import { Dialog, DialogContent, focusContent } from "@/ui/dialog";
 import { Hint } from "@/ui/hint";
 import { Input } from "@/ui/input";
 import { ApiError, policyToProcess } from "./api";
@@ -343,15 +343,10 @@ export function ImportDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Focus the dialog content, not its first focusable element:
-          that is the Hint, and a focus opens its tooltip at each open. */}
       <DialogContent
         aria-label="New from policy"
         className="max-h-[85vh] overflow-y-auto"
-        onOpenAutoFocus={(e) => {
-          e.preventDefault();
-          (e.currentTarget as HTMLElement).focus();
-        }}
+        onOpenAutoFocus={focusContent}
       >
         <ImportDialogBody
           onProposed={onProposed}

@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import { Button } from "@/ui/button";
-import { Dialog, DialogContent } from "@/ui/dialog";
+import { Dialog, DialogContent, focusContent } from "@/ui/dialog";
 import { Hint } from "@/ui/hint";
 import { FieldInput } from "./field-inputs";
 import type { ProcessDefinition } from "./types";
@@ -77,15 +77,10 @@ export function NewCaseDialog({ open, onOpenChange, def, busy, error, onCreate, 
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Focus the dialog content, not its first focusable element:
-          that is the Hint, and a focus opens its tooltip at each open. */}
       <DialogContent
         aria-label="New test case"
         className="sm:max-w-[560px]"
-        onOpenAutoFocus={(e) => {
-          e.preventDefault();
-          (e.currentTarget as HTMLElement).focus();
-        }}
+        onOpenAutoFocus={focusContent}
       >
         <NewCaseDialogBody
           def={def}

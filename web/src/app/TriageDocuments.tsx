@@ -13,7 +13,7 @@ import { ZoneOverlay } from "../studio/ScanDialog";
 import type { ProcessNode } from "../studio/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
-import { Dialog, DialogContent } from "@/ui/dialog";
+import { Dialog, DialogContent, focusContent } from "@/ui/dialog";
 import { Hint } from "@/ui/hint";
 import { dayTimeText } from "./InboxScreen";
 import { Kbd } from "./TriageScreen";
@@ -251,6 +251,7 @@ export function TriageDocuments(props: BodyProps & {
       <DialogContent
         showCloseButton={false}
         aria-label={rows[index]!.name}
+        onOpenAutoFocus={focusContent}
         aria-describedby={undefined}
         className="top-[5vh] left-[5vw] h-[90vh] w-[90vw] max-w-none translate-x-0 translate-y-0 grid-rows-[50px_minmax(0,1fr)] gap-0 overflow-hidden rounded-xl p-0 sm:max-w-none"
         onKeyDown={(e) => {

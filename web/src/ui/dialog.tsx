@@ -142,6 +142,14 @@ function DialogDescription({
   )
 }
 
+// focusContent is an onOpenAutoFocus handler: it focuses the dialog
+// itself, not its first focusable element. A Hint there opens its
+// tooltip on focus.
+function focusContent(e: Event) {
+  e.preventDefault()
+  ;(e.currentTarget as HTMLElement).focus()
+}
+
 export {
   Dialog,
   DialogClose,
@@ -153,4 +161,5 @@ export {
   DialogPortal,
   DialogTitle,
   DialogTrigger,
+  focusContent,
 }

@@ -9,7 +9,7 @@ import { eventLabel } from "../studio/Timeline";
 import type { ProcessDefinition } from "../studio/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
-import { Dialog, DialogContent } from "@/ui/dialog";
+import { Dialog, DialogContent, focusContent } from "@/ui/dialog";
 import { Hint } from "@/ui/hint";
 import { verifyCase } from "./app-api";
 import { actorOf } from "./AuditScreen";
@@ -393,6 +393,7 @@ export function ChainSheet(
       <DialogContent
         showCloseButton={false}
         aria-label="Case history"
+        onOpenAutoFocus={focusContent}
         aria-describedby={undefined}
         className="top-0 right-0 left-auto flex h-dvh w-[620px] max-w-none translate-x-0 translate-y-0 flex-col gap-0 rounded-none border-y-0 border-r-0 p-0 shadow-[-20px_0_50px_rgba(0,0,0,.18)] sm:max-w-none data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right"
       >

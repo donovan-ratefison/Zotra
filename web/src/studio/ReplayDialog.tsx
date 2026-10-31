@@ -8,7 +8,7 @@
 
 import { useState } from "react";
 import { Button } from "@/ui/button";
-import { Dialog, DialogContent } from "@/ui/dialog";
+import { Dialog, DialogContent, focusContent } from "@/ui/dialog";
 import { Hint } from "@/ui/hint";
 import {
   Select,
@@ -156,7 +156,7 @@ export function ReplayDialog({ open, onOpenChange, def, events, at, busy, error,
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent aria-label="Replay" className="max-h-[85vh] overflow-y-auto">
+      <DialogContent aria-label="Replay" onOpenAutoFocus={focusContent} className="max-h-[85vh] overflow-y-auto">
         <ReplayDialogBody
           def={def}
           events={events}

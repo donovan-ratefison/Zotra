@@ -1,12 +1,14 @@
 // The chain strip test rows B1 to B5, G1 to G3, T1, T2, C1, C2, S1 to
 // S6, N1 to N3, A1, A2, G5, G6, S7 to S10, P1 and P2 of the stamp, P1 to P3 of
-// the sheet progress, and H1 to H7. The environment is node: renderToString for the strip.
+// the sheet progress, H1 to H7, and F1 and F2 of the dialog focus. The
+// environment is node: renderToString for the strip.
 
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import seedJson from "../../../internal/store/seed/example-process.json";
 import { ApiError } from "../studio/api";
+import { focusContent } from "../ui/dialog";
 import type { CaseEvent, CaseState } from "../studio/case-api";
 import type { ProcessDefinition } from "../studio/types";
 import { verifyCase } from "./app-api";
@@ -489,5 +491,22 @@ describe("chain sheet", () => {
 
   test("H7: a busy sheet disables the button", () => {
     expect(sheet({ busy: true })).toMatch(BUSY_V);
+  });
+});
+
+describe("focusContent", () => {
+  test("F1: it stops the default focus and focuses the dialog content", () => {
+    const preventDefault = vi.fn();
+    const focus = vi.fn();
+    focusContent({ preventDefault, currentTarget: { focus } } as unknown as Event);
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(focus).toHaveBeenCalledTimes(1);
+  });
+
+  // Radix always sets currentTarget for onOpenAutoFocus: a null target is
+  // outside the contract of the handler.
+  test("F2: a null currentTarget throws a TypeError", () => {
+    const e = { preventDefault: vi.fn(), currentTarget: null } as unknown as Event;
+    expect(() => focusContent(e)).toThrow(TypeError);
   });
 });

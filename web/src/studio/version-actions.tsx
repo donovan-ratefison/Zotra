@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { ApiError, freezeVersion, forkVersion, publishVersion } from "./api";
 import { BrandLoader } from "@/components/BrandLoader";
 import { Button } from "@/ui/button";
-import { Dialog, DialogContent } from "@/ui/dialog";
+import { Dialog, DialogContent, focusContent } from "@/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -514,6 +514,7 @@ export function VersionActions({ def, version, versions,
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
         <DialogContent
           aria-label="Version history"
+          onOpenAutoFocus={focusContent}
           className="top-0 right-0 left-auto h-full max-h-none w-[420px] max-w-[100vw] translate-x-0 translate-y-0 gap-0 rounded-none border-y-0 border-r-0 p-0 sm:max-w-[420px] data-[state=closed]:zoom-out-100 data-[state=open]:zoom-in-100"
         >
           <HistoryBody

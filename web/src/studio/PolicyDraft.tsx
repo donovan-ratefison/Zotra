@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { BrandLoader } from "@/components/BrandLoader";
 import { Button } from "@/ui/button";
 import { Hint } from "@/ui/hint";
-import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogTitle, focusContent } from "@/ui/dialog";
 import type { PolicyDraft } from "./ai-api";
 import { ApiError } from "./api";
 import { draftHtmlFile } from "./draft-html";
@@ -193,6 +193,7 @@ export function PolicyDraftDialog({ open, onOpenChange, def, version, paragraphs
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         aria-describedby={undefined}
+        onOpenAutoFocus={focusContent}
         className="flex max-h-[85vh] max-w-3xl flex-col sm:max-w-3xl"
       >
         <DialogTitle>Policy draft</DialogTitle>
