@@ -31,7 +31,7 @@ import {
 } from "./case-api";
 import { caseViewOf } from "./case-view";
 import { ChecksTab } from "./ChecksTab";
-import { Inspector, scopeNodeOf } from "./Inspector";
+import { beforeAt, Inspector, scopeNodeOf } from "./Inspector";
 import { listCaseDocuments, uploadDocument, type DocumentDTO } from "./doc-api";
 import { NewCaseDialog } from "./NewCaseDialog";
 import {
@@ -152,7 +152,7 @@ export function TestScreen({ def, version }: {
   // the controls and the timeline; the create flow resets it. The
   // events feed the timeline, the checks tab, the counter and the
   // control bounds. The replay reads the case at the position; the
-  // inspector reads it once more at the earlier position.
+  // inspector reads it once more at the end of the previous milestone.
   const [at, setAt] = useState<number | null>(null);
   const [panelTab, setPanelTab] = useState<PanelTab>("screen");
   const eventsQuery = useQuery({
@@ -169,7 +169,7 @@ export function TestScreen({ def, version }: {
   });
   const count = eventsQuery.data?.length ?? 0;
   const n = at ?? count;
-  const earlier = n - 1;
+  const earlier = beforeAt(def, eventsQuery.data ?? [], n);
   const caseAtQuery = useQuery({
     queryKey: ["caseAt", testCaseId, at],
     queryFn: () => readCase(testCaseId!, at!),
@@ -421,10 +421,11 @@ export function TestScreen({ def, version }: {
   } else {
     // The effective view is the replay answer during a replay, the
     // live answer at the present. The inspector reads the data at the
-    // current and the earlier position; below position 1 there is no
-    // before. The events feed the timeline block, the checks tab and
-    // the counter; their load and error states render inside that
-    // block, so the rest of the screen stays usable.
+    // current position and at the end of the previous milestone; on the
+    // first milestone there is no before. The events feed the timeline
+    // block, the checks tab and the counter; their load and error
+    // states render inside that block, so the rest of the screen stays
+    // usable.
     const loaded =
       at !== null && caseAtQuery.data !== undefined
         ? caseAtQuery.data

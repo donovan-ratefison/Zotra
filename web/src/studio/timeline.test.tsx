@@ -12,7 +12,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactFlowProvider } from "@xyflow/react";
 import { eventLabel } from "./Timeline";
 import { milestonesOf, overflowSides, ScrollEdge, TimelineBar, upcomingOf } from "./TimelineBar";
-import { Inspector, scopeNodeOf } from "./Inspector";
+import { beforeAt, Inspector, scopeNodeOf } from "./Inspector";
 import seedJson from "../../../internal/store/seed/example-process.json";
 import { ChecksTab } from "./ChecksTab";
 import { StepScreen } from "./StepScreen";
@@ -319,8 +319,9 @@ function renderStep(state: CaseState, props?: { readOnly?: boolean }): string {
 
 // renderTestScreen renders TestScreen with the queries pre-seeded and
 // the store set to the test mode with case c1. The earlier query
-// fires at ["caseAt", "c1", 3] (4 events, earlier = 3), so its cache
-// entry is seeded too; its content never renders.
+// fires at ["caseAt", "c1", 2] (earlier = 2, the end of the milestone
+// before position 4), so its cache entry is seeded too; its content
+// never renders.
 function renderTestScreen(): string {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -328,7 +329,7 @@ function renderTestScreen(): string {
   client.setQueryData(["users"], usersFixture);
   client.setQueryData(["case", "c1"], { case: caseFixture, state: stateFixture });
   client.setQueryData(["events", "c1"], eventsBase);
-  client.setQueryData(["caseAt", "c1", 3], {
+  client.setQueryData(["caseAt", "c1", 2], {
     case: caseFixture,
     state: { ...stateFixture, seq: 3, data: {} },
   });
@@ -706,6 +707,46 @@ describe("inspector", () => {
     const row = rowOf(renderInspector(testDefinition, { before: { amount: 1 }, after: {} }), "Amount");
     expect(row).toMatch(/€1\.00[\s\S]*>absent</);
   });
+
+  // walk: a refused case of the review database. Its milestones are
+  // 1-2, 3-7, 8-9, 10-15, 16 and 17.
+  const walk = (
+    [
+      ["case_created"],
+      ["edge_taken"],
+      ["step_entered", "entry"],
+      ["step_assigned", "entry"],
+      ["data_submitted", "entry"],
+      ["check_evaluated", "entry"],
+      ["edge_taken"],
+      ["step_entered", "complete"],
+      ["edge_taken"],
+      ["step_entered", "analysis"],
+      ["step_assigned", "analysis"],
+      ["data_submitted", "analysis"],
+      ["check_evaluated", "analysis"],
+      ["decision_made", "analysis"],
+      ["edge_taken"],
+      ["step_entered", "refused"],
+      ["case_closed"],
+    ] as [string, string?][]
+  ).map(([type, node], i) => ev(i + 1, type, node !== undefined ? { node_id: node } : {}));
+
+  test.each([
+    ["B1", walk, 7, 2],
+    ["B2", walk, 15, 9],
+    ["B3", walk, 9, 7],
+    ["B4", walk, 17, 16],
+    ["B5", walk, 5, 2],
+    ["B6", walk, 2, 0],
+    ["B7", [], 0, 0],
+    ["B8", walk, 18, 0],
+  ] as [string, CaseEvent[], number, number][])(
+    "pol-18b row %s: beforeAt gives the end of the previous milestone",
+    (_row, events, n, want) => {
+      expect(beforeAt(seed, events, n)).toBe(want);
+    },
+  );
 });
 
 describe("checks tab", () => {

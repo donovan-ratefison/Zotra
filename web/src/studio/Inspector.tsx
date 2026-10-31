@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Checkbox } from "@/ui/checkbox";
 import { valueText } from "./format";
 import { accessOf } from "./StepScreen";
+import { milestonesOf } from "./TimelineBar";
 import type { CaseEvent } from "./case-api";
 import type { ProcessDefinition, ScopeAccess } from "./types";
 
@@ -31,6 +32,15 @@ export function scopeNodeOf(
     .reverse()
     .find((e) => e.type === "step_entered" && withRole(e.payload.node_id));
   return last !== undefined ? String(last.payload.node_id) : nodeId;
+}
+
+// beforeAt gives the position of the Before column: the end of the
+// milestone before the one that holds n. 0 means no before.
+export function beforeAt(def: ProcessDefinition, events: CaseEvent[], n: number): number {
+  const m = milestonesOf(def, events, (id) => id).find(
+    (m) => m.firstSeq <= n && n <= m.lastSeq,
+  );
+  return m !== undefined ? m.firstSeq - 1 : 0;
 }
 
 export function Inspector({
