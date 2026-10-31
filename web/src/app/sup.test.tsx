@@ -5,6 +5,7 @@
 // adjacent text nodes, so every string that a row must find whole
 // renders from one template literal.
 
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -34,6 +35,8 @@ import {
   whyText,
 } from "./SupervisionScreen";
 import { AuditScreen } from "./AuditScreen";
+import { LiveDiagram } from "./LiveFlow";
+import { layoutProcess } from "../studio/layout";
 import { AppShell, viewSearch } from "./AppShell";
 import type { InboxCase } from "./app-api";
 import type { UserDTO } from "../studio/case-api";
@@ -356,6 +359,65 @@ describe("supervision screen", () => {
 
   test("14.2 row W2c: no late case shows no block card", () => {
     expect(renderSupervision(noLate)).not.toContain("Where it blocks");
+  });
+
+  // Rows L1 to L6 of lot pol-14: the cards and the legend sit inside
+  // the flow card, between its header and the load card.
+  const H = "Home loan, live flow of the open cases";
+  const WHO = "Who decided today, since 00:00 UTC";
+
+  test("pol-14 row L1: the block card is inside the flow card, after its header", () => {
+    const html = renderSupervision(supAnswer);
+    const idx = (t: string) => html.indexOf(t);
+    expect(idx("Cases in progress")).toBeGreaterThanOrEqual(0);
+    expect(idx("Cases in progress")).toBeLessThan(idx(H));
+    expect(idx(H)).toBeLessThan(idx("Where it blocks"));
+    expect(idx("Where it blocks")).toBeLessThan(idx("Case refused"));
+  });
+
+  test("pol-14 row L2: the decision card is inside the flow card, before the legend", () => {
+    const html = renderSupervision(supAnswer);
+    const idx = (t: string) => html.indexOf(t);
+    expect(idx(H)).toBeGreaterThanOrEqual(0);
+    expect(idx(H)).toBeLessThan(idx(WHO));
+    expect(idx(WHO)).toBeLessThan(idx("Case refused"));
+  });
+
+  test("pol-14 row L3: the legend comes before the load card", () => {
+    const html = renderSupervision(supAnswer);
+    expect(html.indexOf("Case refused")).toBeGreaterThanOrEqual(0);
+    expect(html.indexOf("Case refused")).toBeLessThan(html.indexOf("Load per participant"));
+  });
+
+  test("pol-14 row L4: no late case shows the decision card only, inside the flow card", () => {
+    const html = renderSupervision(noLate);
+    expect(html).not.toContain("Where it blocks");
+    expect(html.indexOf(H)).toBeGreaterThanOrEqual(0);
+    expect(html.indexOf(H)).toBeLessThan(html.indexOf(WHO));
+  });
+
+  test("pol-14 row L5: the Case flow tab shows neither card", () => {
+    const html = renderSupervision(supAnswer, null, "flow");
+    expect(html).not.toContain("Who decided today");
+    expect(html).not.toContain("Where it blocks");
+  });
+
+  test("pol-14 row L6: the live diagram fills its area on both axes", async () => {
+    const seed = JSON.parse(
+      readFileSync("../internal/store/seed/example-process.json", "utf8"),
+    ) as ProcessDefinition;
+    const html = renderToString(
+      createElement(LiveDiagram, {
+        def: seed,
+        layout: await layoutProcess(seed),
+        sup: { ...noLate, nodes: [], cases: [] },
+        flow: flowFixture,
+        selected: null,
+        onSelect: () => {},
+      }),
+    );
+    expect(html).toMatch(/<svg[^>]*class="h-full w-full"/);
+    expect(html).not.toContain("h-auto");
   });
 });
 

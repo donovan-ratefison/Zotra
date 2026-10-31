@@ -554,57 +554,9 @@ export function SupervisionScreen({
         <CaseFlowCard def={def} flow={flow} />
       ) : (
         <>
-          <div className="mb-3 grid grid-cols-2 items-start gap-3">
-            {block !== null && (
-              <div className="rounded-lg border border-[#fecaca] border-l-[3px] border-l-[#dc2626] bg-[#fef2f2] px-3.5 py-2.5">
-                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-[#dc2626]">
-                  <TriangleAlert aria-hidden className="size-3.5" />
-                  Where it blocks
-                </div>
-                <h2 className="mt-0.5 text-[15px] font-semibold">{block.name}</h2>
-                <p className="text-[12.5px] text-[#3f3f46]">{block.text}</p>
-                <button
-                  type="button"
-                  onClick={() => setSelected(block.nodeId)}
-                  className="mt-1.5 inline-flex items-center gap-1 text-[12.5px] font-medium text-[#b91c1c] hover:underline"
-                >
-                  Open the step
-                  <ChevronRight aria-hidden className="size-3.5" />
-                </button>
-              </div>
-            )}
-            <div className="col-start-2 rounded-lg border bg-[#fafaf9] px-3.5 py-2.5">
-              <h3 className="mb-2 text-[11.5px] font-medium text-muted-foreground">
-                Who decided today, since 00:00 UTC
-              </h3>
-              <div className="grid grid-cols-3 gap-2.5">
-                <div className="border-l-2 border-border pl-2.5">
-                  <b className="block text-xl font-semibold">{flow.today.people}</b>
-                  <span className="text-[11.5px] text-muted-foreground">
-                    People: entries, decisions, signatures
-                  </span>
-                </div>
-                <div className="border-l-2 border-border pl-2.5">
-                  <b className="block text-xl font-semibold">{flow.today.rules}</b>
-                  <span className="text-[11.5px] text-muted-foreground">
-                    Rules: routing at the gateways
-                  </span>
-                </div>
-                <div className="border-l-2 border-[#a1a1aa] pl-2.5">
-                  <b className="block text-xl font-semibold text-muted-foreground">
-                    0
-                  </b>
-                  <span className="text-[11.5px] text-muted-foreground">AI</span>
-                </div>
-              </div>
-              <p className="mt-2 text-[11.5px] text-muted-foreground">
-                The AI never decides. It only proposes and checks.
-              </p>
-            </div>
-          </div>
-
-          <div className="mb-4 rounded-lg border bg-card">
-            <div className="flex h-10 items-center justify-between gap-4 border-b px-4">
+          {/* The card ends above the live events bar at 1366 x 768. */}
+          <div className="mb-4 flex h-[calc(100vh-216px)] min-h-[420px] flex-col rounded-lg border bg-card">
+            <div className="flex h-10 shrink-0 items-center justify-between gap-4 border-b px-4">
               <h2 className="truncate text-[13.5px] font-semibold">
                 {`${def.name}, live flow of the open cases`}
               </h2>
@@ -612,7 +564,55 @@ export function SupervisionScreen({
                 {`More dots where more cases pass (last ${flow.days} days). The halo shows the case ages against the step deadline.`}
               </p>
             </div>
-            <div className="px-4 py-4">
+            <div className="flex shrink-0 items-start gap-3 px-4 pt-3">
+              {block !== null && (
+                <div className="w-[290px] shrink-0 rounded-lg border border-[#fecaca] border-l-[3px] border-l-[#dc2626] bg-[#fef2f2] px-3.5 py-2.5">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-[#dc2626]">
+                    <TriangleAlert aria-hidden className="size-3.5" />
+                    Where it blocks
+                  </div>
+                  <h2 className="mt-0.5 text-[15px] font-semibold">{block.name}</h2>
+                  <p className="text-[12.5px] text-[#3f3f46]">{block.text}</p>
+                  <button
+                    type="button"
+                    onClick={() => setSelected(block.nodeId)}
+                    className="mt-1.5 inline-flex items-center gap-1 text-[12.5px] font-medium text-[#b91c1c] hover:underline"
+                  >
+                    Open the step
+                    <ChevronRight aria-hidden className="size-3.5" />
+                  </button>
+                </div>
+              )}
+              <div className="ml-auto w-[360px] shrink-0 rounded-lg border bg-[#fafaf9] px-3.5 py-2.5">
+                <h3 className="mb-2 text-[11.5px] font-medium text-muted-foreground">
+                  Who decided today, since 00:00 UTC
+                </h3>
+                <div className="grid grid-cols-3 gap-2.5">
+                  <div className="border-l-2 border-border pl-2.5">
+                    <b className="block text-xl font-semibold">{flow.today.people}</b>
+                    <span className="text-[11.5px] text-muted-foreground">
+                      People: entries, decisions, signatures
+                    </span>
+                  </div>
+                  <div className="border-l-2 border-border pl-2.5">
+                    <b className="block text-xl font-semibold">{flow.today.rules}</b>
+                    <span className="text-[11.5px] text-muted-foreground">
+                      Rules: routing at the gateways
+                    </span>
+                  </div>
+                  <div className="border-l-2 border-[#a1a1aa] pl-2.5">
+                    <b className="block text-xl font-semibold text-muted-foreground">
+                      0
+                    </b>
+                    <span className="text-[11.5px] text-muted-foreground">AI</span>
+                  </div>
+                </div>
+                <p className="mt-2 text-[11.5px] text-muted-foreground">
+                  The AI never decides. It only proposes and checks.
+                </p>
+              </div>
+            </div>
+            <div className="flex min-h-0 flex-1 px-4 py-3">
               {layoutFailed ? (
                 <p className="text-sm text-muted-foreground">
                   The diagram could not be drawn.
@@ -630,7 +630,7 @@ export function SupervisionScreen({
                 />
               )}
             </div>
-            <div className="border-t px-4 py-2">
+            <div className="flex shrink-0 justify-end px-4 pb-2">
               <FlowLegend />
             </div>
           </div>

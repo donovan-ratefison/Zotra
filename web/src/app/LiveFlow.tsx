@@ -269,7 +269,7 @@ export function LiveDiagram({ def, layout, sup, flow, selected, onSelect }: {
   return (
     <svg
       viewBox={`0 0 ${layout.width} ${layout.height}`}
-      className="h-auto w-full"
+      className="h-full w-full"
       overflow="visible"
       role="img"
       aria-label={`${def.name}, live flow`}
