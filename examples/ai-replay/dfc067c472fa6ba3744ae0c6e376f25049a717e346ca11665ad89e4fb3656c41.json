@@ -1,0 +1,36 @@
+{
+  "status": 200,
+  "headers": {
+    "Access-Control-Allow-Origin": [
+      "*"
+    ],
+    "Content-Length": [
+      "600"
+    ],
+    "Content-Type": [
+      "application/json"
+    ],
+    "Date": [
+      "Sat, 31 Oct 2026 19:56:55 GMT"
+    ],
+    "X-Ratelimit-Limit-Requests": [
+      "3000"
+    ],
+    "X-Ratelimit-Limit-Tokens": [
+      "4000000"
+    ],
+    "X-Ratelimit-Remaining-Requests": [
+      "2997"
+    ],
+    "X-Ratelimit-Remaining-Tokens": [
+      "3982469"
+    ],
+    "X-Request-Id": [
+      "78064ff0-36a7-4dd3-a995-10d26216f3de"
+    ],
+    "X-Route": [
+      "model-api-rust"
+    ]
+  },
+  "body": "{\"id\":\"chatcmpl-01a19389-5c0f-73e1-83fd-cd928e28da97\",\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"{\\\"questions\\\": [], \\\"restatement\\\": \\\"You want to add Property valuation before Credit analysis, done by Property expert with a 72 h deadline and requiring Valuation report.\\\"}\",\"refusal\":null,\"role\":\"assistant\"},\"logprobs\":null}],\"created\":1793476615,\"model\":\"muse-spark-1.3\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":2551,\"prompt_tokens\":4318,\"total_tokens\":6869,\"completion_tokens_details\":{\"reasoning_tokens\":2507},\"prompt_tokens_details\":{\"cached_tokens\":0}}}"
+}

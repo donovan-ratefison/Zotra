@@ -1,0 +1,36 @@
+{
+  "status": 200,
+  "headers": {
+    "Access-Control-Allow-Origin": [
+      "*"
+    ],
+    "Content-Length": [
+      "2868"
+    ],
+    "Content-Type": [
+      "application/json"
+    ],
+    "Date": [
+      "Sat, 31 Oct 2026 20:00:16 GMT"
+    ],
+    "X-Ratelimit-Limit-Requests": [
+      "3000"
+    ],
+    "X-Ratelimit-Limit-Tokens": [
+      "4000000"
+    ],
+    "X-Ratelimit-Remaining-Requests": [
+      "2999"
+    ],
+    "X-Ratelimit-Remaining-Tokens": [
+      "4000000"
+    ],
+    "X-Request-Id": [
+      "ca1275ed-a2d8-4ab9-a7a9-fd43e3812583"
+    ],
+    "X-Route": [
+      "model-api-rust"
+    ]
+  },
+  "body": "{\"id\":\"chatcmpl-01a1938c-6cfb-7069-afbf-f02860a658bc\",\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"message\":{\"content\":\"{\\\"added\\\": [{\\\"after_paragraph_id\\\": \\\"p1-5\\\", \\\"reason\\\": \\\"New valuation step before analysis.\\\", \\\"step_id\\\": \\\"valuation\\\", \\\"text\\\": \\\"3bis. Property valuation. After the file is complete and before the credit analysis, the property expert prepares the valuation report within 72 hours.\\\"}], \\\"changed\\\": [{\\\"element_ids\\\": [\\\"valuation\\\"], \\\"new_text\\\": \\\"2. Roles 1. The client advisor assembles the file and keeps the contact with the client and the notary. 2. The credit analyst checks the financial conditions and the valuation of the property. 3. The legal officer checks the deed of sale, the mortgage and the insurance documents. 4. The risk officer signs the conditions precedent checklist before each payment. 5. The branch director approves each file above the threshold of section 5. 6. The disbursement officer (back office) pays the funds and records the payment. 7. The property expert prepares the valuation report.\\\", \\\"paragraph_id\\\": \\\"p1-4\\\", \\\"reason\\\": \\\"New property expert role for valuation.\\\"}, {\\\"element_ids\\\": [\\\"offer\\\"], \\\"new_text\\\": \\\"3. Procedure 1. File assembly. The client advisor assembles the disbursement file within 3 working days after the signature of the loan agreement. The file holds the signed loan agreement, the draft deed of sale, the insurance certificate and the completion statement of the notary. Decision: the file is complete, or the advisor requests the missing documents. 2. Financial check. The credit analyst checks the repayment capacity, the down payment and the valuation report within 1 working day. The analyst reads the payslips and the bank statements of the last 3 months. Decision: confirm, or return the file. 3. Legal check. The legal officer checks the deed, the mortgage registration and the insurance certificate within 12 hours. Decision: clear, or reject the file. 4. Conditions precedent. The risk officer checks each condition of section 4 within 1 working day and signs the checklist. Decision: approve, or return the file. 5. Approval. The branch director approves each file above 300,000 EUR within 2 working days. Decision: approve, or reject. 6. Payment. The disbursement officer pays the full loan amount to the notary account within 24 hours after the last approval. The payment order carries the loan reference and the signed checklist. Decision: pay, or hold.\\\", \\\"paragraph_id\\\": \\\"p1-5\\\", \\\"reason\\\": \\\"Loan offer deadline is now 12 hours.\\\"}]}\",\"refusal\":null,\"role\":\"assistant\"},\"logprobs\":null}],\"created\":1793476816,\"model\":\"muse-spark-1.3\",\"object\":\"chat.completion\",\"usage\":{\"completion_tokens\":12392,\"prompt_tokens\":5355,\"total_tokens\":17747,\"completion_tokens_details\":{\"reasoning_tokens\":11847},\"prompt_tokens_details\":{\"cached_tokens\":5233}}}"
+}
