@@ -15,7 +15,9 @@ import {
   estimatePillWidth,
   gridLayout,
   labelBox,
+  labelSize,
   layoutCandidates,
+  layoutProblems,
   layoutProcess,
   nextCandidate,
   PILL_HEIGHT,
@@ -1673,5 +1675,128 @@ describe("layout candidates", () => {
   test("L16: one candidate gives no other path", async () => {
     const list = await layoutCandidates(seedDefinition);
     expect(nextCandidate([list[0]!], list[0]!)).toBe(-1);
+  });
+});
+
+// The seed with a second gateway in series before "threshold": the AI
+// proposal that broke Rearrange and Try another path.
+function seriesDefinition(): ProcessDefinition {
+  const threshold = seedDefinition.nodes.find((n) => n.id === "threshold")!;
+  const valuation: ProcessNode = {
+    id: "valuation", type: "task", name: "Property valuation", role: "analyst", deadline_hours: 72,
+    documents: ["Valuation report"], signature: false, checks: [], decisions: [], end_result: null,
+    scope_overrides: [], source_ids: [], citations: [],
+  };
+  const edge = (id: string, from: string, to: string, condition: string | null, isDefault: boolean): ProcessEdge =>
+    ({ id, from, to, label: null, decision: null, condition, is_default: isDefault });
+  return {
+    ...seedDefinition,
+    nodes: [...seedDefinition.nodes, { ...threshold, id: "high_amount", name: "Amount above EUR 300,000?" }, valuation],
+    edges: [
+      ...seedDefinition.edges.map((e) => (e.id === "e05" ? { ...e, to: "high_amount" } : e)),
+      edge("e15", "high_amount", "valuation", "amount > 300000.0", false),
+      edge("e16", "high_amount", "threshold", null, true),
+      edge("e17", "valuation", "threshold", null, false),
+    ],
+  };
+}
+
+describe("12.14 layout after a new gateway", () => {
+  const series = seriesDefinition();
+  const seedStart = ["label start x node entry"];
+  const hand = (id: string, model: "entry" | "complete", name: string, x: number, y: number, labelPos?: string) => {
+    const size = model === "entry" ? [152, 72] : [52, 52];
+    return { id, position: { x, y }, width: size[0], height: size[1], data: { node: { ...nodeCopy(model, id), name }, labelPos } };
+  };
+  const link = (pts: [number, number][], pill: string | null = null, anchor: [number, number] | null = null) =>
+    ({ id: "x", source: "a", target: "b", data: { points: pts.map(([x, y]) => ({ x, y })), pill, anchor: anchor && { x: anchor[0], y: anchor[1] } } });
+  const hl = (nodes: unknown[], edges: unknown[]) => ({ nodes, edges, width: 400, height: 300 }) as unknown as Layout;
+
+  test("N1: the series candidates have no problem, except the seed start label", async () => {
+    const list = await layoutCandidates(series);
+    expect(list.map(layoutProblems)).toEqual([seedStart, seedStart, []]);
+  });
+
+  test("N2: the ELK candidate is the best and the next path", async () => {
+    const list = await layoutCandidates(series);
+    expect(list.map((l) => crossings(l.edges))).toEqual([3, 3, 0]);
+    expect(bestCandidate(list)).toBe(2);
+    expect(nextCandidate(list, list[0]!)).toBe(2);
+  });
+
+  test("N3: the grid keeps the two gateway labels apart", () => {
+    const grid = gridLayout(series)!;
+    expect(grid.cells.get("high_amount")!.cx).toBeCloseTo(610.8, 6);
+    expect(grid.cells.get("threshold")!.cx).toBeCloseTo(738.8, 6);
+    expect(grid.cells.get("threshold")!.cx - grid.cells.get("high_amount")!.cx).toBeCloseTo(128, 6);
+    expect(grid.labelPos.get("high_amount")).toBe("above");
+    expect(grid.labelPos.get("threshold")).toBe("above");
+  });
+
+  test("N4: the seed candidates keep their problems and the default grid", async () => {
+    const list = await layoutCandidates(seedDefinition);
+    expect(list.map(layoutProblems)).toEqual([seedStart, seedStart, []]);
+    expect(bestCandidate(list)).toBe(0);
+  });
+
+  test("N5: the AI proposals have no problem in any candidate", async () => {
+    for (const def of [aiHome, aiConstruction, aiSme]) {
+      for (const l of await layoutCandidates(def)) {
+        expect(layoutProblems(l)).toEqual([]);
+      }
+    }
+  });
+
+  test("N6: the wrapped ELK fallback has no problem", async () => {
+    const twelve = await layoutProcess(endlessChain(12));
+    const twenty = await layoutProcess(endlessChain(20));
+    expect([twelve.width, twenty.width]).toEqual([952, 1164]);
+    expect(layoutProblems(twelve)).toEqual([]);
+    expect(layoutProblems(twenty)).toEqual([]);
+  });
+
+  test("N7: the ELK graph holds the node labels and the widest pill", () => {
+    const g = toElkGraph(series);
+    expect(g.layoutOptions!["elk.layered.spacing.nodeNodeBetweenLayers"]).toBe("94.6");
+    expect(g.layoutOptions!["elk.spacing.labelNode"]).toBe("4");
+    const gate = g.children!.find((c) => c.id === "high_amount")!;
+    expect(gate.labels).toEqual([{ text: "Amount above EUR 300,000?", width: 120, height: 30 }]);
+    expect(gate.layoutOptions).toEqual({ "elk.nodeLabels.placement": "OUTSIDE V_BOTTOM H_CENTER" });
+    expect("labels" in g.children!.find((c) => c.id === "valuation")!).toBe(false);
+  });
+
+  test("N8: labelSize caps the width at 120 and counts the lines", () => {
+    const short = labelSize("File complete?");
+    expect(short.w).toBeCloseTo(106.4, 6);
+    expect(short.h).toBe(15);
+    expect(labelSize("Amount above EUR 300,000?")).toEqual({ w: 120, h: 30 });
+    expect(labelSize("")).toEqual({ w: 14, h: 15 });
+  });
+
+  test("N9: the ELK candidate shows the pill texts of the grid", async () => {
+    const elk = (await layoutCandidates(series))[2]!;
+    const pills = Object.fromEntries(elk.edges.map((e) => [e.id, e.data!.pill]));
+    expect([pills.e03, pills.e07, pills.e08, pills.e15, pills.e16]).toEqual(["Yes", "Yes", "No", "Yes", "No"]);
+  });
+
+  test("N10: diagonal and outside links, outside pills", () => {
+    expect(layoutProblems(hl([], [link([[0, 0], [50, 50]])]))).toEqual(["diagonal x"]);
+    expect(layoutProblems(hl([], [link([[0, 0], [0, 302]])]))).toEqual(["outside x"]);
+    expect(layoutProblems(hl([], [link([[0, 0], [0, 100]], "Yes", [0, 50])]))).toEqual(["outside pill x"]);
+    expect(layoutProblems(hl([], [link([[0, 0], [400, 0]], "No", null)]))).toEqual([]);
+  });
+
+  test("N11: two overlapping nodes, one free gateway", () => {
+    expect(layoutProblems(hl([hand("a", "entry", "A", 10, 10), hand("b", "entry", "B", 100, 50)], []))).toEqual(["node a x node b"]);
+    expect(layoutProblems(hl([hand("g", "complete", "Go?", 100, 100)], []))).toEqual([]);
+  });
+
+  test("N12: the node label sits above, left or below", () => {
+    expect(layoutProblems(hl([hand("g", "complete", "Go?", 100, 100, "above"), hand("t", "entry", "T", 80, 20)], [])))
+      .toEqual(["label g x node t"]);
+    expect(layoutProblems(hl([hand("g", "complete", "Go?", 200, 100, "left"), hand("t", "entry", "T", 40, 140)], [])))
+      .toEqual(["label g x node t"]);
+    expect(layoutProblems(hl([hand("g", "complete", "Go?", 100, 100, "below")], [link([[126, 150], [126, 250]], "Yes", [126, 160])])))
+      .toEqual(["label g x pill x"]);
   });
 });

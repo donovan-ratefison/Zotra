@@ -263,6 +263,18 @@ function labelWidth(text: string): number {
   return text.length * LABEL_CHAR + 8;
 }
 
+// The part of a node label that sticks out at each side of its
+// shape. A task carries its name inside the card.
+function overhang(node: ProcessNode): number {
+  return node.type === "task" ? 0 : Math.max(0, (labelSize(node.name).w - NODE_SIZE[node.type].width) / 2);
+}
+
+// The free space between two nodes of one row: the grid gap, and room
+// for the two node labels when both nodes carry one.
+function labelRoom(a: ProcessNode, b: ProcessNode): number {
+  return a.type === "task" || b.type === "task" ? 0 : overhang(a) + overhang(b) + 8;
+}
+
 interface Cell {
   cx: number;
   cy: number;
@@ -457,7 +469,7 @@ export function gridLayout(def: ProcessDefinition, budget = ROW_BUDGET): GridLay
       x = s.width / 2;
     } else {
       const p = cells.get(spine[i - 1]!)!;
-      const next = p.cx + p.w / 2 + Math.max(GRID_GAP, labelOf(spine[i - 1]!, id)) + s.width / 2;
+      const next = p.cx + p.w / 2 + Math.max(GRID_GAP, labelOf(spine[i - 1]!, id), labelRoom(byId.get(spine[i - 1]!)!, byId.get(id)!)) + s.width / 2;
       const wrap = next + s.width / 2 > budget;
       tail ||= wrap && spine.length - i <= 2;
       if (tail) {
@@ -889,11 +901,15 @@ export interface Box {
 // estimatePillWidth padding of 14 px is pill padding that the label
 // has not, so the box overestimates: safe. Task cards carry the name
 // inside the card, so they add no label box.
+// The box of a node name under its shape: at most 120 px wide, one
+// line of 15 px for each 120 px of text.
+export function labelSize(name: string): { w: number; h: number } {
+  const est = estimatePillWidth(name);
+  return { w: Math.min(120, est), h: Math.max(1, Math.ceil(est / 120)) * 15 };
+}
+
 export function labelBox(node: ProcessNode, nodeBox: Box): Box {
-  const est = estimatePillWidth(node.name);
-  const w = Math.min(120, est);
-  const lines = Math.max(1, Math.ceil(est / 120));
-  const h = lines * 15;
+  const { w, h } = labelSize(node.name);
   return {
     x: nodeBox.x + nodeBox.w / 2 - w / 2,
     y: nodeBox.y + nodeBox.h + 4,
@@ -946,17 +962,30 @@ export function toElkGraph(def: ProcessDefinition): ElkNode {
       "elk.direction": "RIGHT",
       "elk.edgeRouting": "ORTHOGONAL",
       "elk.spacing.nodeNode": "40",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "60",
       // DEPTH_FIRST breaks the seed process feedback loops by their
       // reverse edge, so every other node stays in one left-to-right
       // band (scratch sweep.mjs, feedback item 0001).
       "elk.layered.cycleBreaking.strategy": "DEPTH_FIRST",
+      "elk.spacing.labelNode": "4",
+      // The gap between two layers holds the widest pill of the
+      // process, so a pill on a short link never covers a node.
+      "elk.layered.spacing.nodeNodeBetweenLayers": String(Math.max(60, ...def.edges.map((e) => {
+        const t = diagramEdgeText(e, def);
+        return t === null ? 0 : estimatePillWidth(t) + 4 * PILL_MARGIN;
+      }))),
     },
-    children: def.nodes.map((node) => ({
-      id: node.id,
-      width: NODE_SIZE[node.type].width,
-      height: NODE_SIZE[node.type].height,
-    })),
+    children: def.nodes.map((node) => {
+      const size = labelSize(node.name);
+      return {
+        id: node.id,
+        width: NODE_SIZE[node.type].width,
+        height: NODE_SIZE[node.type].height,
+        ...(node.type === "task" ? {} : {
+          layoutOptions: { "elk.nodeLabels.placement": "OUTSIDE V_BOTTOM H_CENTER" },
+          labels: [{ text: node.name, width: size.w, height: size.h }],
+        }),
+      };
+    }),
     edges: def.edges.map((edge) => ({
       id: edge.id,
       sources: [edge.from],
@@ -1084,10 +1113,12 @@ async function elkLayout(def: ProcessDefinition): Promise<Layout> {
   if ((laidOut.width ?? 0) > ROW_BUDGET) {
     // A wide fallback wraps into several bands, so that it never draws
     // one band wider than the canvas (feedback item 0017).
+    // elkjs writes the result into its input, so lay out a new graph.
+    const fresh = toElkGraph(def);
     laidOut = await new ELK().layout({
-      ...graph,
+      ...fresh,
       layoutOptions: {
-        ...graph.layoutOptions,
+        ...fresh.layoutOptions,
         "elk.layered.wrapping.strategy": "MULTI_EDGE",
         "elk.aspectRatio": "2.0",
       },
@@ -1130,6 +1161,16 @@ async function elkLayout(def: ProcessDefinition): Promise<Layout> {
       },
     };
   });
+  // The four sides outside the view are obstacles too, so no pill
+  // leaves the view.
+  const W = laidOut.width ?? 0;
+  const H = laidOut.height ?? 0;
+  obstacles.push(
+    { x: -1e4, y: -1e4, w: 1e4, h: H + 2e4 },
+    { x: W, y: -1e4, w: 1e4, h: H + 2e4 },
+    { x: -1e4, y: -1e4, w: W + 2e4, h: 1e4 },
+    { x: -1e4, y: H, w: W + 2e4, h: 1e4 },
+  );
   const edges: FlowEdge[] = (laidOut.edges ?? []).map((elkEdge) => {
     const edge = def.edges.find((e) => e.id === elkEdge.id) as ProcessEdge;
     const section = elkEdge.sections![0]!;
@@ -1138,8 +1179,12 @@ async function elkLayout(def: ProcessDefinition): Promise<Layout> {
       ...(section.bendPoints ?? []),
       section.endPoint,
     ];
-    const pill = edgePillText(edge);
+    const pill = diagramEdgeText(edge, def);
     const anchor = pill === null ? null : pillPlacement(points, obstacles, pill);
+    if (anchor !== null) {
+      const w = estimatePillWidth(pill!);
+      obstacles.push({ x: anchor.x - w / 2, y: anchor.y - PILL_HEIGHT / 2, w, h: PILL_HEIGHT });
+    }
     return {
       id: elkEdge.id,
       source: edge.from,
@@ -1301,4 +1346,57 @@ export function nextCandidate(list: Layout[], shown: Layout): number {
     if (!samePositions(list[i]!, shown)) return i;
   }
   return -1;
+}
+
+// The defects of one laid-out diagram: a link segment that is not
+// horizontal or vertical, a point or a box outside the view, and two
+// boxes that overlap. The tests use it on every candidate.
+export function layoutProblems(layout: Layout): string[] {
+  const out: string[] = [];
+  const boxes: Array<[string, Box]> = [];
+  for (const n of layout.nodes) {
+    const box = { x: n.position.x, y: n.position.y, w: n.width ?? 0, h: n.height ?? 0 };
+    boxes.push([`node ${n.id}`, box]);
+    const node = n.data.node;
+    if (node.type !== "task") {
+      const { w, h } = labelSize(node.name);
+      const cx = box.x + box.w / 2;
+      const pos = n.data.labelPos ?? "below";
+      boxes.push([`label ${n.id}`, {
+        x: pos === "left" ? cx - 8 - w : cx - w / 2,
+        y: pos === "above" ? box.y - 4 - h : box.y + box.h + 4,
+        w,
+        h,
+      }]);
+    }
+  }
+  const inside = (x: number, y: number) =>
+    x >= -1 && y >= -1 && x <= layout.width + 1 && y <= layout.height + 1;
+  for (const e of layout.edges) {
+    const p = e.data!.points;
+    if (p.some((q, i) => i > 0 && Math.abs(q.x - p[i - 1]!.x) > 0.5 && Math.abs(q.y - p[i - 1]!.y) > 0.5)) {
+      out.push(`diagonal ${e.id}`);
+    }
+    if (p.some((q) => !inside(q.x, q.y))) {
+      out.push(`outside ${e.id}`);
+    }
+    const a = e.data!.anchor;
+    if (a != null && e.data!.pill !== null) {
+      const w = estimatePillWidth(e.data!.pill);
+      boxes.push([`pill ${e.id}`, { x: a.x - w / 2, y: a.y - PILL_HEIGHT / 2, w, h: PILL_HEIGHT }]);
+    }
+  }
+  for (const [name, b] of boxes) {
+    if (!inside(b.x, b.y) || !inside(b.x + b.w, b.y + b.h)) {
+      out.push(`outside ${name}`);
+    }
+  }
+  boxes.forEach(([a, ba], i) => {
+    for (const [b, bb] of boxes.slice(i + 1)) {
+      if (boxesOverlap(ba, bb)) {
+        out.push(`${a} x ${b}`);
+      }
+    }
+  });
+  return out;
 }
