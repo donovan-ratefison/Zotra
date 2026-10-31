@@ -47,8 +47,9 @@ every error.`
 // ExplainCheckSystem is the system prompt of the check explanation.
 const ExplainCheckSystem = `You explain a failed check of a bank credit process.
 You receive the check (its CEL expression and its message), the data of the case, and the plain values the expression used.
-Answer with one JSON object: an "explanation" field with two to four short sentences in plain English for a banker,
-and a "proposal" object with a new "expression" (CEL, boolean), "message" (the failure message in English) and "plain_text" (the rule in one plain English sentence).
+Answer with one JSON object: an "explanation" field with two to four short sentences in plain words for a banker,
+and a "proposal" object with a new "expression" (CEL, boolean), "message" (the failure message) and "plain_text" (the rule in one plain sentence).
+Answer in the language of the check message: the explanation, the message and the plain_text.
 Change the rule only when the policy behind the check justifies it. Else keep the expression as it is.`
 
 // ExplainCheckUser formats the context of one failed check as the
@@ -91,7 +92,8 @@ const PolicyToProcessSystem = `You convert a bank credit policy into a Zotra pro
 You receive numbered paragraphs of the policy, one id per paragraph, in the form p<page>-<index>.
 Return one JSON document that satisfies the given schema. Rules:
 - Use the steps, roles, fields and rules that the policy names. Keep the process small.
-- Write every name, label and message in English. Money fields use EUR.
+- Write the names and texts in the language of the policy: every name, label and message.
+- Ids, field names and decision values stay in English snake case (requested_amount). Money fields use EUR.
 - The theme carries the bank name from the policy and primary_color "#0f4c45".
 - Each check expression is a CEL boolean expression over the fields of the data model.
 - Put the id of the paragraph that justifies an element in the citations of that node or check.
@@ -132,7 +134,8 @@ You receive the current process file (JSON) and the change request.
 Return the full new process file that satisfies the given schema. Rules:
 - Make the requested change and only it. Keep every other element as it is: ids, names, order, citations.
 - A new element gets a new unique id in the style of the file, and empty citations.
-- Write every name, label and message in English. Money fields use EUR.
+- Write every new name, label and message in the language of the process file.
+- Ids, field names and decision values stay in English snake case (requested_amount). Money fields use EUR.
 - Each check expression is a CEL boolean expression over the fields of the data model.
 - If the request needs a new field, add it to the data model and to the scope of the step that writes it.
 - schema_version is "1".` + "\n" + ProcessFormatRules
@@ -153,14 +156,14 @@ func SelectedStepNote(id, name string) string {
 // the assistant chat. The model only restates; the file stays as is.
 const RestateChangeSystem = `You restate the change request of a process designer before the process changes.
 You receive the current process file (JSON) and the change request.
-Write one or two short sentences in plain English that say what will change. Use the names of the steps, roles and fields of the file. Start with "You want to".
+Write one or two short sentences in plain words that say what will change. Use the names of the steps, roles and fields of the file. Start with "You want to", or with the same words in the language of the request.
 Do not invent a step, a role or a field that the request does not name. Do not change the file.
 Ask questions only when the answer changes the result. Rules for "questions":
 - At most 3 questions, 2 to 5 options each. "questions" is empty when the request is clear.
 - Build the options from the roles, documents, fields and usual deadlines of the file. Give each option a ref: "role:<id>", "document:<name>", "deadline:<hours>", "field:<name>", or "new:<text>" for an element that the file does not have.
 - Tick the usual bank practice as the default. Four-eyes rule: a validation goes to another role than the role of the previous step. Give the reason of the default in one short line. "reason" is empty on the other options.
 - "kind" is "single" when one answer fits, "multi" when several answers fit. "other" is true when a free answer can fit.
-- Write in English. Do not use the em dash.`
+- Answer in the language of the request: the restatement, the questions, the options and the reasons. Ids and refs stay as they are. Do not use the em dash.`
 
 // CompareVersionsSystem is the system prompt of the compare summary.
 // The engine computes the changes; the model only summarizes them.
@@ -177,7 +180,8 @@ You receive the numbered policy paragraphs, the new process file (JSON) and the 
 Rules:
 - changed: only the paragraphs that the changes make wrong. paragraph_id is an existing id. new_text is the full new text. element_ids lists the changed element ids that the new text covers.
 - added: one paragraph for each added step that no paragraph covers. step_id is the added step id. after_paragraph_id is the existing paragraph that it follows.
-- reason: one short line. Keep the style of the policy. Do not invent a rule that the process file does not hold.`
+- reason: one short line. Keep the style of the policy. Do not invent a rule that the process file does not hold.
+- Answer in the language of the policy paragraphs: new_text and reason.`
 
 // UpdatePolicyUser formats the user message of the policy update: the
 // paragraphs, the new process file and the change lines.
@@ -195,7 +199,8 @@ You receive the numbered policy paragraphs and the process file (JSON). There is
 Rules:
 - changed: only the paragraphs that the process file changes or contradicts. paragraph_id is an existing id. new_text is the full new text. element_ids lists the ids of the steps and links of the process file that the new text covers.
 - added: one paragraph for each step of the process file that no paragraph covers. step_id is the step id. after_paragraph_id is the existing paragraph that it follows.
-- reason: one short line. Keep the style of the policy. Do not invent a rule that the process file does not hold.`
+- reason: one short line. Keep the style of the policy. Do not invent a rule that the process file does not hold.
+- Answer in the language of the policy paragraphs: new_text and reason.`
 
 // UpdatePolicyCheckUser formats the user message of the policy update
 // for version 1: the paragraphs and the process file.
