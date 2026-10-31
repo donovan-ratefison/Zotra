@@ -182,3 +182,45 @@ export async function summarizeChanges(
   }
   return (await res.json()) as { summary: string };
 }
+
+// DraftChange is one changed paragraph of the policy draft.
+export interface DraftChange {
+  paragraph_id: string;
+  new_text: string;
+  reason: string;
+  element_ids: string[];
+}
+
+// DraftAddition is one new paragraph for an added step.
+export interface DraftAddition {
+  step_id: string;
+  after_paragraph_id: string;
+  text: string;
+  reason: string;
+}
+
+// PolicyDraft is the answer of POST /api/ai/update-policy. The server
+// drops the AI items that cite an unknown paragraph or element.
+export interface PolicyDraft {
+  base_number: number;
+  changed: DraftChange[];
+  added: DraftAddition[];
+  dropped: number;
+}
+
+// updatePolicy asks the AI for a draft of the policy text that matches
+// one version. Nothing is stored.
+export async function updatePolicy(
+  versionId: string,
+  paragraphs: { id: string; text: string }[],
+): Promise<PolicyDraft> {
+  const res = await fetch("/api/ai/update-policy", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ version_id: versionId, paragraphs }),
+  });
+  if (!res.ok) {
+    throw await apiError(res);
+  }
+  return (await res.json()) as PolicyDraft;
+}

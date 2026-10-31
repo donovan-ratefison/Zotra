@@ -10,7 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, FileText, Undo2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -23,6 +23,8 @@ import {
   updateDraft,
   uploadPolicy,
 } from "./api";
+import { updatePolicy } from "./ai-api";
+import { PolicyDraftDialog } from "./PolicyDraft";
 import { readCase, type CaseDTO, type CaseState } from "./case-api";
 import { Button } from "@/ui/button";
 import { cn } from "@/lib/utils";
@@ -570,6 +572,11 @@ export function StudioShell() {
     data: policyQuery.data,
   });
   const paragraphs = policy.paragraphs;
+  // The policy draft of the opened version. Nothing is stored.
+  const [draftOpen, setDraftOpen] = useState(false);
+  const draftMutation = useMutation({
+    mutationFn: () => updatePolicy(versionId!, paragraphs),
+  });
   const loadedDef = q3.data?.definition;
   // The diagram and the top bar show the proposal while it is open.
   const shownDef = proposal !== null ? proposal.definition : loadedDef;
@@ -806,6 +813,14 @@ export function StudioShell() {
           }
           onSelectVersion={onSelectVersion}
           onCompareVersion={openCompare}
+          onUpdatePolicy={
+            paragraphs.length > 0
+              ? () => {
+                  setDraftOpen(true);
+                  draftMutation.mutate();
+                }
+              : undefined
+          }
           onUndo={() => void undo()}
           canUndo={undoStack.length > 0 && version.status === "draft"}
         />
@@ -925,6 +940,20 @@ export function StudioShell() {
             </>
           )}
         </main>
+        <PolicyDraftDialog
+          open={draftOpen}
+          onOpenChange={setDraftOpen}
+          def={loaded.definition}
+          version={version}
+          paragraphs={paragraphs}
+          status={draftMutation.status}
+          draft={draftMutation.data}
+          error={
+            draftMutation.error instanceof ApiError
+              ? draftMutation.error.message
+              : "Network error."
+          }
+        />
       </div>
     );
   }
@@ -964,6 +993,7 @@ export function TopBar({
   onVersionsChanged = () => {},
   onSelectVersion,
   onCompareVersion,
+  onUpdatePolicy,
   onUndo,
   canUndo = false,
 }: {
@@ -981,6 +1011,7 @@ export function TopBar({
   onVersionsChanged?: () => void;
   onSelectVersion?: (id: string) => void;
   onCompareVersion?: (id: string) => void;
+  onUpdatePolicy?: () => void;
   onUndo?: () => void;
   canUndo?: boolean;
 }) {
@@ -1124,6 +1155,7 @@ export function TopBar({
             onVersionsChanged={onVersionsChanged}
             onOpenVersion={onSelectVersion}
             onCompareVersion={onCompareVersion}
+            onUpdatePolicy={onUpdatePolicy}
           />
         </div>
       )}

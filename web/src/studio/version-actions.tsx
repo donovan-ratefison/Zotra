@@ -6,7 +6,7 @@
 // screen, props down).
 
 import { useState } from "react";
-import { Download, FileText, GitBranch, GitCompareArrows, History, Lock, Upload } from "lucide-react";
+import { Download, FileText, GitBranch, GitCompareArrows, History, Lock, Sparkles, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError, freezeVersion, forkVersion, publishVersion } from "./api";
 import { Button } from "@/ui/button";
@@ -292,7 +292,7 @@ export function HistoryBody({ def, version, versions, onOpen, onCompare, onActio
 }
 
 export function VersionActions({ def, version, versions,
-  versionsPending, onVersionsChanged, onOpenVersion, onCompareVersion }: {
+  versionsPending, onVersionsChanged, onOpenVersion, onCompareVersion, onUpdatePolicy }: {
   def: ProcessDefinition;
   version: VersionSummary;
   versions: VersionSummary[];
@@ -300,6 +300,8 @@ export function VersionActions({ def, version, versions,
   onVersionsChanged: () => void;
   onOpenVersion?: (id: string) => void;
   onCompareVersion?: (id: string) => void;
+  // Set when the process has a policy: the menu offers the AI draft.
+  onUpdatePolicy?: () => void;
 }) {
   const [dialog, setDialog] = useState<
     "freeze" | "publish" | "newdraft" | null
@@ -428,6 +430,12 @@ export function VersionActions({ def, version, versions,
                 Download Markdown
               </a>
             </DropdownMenuItem>
+            {onUpdatePolicy !== undefined && (
+              <DropdownMenuItem onSelect={() => onUpdatePolicy()}>
+                <Sparkles aria-hidden="true" />
+                Update the policy
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
         <Button
