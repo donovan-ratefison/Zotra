@@ -4,6 +4,7 @@
 
 import { diagramEdgeText, walk } from "../studio/layout";
 import type { ProcessDefinition, ProcessEdge } from "../studio/types";
+import { edgeKind } from "./LiveFlow";
 import type { Flow } from "./sup-api";
 import { decisionLabel } from "./triage";
 
@@ -31,13 +32,10 @@ export function bandLabel(
     : `${t}: ${value}`;
 }
 
-// caseFlow gives the columns, the bars and the bands of the flow. A
-// gateway with one way in folds into its bands, so each column is a
-// step. Back links draw no band.
-export function caseFlow(
-  def: ProcessDefinition,
-  flow: Flow,
-): { columns: number; bars: FlowBar[]; bands: FlowBand[] } {
+// graph gives the walk of the definition: the back links, the forward
+// links, and the collapse of a gateway with one way in. `origin` of a
+// collapsed gateway is its source step.
+function graph(def: ProcessDefinition) {
   const startId = def.nodes.find((n) => n.type === "start")?.id ?? "";
   const { back } = walk(def, startId);
   const forward = def.edges.filter((e) => !back.has(e.id));
@@ -47,6 +45,110 @@ export function caseFlow(
     forward.filter((e) => e.to === id).length === 1;
   const origin = (id: string): string =>
     collapsed(id) ? origin(forward.find((e) => e.to === id)!.from) : id;
+  return { startId, back, forward, nodeOf, collapsed, origin };
+}
+
+const passesOf = (flow: Flow, id: string) =>
+  flow.edges.find((p) => p.edge_id === id)?.passes ?? 0;
+
+export interface LimitPath {
+  condition: string;
+  targetId: string;
+  targetName: string;
+  passes: number;
+  total: number;
+  decisions: { label: string; value: number; kind: "forward" | "back" | "refused" }[];
+}
+
+// limitPath gives the gateway path above the amount limit: the first
+// gateway condition that names a money field. It gives null when no
+// condition names a money field.
+export function limitPath(def: ProcessDefinition, flow: Flow): LimitPath | null {
+  const { back, nodeOf } = graph(def);
+  const money = def.fields.filter((f) => f.type === "money");
+  const edge = def.edges.find(
+    (e) =>
+      nodeOf(e.from)?.type === "gateway" &&
+      e.condition !== null &&
+      !e.is_default &&
+      !back.has(e.id) &&
+      money.some((f) => new RegExp(`\\b${f.name}\\b`).test(e.condition!)),
+  );
+  const target = edge && nodeOf(edge.to);
+  if (!edge || !target) {
+    return null;
+  }
+  const out = (id: string) => def.edges.filter((e) => e.from === id);
+  const decisions =
+    target.type !== "task"
+      ? []
+      : target.decisions.map((d) => {
+          const e = out(target.id).find((x) => x.decision === d);
+          const kind = e ? edgeKind(def, e, back) : "forward";
+          const label = decisionLabel(d) + (kind === "back" ? ` to ${nodeOf(e!.to)?.name}` : "");
+          return { label, value: e ? passesOf(flow, e.id) : 0, kind };
+        });
+  return {
+    condition: edge.condition!,
+    targetId: target.id,
+    targetName: target.name,
+    passes: passesOf(flow, edge.id),
+    total: out(edge.from).reduce((s, e) => s + passesOf(flow, e.id), 0),
+    decisions,
+  };
+}
+
+// leadRows gives one row for each end: its cases, its average lead
+// time in days, and the bar width against the longest lead time.
+export function leadRows(def: ProcessDefinition, flow: Flow) {
+  const rows = def.nodes
+    .filter((n) => n.type === "end")
+    .map((n) => {
+      const end = flow.ends.find((e) => e.node_id === n.id);
+      const cases = end?.cases ?? 0;
+      return { n, cases, hours: cases === 0 ? 0 : (end?.avg_lead_hours ?? 0) };
+    });
+  const maxHours = Math.max(0, ...rows.map((r) => r.hours));
+  return rows.map(({ n, cases, hours }) => ({
+    nodeId: n.id,
+    name: n.name,
+    cases,
+    days: cases === 0 ? "-" : `${(hours / 24).toFixed(1)} d`,
+    width: maxHours === 0 ? 0 : (hours / maxHours) * 100,
+    refused: n.end_result === "refused",
+  }));
+}
+
+// returnsText says how many cases went back on each back link.
+export function returnsText(def: ProcessDefinition, flow: Flow): string {
+  const { back, nodeOf, origin } = graph(def);
+  const parts = def.edges
+    .filter((e) => back.has(e.id) && passesOf(flow, e.id) > 0)
+    .map((e) => {
+      const n = passesOf(flow, e.id);
+      const from = origin(e.from) === e.to ? "" : ` from ${nodeOf(origin(e.from))?.name}`;
+      return `${n === 1 ? "1 case" : `${n} cases`} went back to ${nodeOf(e.to)?.name}${from}.`;
+    });
+  return parts.length === 0 ? "No case went back." : parts.join(" ");
+}
+
+// rateText gives the return rate of the closed cases.
+export function rateText(flow: Flow): string {
+  if (flow.closed === 0) {
+    return `No closed case in ${flow.days} days.`;
+  }
+  const r = flow.returns;
+  return `Return rate: ${r === 1 ? "1 return" : `${r} returns`} on ${flow.closed} closed cases, ${Math.round((r / flow.closed) * 100)} percent.`;
+}
+
+// caseFlow gives the columns, the bars and the bands of the flow. A
+// gateway with one way in folds into its bands, so each column is a
+// step. Back links draw no band.
+export function caseFlow(
+  def: ProcessDefinition,
+  flow: Flow,
+): { columns: number; bars: FlowBar[]; bands: FlowBand[] } {
+  const { startId, forward, nodeOf, collapsed, origin } = graph(def);
   const passes = new Map(flow.edges.map((p) => [p.edge_id, p.passes]));
   const links = forward
     .filter((e) => !collapsed(e.to))
@@ -110,7 +212,8 @@ export function spaceLabels<T extends { y: number }>(labels: T[], gap: number): 
 // apart at least, and each ends 6 units before gapRight (the left
 // edge of the next column of bars). The width is an estimate, 6.2
 // units for each character. A long label loses the end of its name,
-// never its count.
+// never its count. A gateway label "<question>? <answer>" loses the
+// end of its question first, and keeps its answer when it can.
 export function placeBandLabels(
   labels: { id: string; x: number; y: number; text: string }[],
   gapRight: number,
@@ -122,7 +225,13 @@ export function placeBandLabels(
     }
     const cut = l.text.lastIndexOf(": ");
     const count = l.text.slice(cut);
-    const name = l.text.slice(0, cut).slice(0, Math.max(0, room - count.length - 1));
+    const full = l.text.slice(0, cut);
+    const q = full.indexOf("? ");
+    const tail = `…${full.slice(q)}${count}`;
+    if (q >= 0 && tail.length <= room) {
+      return { ...l, text: `${full.slice(0, room - tail.length).trimEnd()}${tail}` };
+    }
+    const name = full.slice(0, Math.max(0, room - count.length - 1));
     return { ...l, text: `${name.trimEnd()}…${count}` };
   });
 }
@@ -138,9 +247,12 @@ const RIGHT = 170;
 const END_FILL: Record<string, string> = { approved: "#0f766e", refused: "#b91c1c" };
 
 // CaseFlowCard is the card of the "Case flow" tab: the head and the
-// flow diagram. The side column stays empty in this card.
+// flow diagram, and the side column that explains the flow.
 export function CaseFlowCard({ def, flow }: { def: ProcessDefinition; flow: Flow }) {
   const { columns, bars, bands } = caseFlow(def, flow);
+  const limit = limitPath(def, flow);
+  const bandFill = (b: FlowBand) =>
+    b.refused ? "#ef4444" : limit && (b.from === limit.targetId || b.to === limit.targetId) ? "#2563eb" : "#0f766e";
   const step = (W - LEFT - RIGHT - BW) / Math.max(1, columns - 1);
   const X = (c: number) => LEFT + c * step;
   const cols = Array.from({ length: columns }, (_, c) => bars.filter((b) => b.column === c));
@@ -217,7 +329,7 @@ export function CaseFlowCard({ def, flow }: { def: ProcessDefinition; flow: Flow
                 <path
                   key={b.edgeId}
                   d={`M${xa},${y0} C${mx},${y0} ${mx},${y1} ${xb},${y1} L${xb},${y1 + h} C${mx},${y1 + h} ${mx},${y0 + h} ${xa},${y0 + h} Z`}
-                  fill={b.refused ? "#ef4444" : "#0f766e"}
+                  fill={bandFill(b)}
                   opacity={0.42}
                 >
                   <title>{b.label ?? `${b.value}`}</title>
@@ -279,7 +391,79 @@ export function CaseFlowCard({ def, flow }: { def: ProcessDefinition; flow: Flow
             </svg>
           </div>
         )}
-        <div className="border-l" />
+        <SideColumn def={def} flow={flow} limit={limit} />
+      </div>
+    </div>
+  );
+}
+
+const H3 = "mb-1.5 text-[11.5px] font-medium text-muted-foreground";
+const KIND_COLOR = { forward: "#2563eb", refused: "#dc2626", back: "#d97706" };
+
+// SideColumn explains the flow: the share of the limit path, the
+// decisions on that path, the lead time per end and the returns.
+function SideColumn({ def, flow, limit }: { def: ProcessDefinition; flow: Flow; limit: LimitPath | null }) {
+  return (
+    <div className="grid content-start gap-3.5 border-l px-4 py-3.5">
+      {limit && (
+        <div>
+          <h3 className={H3}>{`Cases that go to ${limit.targetName}`}</h3>
+          <div className="flex items-baseline gap-2.5">
+            <b className="text-[30px] leading-tight font-semibold tracking-tight text-[#2563eb]">
+              {limit.total === 0 ? "-" : `${Math.round((limit.passes / limit.total) * 100)}%`}
+            </b>
+            <span className="text-[12.5px] text-[#3f3f46]">
+              {limit.total === 0
+                ? `No case passed the gateway in ${flow.days} days`
+                : `${limit.passes} of ${limit.total} cases`}
+            </span>
+          </div>
+          <span className="mt-1.5 inline-block rounded-[5px] border bg-zinc-100 px-1.5 font-mono text-[11.5px] text-[#3f3f46]">
+            {limit.condition}
+          </span>
+          <span className="ml-1.5 text-[11.5px] text-muted-foreground">rule of the gateway</span>
+        </div>
+      )}
+      {limit && limit.decisions.length > 0 && (
+        <div>
+          <h3 className={H3}>{`Decisions at ${limit.targetName}`}</h3>
+          <div className="my-1 flex h-2.5 gap-0.5 overflow-hidden rounded-[5px]">
+            {limit.decisions
+              .filter((d) => d.value > 0)
+              .map((d) => (
+                <i key={d.label} style={{ flex: d.value, background: KIND_COLOR[d.kind] }} />
+              ))}
+          </div>
+          {limit.decisions.map((d) => (
+            <div key={d.label} className="mt-[3px] flex justify-between text-xs text-[#3f3f46]">
+              <span>
+                <i className="mr-[7px] inline-block size-2 rounded-sm" style={{ background: KIND_COLOR[d.kind] }} />
+                {d.label}
+              </span>
+              <b className="font-semibold text-foreground">{d.value}</b>
+            </div>
+          ))}
+        </div>
+      )}
+      <div>
+        <h3 className={H3}>Average lead time by end, first event to end</h3>
+        {leadRows(def, flow).map((r) => (
+          <div key={r.nodeId} className="mt-[7px] grid grid-cols-[140px_minmax(0,1fr)_60px] items-center gap-2.5 text-xs">
+            <span>
+              {r.name}
+              <small className="block text-[11px] text-muted-foreground">{`${r.cases} cases`}</small>
+            </span>
+            <div className="h-2 overflow-hidden rounded bg-[#f0f0f1]">
+              <i className={`block h-full ${r.refused ? "bg-[#dc2626]" : "bg-primary"}`} style={{ width: `${r.width}%` }} />
+            </div>
+            <b className="text-right font-semibold">{r.days}</b>
+          </div>
+        ))}
+      </div>
+      <div>
+        <h3 className={H3}>Returns</h3>
+        <p className="text-xs leading-normal text-[#3f3f46]">{returnsText(def, flow)}</p>
+        <small className="mt-1 block text-[11px] text-muted-foreground">{rateText(flow)}</small>
       </div>
     </div>
   );

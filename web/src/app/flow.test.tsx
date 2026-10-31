@@ -4,7 +4,9 @@
 import { readFileSync } from "node:fs";
 import { renderToString } from "react-dom/server";
 import { describe, expect, test } from "vitest";
-import { caseFlow, CaseFlowCard, placeBandLabels, spaceLabels } from "./CaseFlow";
+import {
+  caseFlow, CaseFlowCard, leadRows, limitPath, placeBandLabels, rateText, returnsText, spaceLabels,
+} from "./CaseFlow";
 import type { Flow } from "./sup-api";
 import type { ProcessDefinition } from "../studio/types";
 
@@ -142,7 +144,7 @@ describe("case flow", () => {
   test("14.4 row P2: a long label loses the end of its name, not its count", () => {
     // Room: (100 - 6 - 0) / 6.2 gives 15 characters.
     const [l] = placeBandLabels(
-      [{ id: "a", x: 0, y: 50, text: "Amount above EUR 100,000? Yes: 18" }],
+      [{ id: "a", x: 0, y: 50, text: "Amount above EUR 100,000 or more: 18" }],
       100,
     );
     expect(l!.text).toBe("Amount abo…: 18");
@@ -170,5 +172,124 @@ describe("case flow", () => {
     };
     const html = renderToString(CaseFlowCard({ def: seed, flow }));
     expect(html).toContain("0 cases, 0%");
+  });
+
+  // Fixtures for the side column: the seed flow with some passes changed.
+  const withPasses = (p: Record<string, number>): Flow => ({
+    ...seedFlow,
+    edges: seedFlow.edges.map((e) => (e.edge_id in p ? { ...e, passes: p[e.edge_id]! } : e)),
+  });
+  const s2: ProcessDefinition = {
+    ...seed,
+    edges: seed.edges.map((e) => (e.id === "e07" ? { ...e, condition: "size(documents) > 1" } : e)),
+  };
+
+  test("14.4b row P4: a gateway label keeps its answer and cuts the question", () => {
+    // Room: (99 - 6 - 0) / 6.2 gives 15 characters.
+    const [l] = placeBandLabels(
+      [{ id: "a", x: 0, y: 50, text: "Amount above EUR 100,000? Yes: 6" }],
+      99,
+    );
+    expect(l!.text).toBe("Amount…? Yes: 6");
+    expect(l!.text.startsWith("Amount")).toBe(true);
+    expect(l!.text.endsWith("? Yes: 6")).toBe(true);
+  });
+
+  test("14.4b row P5: a text with no question mark keeps the rule of P2", () => {
+    const [l] = placeBandLabels([{ id: "a", x: 0, y: 50, text: "Unfavorable decision of the bank: 4" }], 100);
+    expect(l!.text).toBe("Unfavorable…: 4");
+  });
+
+  test("14.4b row P6: a gateway answer that does not fit is cut too", () => {
+    // Room: (62 - 6 - 0) / 6.2 gives 9 characters, "…? Yes: 18" has 10.
+    const [l] = placeBandLabels(
+      [{ id: "a", x: 0, y: 50, text: "Amount above EUR 100,000? Yes: 18" }],
+      62,
+    );
+    expect(l!.text).toBe("Amou…: 18");
+  });
+
+  test("14.4b row S1: the limit path of the seed", () => {
+    expect(limitPath(seed, seedFlow)).toEqual({
+      condition: "amount > 100000.0",
+      targetId: "decision",
+      targetName: "Credit decision",
+      passes: 6,
+      total: 12,
+      decisions: [
+        { label: "Approve", value: 3, kind: "forward" },
+        { label: "Refuse", value: 1, kind: "refused" },
+        { label: "Return to Credit analysis", value: 2, kind: "back" },
+      ],
+    });
+  });
+
+  test("14.4b row S2: no condition names a money field", () => {
+    expect(limitPath(s2, seedFlow)).toBeNull();
+  });
+
+  test("14.4b row S3: no pass through the gateway", () => {
+    const l = limitPath(seed, withPasses({ e07: 0, e08: 0 }))!;
+    expect([l.passes, l.total]).toEqual([0, 0]);
+  });
+
+  test("14.4b row S4: the lead rows of the seed", () => {
+    expect(leadRows(seed, seedFlow)).toEqual([
+      { nodeId: "released", name: "Loan released", cases: 8, days: "5.0 d", width: 100, refused: false },
+      { nodeId: "refused", name: "Application refused", cases: 5, days: "2.0 d", width: 40, refused: true },
+    ]);
+  });
+
+  test("14.4b row S5: an end with no case", () => {
+    const flow: Flow = {
+      ...seedFlow,
+      ends: seedFlow.ends.map((e) => (e.node_id === "refused" ? { ...e, cases: 0 } : e)),
+    };
+    const row = leadRows(seed, flow).find((r) => r.nodeId === "refused")!;
+    expect([row.cases, row.days, row.width]).toEqual([0, "-", 0]);
+  });
+
+  test("14.4b rows S6 to S8: the returns text", () => {
+    expect(returnsText(seed, seedFlow)).toBe(
+      "4 cases went back to Application entry. 2 cases went back to Credit analysis from Credit decision.",
+    );
+    expect(returnsText(seed, withPasses({ e04: 0, e11: 1 }))).toBe(
+      "1 case went back to Credit analysis from Credit decision.",
+    );
+    expect(returnsText(seed, withPasses({ e04: 0, e11: 0 }))).toBe("No case went back.");
+  });
+
+  test("14.4b row S9: the return rate", () => {
+    expect(rateText(seedFlow)).toBe("Return rate: 6 returns on 13 closed cases, 46 percent.");
+    expect(rateText({ ...seedFlow, closed: 0 })).toBe("No closed case in 30 days.");
+    expect(rateText({ ...seedFlow, returns: 1, closed: 4 })).toBe(
+      "Return rate: 1 return on 4 closed cases, 25 percent.",
+    );
+  });
+
+  test("14.4b row R4: the side column of the seed flow", () => {
+    const html = renderToString(CaseFlowCard({ def: seed, flow: seedFlow }));
+    for (const text of [
+      "Cases that go to Credit decision",
+      "50%",
+      "6 of 12 cases",
+      "amount &gt; 100000.0",
+      "rule of the gateway",
+      "Decisions at Credit decision",
+      "Return to Credit analysis",
+      "Average lead time by end, first event to end",
+      "5.0 d",
+      "4 cases went back to Application entry. 2 cases went back to Credit analysis from Credit decision.",
+      "Return rate: 6 returns on 13 closed cases, 46 percent.",
+    ]) {
+      expect(html).toContain(text);
+    }
+    expect(html.match(/fill="#2563eb"/g)).toHaveLength(2);
+  });
+
+  test("14.4b row R5: no limit path gives no limit block and no blue band", () => {
+    const html = renderToString(CaseFlowCard({ def: s2, flow: seedFlow }));
+    expect(html).not.toContain("Cases that go to");
+    expect(html).not.toContain('fill="#2563eb"');
   });
 });
