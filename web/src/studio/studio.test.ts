@@ -1471,7 +1471,8 @@ describe("shell states", () => {
     client.setQueryData(["processes"], []);
     const html = renderShell(client);
     expect(html).toContain("No process yet.");
-    expect(html).toContain("Import a credit policy to create one.");
+    expect(html).toContain("Import a credit policy");
+    expect(html).toContain("Start from scratch");
   });
 
   test("26: an empty version list shows the empty version state", () => {

@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ChevronRight, LayoutGrid, List, Search, Upload } from "lucide-react";
+import { Archive, ChevronRight, LayoutGrid, List, Search } from "lucide-react";
 import { toast } from "sonner";
 import { archiveProcess, listProcesses, listVersions, restoreProcess } from "./api";
 import { layoutProcess } from "./layout";
@@ -19,9 +19,10 @@ import {
   type LibraryRow,
   type LibrarySort,
 } from "./library";
+import { NewProcessMenu } from "./NewProcess";
 import { STATUS_BADGE, dateText } from "./version-actions";
 import type { Version } from "./types";
-import { Button, buttonVariants } from "@/ui/button";
+import { Button } from "@/ui/button";
 import { Hint } from "@/ui/hint";
 import { Input } from "@/ui/input";
 import {
@@ -60,12 +61,12 @@ function processUrl(id: string): string {
   return `/?process=${encodeURIComponent(id)}`;
 }
 
-function NewFromPolicyLink() {
+function NewLink() {
   return (
-    <a href="/?new=1" className={buttonVariants()}>
-      <Upload />
-      New from policy
-    </a>
+    <NewProcessMenu
+      onPolicy={() => window.location.assign("/?new=1")}
+      onScratch={() => window.location.assign("/?new=scratch")}
+    />
   );
 }
 
@@ -360,7 +361,7 @@ export function LibraryView({
       {rows.length === 0 ? (
         <div className="flex flex-col items-start gap-3 rounded-lg border bg-card p-6 text-[13px]">
           <span>No process yet.</span>
-          <NewFromPolicyLink />
+          <NewLink />
         </div>
       ) : shown.length === 0 ? (
         <p className="rounded-lg border bg-card p-6 text-[13px] text-muted-foreground">
@@ -410,7 +411,7 @@ export function ProcessLibrary() {
           <img src="/zotra-wordmark.svg" alt="Zotra" width={76} height={22} />
         </a>
         <span className="ml-auto">
-          <NewFromPolicyLink />
+          <NewLink />
         </span>
       </header>
       <main className="flex-1">

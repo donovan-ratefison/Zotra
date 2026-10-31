@@ -219,7 +219,7 @@ describe("LibraryView", () => {
   test("53p: zero processes", () => {
     const html = view([]);
     expect(html).toContain("No process yet.");
-    expect(html).toContain('href="/?new=1"');
+    expect(html).toContain("New</button>");
   });
 
   test("53q: status texts", () => {

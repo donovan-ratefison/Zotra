@@ -2,13 +2,14 @@
 // new definition, and the toolbar of the diagram. The shell saves
 // each result at once, so the undo of the top bar reverts it.
 
-import { CircleDot, Diamond, Square } from "lucide-react";
+import { CircleDot, Diamond, Play, Square } from "lucide-react";
 import { Button } from "@/ui/button";
 import type { EndResult, ProcessDefinition, ProcessEdge } from "./types";
 
-export type AddType = "task" | "gateway" | "end";
+export type AddType = "start" | "task" | "gateway" | "end";
 
 const NEW_NAME: Record<AddType, string> = {
+  start: "Start",
   task: "New task",
   gateway: "New gateway",
   end: "New end",
@@ -229,12 +230,19 @@ export function setEndResult(
 }
 
 const BUTTONS: { type: AddType; label: string; Icon: typeof Square }[] = [
+  { type: "start", label: "Start", Icon: Play },
   { type: "task", label: "Task", Icon: Square },
   { type: "gateway", label: "Gateway", Icon: Diamond },
   { type: "end", label: "End", Icon: CircleDot },
 ];
 
-export function EditToolbar({ onAdd }: { onAdd: (type: AddType) => void }) {
+export function EditToolbar({
+  onAdd,
+  hasStart,
+}: {
+  onAdd: (type: AddType) => void;
+  hasStart: boolean;
+}) {
   return (
     <div
       role="toolbar"
@@ -249,6 +257,8 @@ export function EditToolbar({ onAdd }: { onAdd: (type: AddType) => void }) {
           variant="ghost"
           size="sm"
           className="h-7 px-2 text-[12.5px]"
+          disabled={type === "start" && hasStart}
+          title={type === "start" && hasStart ? "A process has one start." : undefined}
           onClick={() => onAdd(type)}
         >
           <Icon aria-hidden="true" />

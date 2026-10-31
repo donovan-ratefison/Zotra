@@ -156,13 +156,12 @@ describe("remove", () => {
 });
 
 describe("EditToolbar", () => {
-  test("124-17: the toolbar shows Add, Task, Gateway and End, no Start", () => {
-    const html = renderToString(createElement(EditToolbar, { onAdd: () => {} }));
+  test("124-17: the toolbar shows Add, Start, Task, Gateway and End", () => {
+    const html = renderToString(createElement(EditToolbar, { onAdd: () => {}, hasStart: false }));
     expect(html).toContain('role="toolbar"');
-    for (const text of ["Add", "Task", "Gateway", "End"]) {
+    for (const text of ["Add", "Start", "Task", "Gateway", "End"]) {
       expect(html).toContain(text);
     }
-    expect(html).not.toContain("Start");
   });
 });
 

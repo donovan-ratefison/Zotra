@@ -1354,10 +1354,19 @@ export function ProcessDiagram({
         <Legend coverage={coverage} />
         {edit !== null && (
           <Panel position="top-center">
-            <EditToolbar onAdd={edit.onAdd} />
+            <EditToolbar
+              onAdd={edit.onAdd}
+              hasStart={def.nodes.some((n) => n.type === "start")}
+            />
           </Panel>
         )}
       </ReactFlow>
+      {def.nodes.length === 0 && (
+        <p className="pointer-events-none absolute inset-0 flex items-center justify-center px-8 text-center text-[13px] text-muted-foreground">
+          This draft is empty. Add a Start with the toolbar, or ask the assistant to build the
+          process.
+        </p>
+      )}
       {menu !== null && (
         <DropdownMenu open onOpenChange={(open) => !open && setMenu(null)}>
           <DropdownMenuTrigger asChild>

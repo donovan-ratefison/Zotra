@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, FileText, Undo2, Upload } from "lucide-react";
+import { ChevronRight, FileText, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   ApiError,
@@ -35,6 +35,7 @@ import { PolicyPanel } from "./PolicyPanel";
 import { ProcessDiagram } from "./diagram";
 import { AssistantChat } from "./AssistantChat";
 import { ImportDialog } from "./ImportDialog";
+import { NewProcessMenu, ScratchDialog } from "./NewProcess";
 import { addNode, connect, removeEdge, removeNode, type AddType } from "./edit";
 import { NodePanel, UnsavedBadge } from "./NodePanel";
 import { ProcessPanel } from "./ProcessPanel";
@@ -149,6 +150,12 @@ export function caseVersionUrl(
   );
 }
 
+function newParam(): string | null {
+  return typeof window === "undefined"
+    ? null
+    : new URLSearchParams(window.location.search).get("new");
+}
+
 export function StudioShell() {
   const selectedNodeId = useStudioStore((s) => s.selectedNodeId);
   const select = useStudioStore((s) => s.select);
@@ -157,14 +164,11 @@ export function StudioShell() {
   const setTestCaseId = useStudioStore((s) => s.setTestCaseId);
   const mode = useStudioStore((s) => s.mode);
   const queryClient = useQueryClient();
-  const [importOpen, setImportOpen] = useState(() => {
-    // new=1 in the URL opens the dialog once, at mount. The render
-    // tests have no window: no dialog there.
-    return (
-      typeof window !== "undefined" &&
-      new URLSearchParams(window.location.search).get("new") === "1"
-    );
-  });
+  // new=1 in the URL opens the import dialog once, at mount, and
+  // new=scratch the scratch dialog. The render tests have no window:
+  // no dialog there.
+  const [importOpen, setImportOpen] = useState(() => newParam() === "1");
+  const [scratchOpen, setScratchOpen] = useState(() => newParam() === "scratch");
   const [lastImport, setLastImport] = useState<LastImport | null>(null);
   const [proposal, setProposal] = useState<{
     name: string;
@@ -375,16 +379,10 @@ export function StudioShell() {
     }
   }, [def, select]);
 
-  // onImported stores the import, writes the new URL, and refetches
-  // the three queries. The picks then read the new ids and the shell
-  // opens the new draft.
-  function onImported(
-    processId: string,
-    versionId: string,
-    paragraphs: Paragraph[],
-    file: File,
-  ) {
-    setLastImport({ processId, versionId, paragraphs, file });
+  // openDraft writes the URL of a new draft and refetches the three
+  // queries. The picks then read the new ids and the shell opens the
+  // new draft.
+  function openDraft(processId: string, versionId: string) {
     window.history.replaceState(
       null,
       "",
@@ -395,6 +393,17 @@ export function StudioShell() {
     void queryClient.invalidateQueries({ queryKey: ["processes"] });
     void queryClient.invalidateQueries({ queryKey: ["versions", processId] });
     void queryClient.invalidateQueries({ queryKey: ["version", versionId] });
+  }
+
+  // onImported stores the import and opens its draft.
+  function onImported(
+    processId: string,
+    versionId: string,
+    paragraphs: Paragraph[],
+    file: File,
+  ) {
+    setLastImport({ processId, versionId, paragraphs, file });
+    openDraft(processId, versionId);
   }
 
   // onSavedDraft pushes the pre-save definition onto the undo stack,
@@ -729,6 +738,7 @@ export function StudioShell() {
           version={undefined}
           proposalName={proposal.name}
           onNewFromPolicy={() => setImportOpen(true)}
+          onNewScratch={() => setScratchOpen(true)}
           policyOpen={policyOpen}
           onTogglePolicy={onTogglePolicy}
           versions={q2.data ?? []}
@@ -768,9 +778,14 @@ export function StudioShell() {
     content = (
       <div className="flex h-screen flex-col items-center justify-center gap-2 text-center">
         <h1 className="text-lg font-semibold">No process yet.</h1>
-        <Button variant="outline" onClick={() => setImportOpen(true)}>
-          Import a credit policy to create one.
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            Import a credit policy
+          </Button>
+          <Button variant="outline" onClick={() => setScratchOpen(true)}>
+            Start from scratch
+          </Button>
+        </div>
       </div>
     );
   }
@@ -804,6 +819,7 @@ export function StudioShell() {
           def={loaded.definition}
           version={version}
           onNewFromPolicy={() => setImportOpen(true)}
+          onNewScratch={() => setScratchOpen(true)}
           policyOpen={policyOpen}
           onTogglePolicy={onTogglePolicy}
           versions={q2.data ?? []}
@@ -966,6 +982,7 @@ export function StudioShell() {
         onOpenChange={setImportOpen}
         onProposed={onProposed}
       />
+      <ScratchDialog open={scratchOpen} onOpenChange={setScratchOpen} onCreated={openDraft} />
     </>
   );
 }
@@ -986,6 +1003,7 @@ export function TopBar({
   version,
   proposalName,
   onNewFromPolicy,
+  onNewScratch,
   policyOpen = false,
   onTogglePolicy,
   versions = [],
@@ -1004,6 +1022,7 @@ export function TopBar({
   // version actions stay out (version is undefined).
   proposalName?: string;
   onNewFromPolicy?: () => void;
+  onNewScratch?: () => void;
   policyOpen?: boolean;
   onTogglePolicy?: () => void;
   versions?: VersionSummary[];
@@ -1104,15 +1123,11 @@ export function TopBar({
         <FileText aria-hidden="true" />
         Policy
       </Button>
-      <Button
-        variant="outline"
+      <NewProcessMenu
         size="sm"
-        className="shrink-0"
-        onClick={() => onNewFromPolicy?.()}
-      >
-        <Upload aria-hidden="true" />
-        New from policy
-      </Button>
+        onPolicy={() => onNewFromPolicy?.()}
+        onScratch={() => onNewScratch?.()}
+      />
       <div
         role="group"
         aria-label="Mode"
