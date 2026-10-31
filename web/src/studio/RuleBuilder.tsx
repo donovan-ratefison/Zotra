@@ -251,6 +251,11 @@ export function RuleBuilder({
                   {row.op !== "notempty" && (
                     <Input
                       aria-label={`Value of condition ${index + 1}`}
+                      title={
+                        types[row.field] === "percent"
+                          ? "Percent, for example 33 for 33%."
+                          : undefined
+                      }
                       value={row.value}
                       disabled={disabled}
                       className="h-7 min-w-0 flex-1 text-xs"
@@ -262,6 +267,11 @@ export function RuleBuilder({
                         )
                       }
                     />
+                  )}
+                  {row.op !== "notempty" && types[row.field] === "percent" && (
+                    <span aria-hidden="true" className="text-xs text-muted-foreground">
+                      %
+                    </span>
                   )}
                 </div>
               </div>

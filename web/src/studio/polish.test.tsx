@@ -93,3 +93,25 @@ describe("step form", () => {
     expect(html).toContain("sticky bottom-0");
   });
 });
+
+describe("percent values", () => {
+  const pct: Field = {
+    name: "annual_rate",
+    label: "Annual rate",
+    type: "number",
+    options: [],
+    computed: null,
+    format: "percent",
+  };
+  test.each([
+    ["P1", pct, 0.04, "4%"],
+    ["P2", pct, 0.0375, "3.75%"],
+    ["P3", pct, 0.16159475447984215, "16.16%"],
+    ["P4", pct, null, "-"],
+    ["P5", pct, "abc", "abc"],
+    ["P6", { ...pct, format: null }, 0.04, "0.04"],
+    ["P7", field("number"), 0.16159475447984215, "0.162"],
+  ])("%s: valueText gives the display form", (_id, f, value, text) => {
+    expect(valueText(f, value, "EUR")).toBe(text);
+  });
+});

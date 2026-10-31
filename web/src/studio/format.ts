@@ -9,6 +9,10 @@ const integerFormat = new Intl.NumberFormat("en-IE", {
 const numberFormat = new Intl.NumberFormat("en-IE", {
   maximumFractionDigits: 3,
 });
+const percentFormat = new Intl.NumberFormat("en-IE", {
+  style: "percent",
+  maximumFractionDigits: 2,
+});
 const dateFormat = new Intl.DateTimeFormat("en-GB", {
   day: "numeric",
   month: "short",
@@ -35,7 +39,8 @@ function moneyFormat(currency: string): Intl.NumberFormat {
 
 // valueText gives the display form of one value of one field. An
 // empty value gives "-". A document value gives the scan count: the
-// stored ids mean nothing to a reader.
+// stored ids mean nothing to a reader. A percent number field shows
+// its decimal value as a percentage (0.04 gives "4%").
 export function valueText(field: Field, value: unknown, currency: string): string {
   if (value === null || value === undefined || value === "") {
     return "-";
@@ -46,7 +51,8 @@ export function valueText(field: Field, value: unknown, currency: string): strin
     case "integer":
       return typeof value === "number" ? integerFormat.format(value) : String(value);
     case "number":
-      return typeof value === "number" ? numberFormat.format(value) : String(value);
+      if (typeof value !== "number") return String(value);
+      return field.format === "percent" ? percentFormat.format(value) : numberFormat.format(value);
     case "boolean":
       return value === true ? "Yes" : "No";
     case "date": {

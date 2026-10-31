@@ -30,6 +30,7 @@ export interface Field {
   type: FieldType;
   options: string[];
   computed: string | null;
+  format?: "percent" | null;
 }
 export interface ScopeRow {
   field: string;

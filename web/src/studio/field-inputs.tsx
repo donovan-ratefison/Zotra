@@ -15,6 +15,12 @@ export interface ScanOption {
   name: string;
 }
 
+// A percent field stores a decimal (0.04) and its inputs take the
+// percentage (4).
+function isPercent(field: Field): boolean {
+  return field.type === "number" && field.format === "percent";
+}
+
 // fieldInput gives the string form of a value for an input. null and
 // undefined (a not-yet-touched field) give "", numbers give their
 // string form, booleans give "true"/"false", documents join with
@@ -22,6 +28,10 @@ export interface ScanOption {
 export function fieldInput(field: Field, value: unknown): string {
   if (value === null || value === undefined) {
     return "";
+  }
+  if (isPercent(field) && typeof value === "number") {
+    // toPrecision removes the float noise of the product (0.07 * 100).
+    return String(Number((value * 100).toPrecision(12)));
   }
   if (field.type === "number" || field.type === "money" || field.type === "integer") {
     return String(value);
@@ -55,7 +65,8 @@ export function parseFieldValue(field: Field, raw: string): unknown {
     case "number":
     case "money": {
       const n = Number(raw);
-      return raw === "" || !Number.isFinite(n) ? null : n;
+      if (raw === "" || !Number.isFinite(n)) return null;
+      return isPercent(field) ? n / 100 : n;
     }
     case "integer": {
       const n = Number.parseInt(raw, 10);
@@ -158,11 +169,12 @@ export function FieldInput({ field, value, onChange, disabled, scans }: {
         : undefined;
   const step =
     field.type === "money" ? "0.01" : field.type === "integer" ? "1" : undefined;
-  return (
+  const input = (
     <Input
       type={type}
       step={step}
       aria-label={field.label}
+      title={isPercent(field) ? "Type the rate in percent, for example 4 for 4%." : undefined}
       value={fieldText(field, value, text)}
       onChange={(e) => {
         setText(e.target.value);
@@ -171,5 +183,14 @@ export function FieldInput({ field, value, onChange, disabled, scans }: {
       onBlur={() => setText(null)}
       disabled={disabled}
     />
+  );
+  if (!isPercent(field)) {
+    return input;
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      {input}
+      <span aria-hidden="true" className="text-[13px] text-muted-foreground">%</span>
+    </div>
   );
 }

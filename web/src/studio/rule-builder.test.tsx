@@ -15,6 +15,7 @@ import {
   ruleNotice,
   typesOf,
   type RuleRow,
+  type RuleType,
 } from "./rule-builder";
 import { RuleBuilder } from "./RuleBuilder";
 import type { Check, FieldType, ProcessDefinition } from "./types";
@@ -356,5 +357,91 @@ describe("rule mode and notice helpers", () => {
     expect(ruleNotice(2, "amount <= 0", "amount <= 0")).toBe(false);
     // The user built rows, then changed the CEL in the expert mode.
     expect(ruleNotice(2, "a changed CEL", "amount <= 0")).toBe(true);
+  });
+});
+
+describe("percent rows", () => {
+  const pct = { options: [], computed: null, format: "percent" as const };
+  const percentDefinition: ProcessDefinition = {
+    ...panelDefinition,
+    fields: [
+      { name: "annual_rate", label: "Annual rate", type: "number", ...pct },
+      { name: "amount", label: "Amount", type: "money", options: [], computed: null },
+    ],
+  };
+  const types: Record<string, RuleType> = {
+    debt_ratio: "percent",
+    analysis_comment: "string",
+  };
+  const row = (field: string, op: RuleRow["op"], value: string): RuleRow => ({
+    field,
+    op,
+    value,
+  });
+
+  test("R1: typesOf gives percent for a percent number field", () => {
+    expect(typesOf(percentDefinition)).toEqual({ annual_rate: "percent", amount: "money" });
+  });
+
+  test.each([
+    ["33", "0.33"],
+    ["4.5", "0.045"],
+    ["100", "1.0"],
+    ["0", "0.0"],
+    ["-5", "-0.05"],
+    ["33,5", "0.335"],
+    ["12.50", "0.125"],
+    ["abc", '"abc"'],
+  ])("R2: literalOf percent %s gives %s", (raw, literal) => {
+    expect(literalOf("percent", raw)).toBe(literal);
+  });
+
+  test("R3: a stored percent rule reads as percent rows", () => {
+    expect(readExpression('debt_ratio <= 0.33 || analysis_comment != ""', types)).toEqual({
+      rows: [row("debt_ratio", "le", "33"), row("analysis_comment", "notempty", "")],
+      join: "or",
+    });
+  });
+
+  test("R4: 1.0 reads as 100", () => {
+    expect(readExpression("debt_ratio <= 1.0", types)?.rows[0].value).toBe("100");
+  });
+
+  test("R5: a literal the rows do not build again gives null", () => {
+    expect(readExpression("debt_ratio <= 0.330", types)).toBeNull();
+    expect(readExpression("debt_ratio <= 1", types)).toBeNull();
+  });
+
+  test("R6: a percent row builds the decimal CEL", () => {
+    expect(buildExpression([row("debt_ratio", "le", "33")], types, "and")).toBe(
+      "debt_ratio <= 0.33",
+    );
+  });
+
+  test("R7: percent has the number operator set", () => {
+    expect(operatorsFor("percent")).toEqual(["le", "lt", "ge", "gt", "eq", "ne"]);
+  });
+
+  test("R8: a stored percent rule opens guided", () => {
+    expect(initialRuleMode("debt_ratio <= 0.33", types)).toBe("guided");
+  });
+
+  test("R9: the builder shows the percentage, the suffix and the title", () => {
+    const def: ProcessDefinition = {
+      ...panelDefinition,
+      fields: [{ name: "debt_ratio", label: "Debt ratio", type: "number", ...pct }],
+    };
+    const html = renderToString(
+      createElement(RuleBuilder, {
+        def,
+        check: checkWith("debt_ratio <= 0.33"),
+        onExpressionChange: vi.fn(),
+        disabled: false,
+      }),
+    );
+    expect(html).toMatch(/aria-label="Value of condition 1"[^>]*value="33"/);
+    expect(html).toContain(">%<");
+    expect(html).toContain('title="Percent, for example 33 for 33%."');
+    expect(html).toContain("debt_ratio &lt;= 0.33");
   });
 });

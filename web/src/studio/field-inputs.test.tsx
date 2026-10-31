@@ -4,7 +4,7 @@
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { describe, expect, test } from "vitest";
-import { FieldInput, fieldText } from "./field-inputs";
+import { FieldInput, fieldInput, fieldText, parseFieldValue } from "./field-inputs";
 import type { Field } from "./types";
 
 const numberField: Field = {
@@ -74,5 +74,46 @@ describe("FieldInput render", () => {
       }),
     );
     expect(html).toContain('value="12"');
+  });
+});
+
+describe("percent field", () => {
+  const pct: Field = { ...numberField, format: "percent" };
+  const render = (field: Field) =>
+    renderToString(
+      createElement(FieldInput, { field, value: 0.04, onChange: () => {}, disabled: false }),
+    );
+
+  test("I1: fieldInput gives the percentage", () => {
+    expect(fieldInput(pct, 0.04)).toBe("4");
+    expect(fieldInput(pct, 0.07)).toBe("7");
+  });
+
+  test("I2: parseFieldValue gives the decimal", () => {
+    expect(parseFieldValue(pct, "3.75")).toBe(0.0375);
+    expect(parseFieldValue(pct, "4")).toBe(0.04);
+  });
+
+  test("I3: an empty or bad text gives null", () => {
+    expect(parseFieldValue(pct, "")).toBeNull();
+    expect(parseFieldValue(pct, "abc")).toBeNull();
+  });
+
+  test("I4: fieldText keeps the typed percentage", () => {
+    expect(fieldText(pct, 0.04, "4")).toBe("4");
+  });
+
+  test("I5: the input shows the percentage, the suffix and the title", () => {
+    const html = render(pct);
+    expect(html).toContain('value="4"');
+    expect(html).toContain(">%<");
+    expect(html).toContain('title="Type the rate in percent, for example 4 for 4%."');
+    expect(html).toContain('aria-label="Annual rate"');
+  });
+
+  test("I6: a number field with no format shows the decimal", () => {
+    const html = render({ ...pct, format: null });
+    expect(html).toContain('value="0.04"');
+    expect(html).not.toContain(">%<");
   });
 });

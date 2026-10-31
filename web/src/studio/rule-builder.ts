@@ -4,6 +4,11 @@
 
 import type { Field, FieldType, ProcessDefinition } from "./types";
 
+// The type of a rule row: the field type, or "percent" for a number
+// field with the percent format. A percent row takes the percentage
+// (33) and its CEL keeps the decimal (0.33).
+export type RuleType = FieldType | "percent";
+
 export type Operator =
   | "eq"
   | "ne"
@@ -35,8 +40,9 @@ const OPERATOR_LABEL: Record<Operator, string> = {
 
 // The date CEL type is a timestamp: string comparisons do not
 // compile, so the date set holds the two timestamp comparisons only.
-export function operatorsFor(type: FieldType): Operator[] {
+export function operatorsFor(type: RuleType): Operator[] {
   switch (type) {
+    case "percent":
     case "number":
     case "money":
     case "integer":
@@ -58,7 +64,34 @@ export function operatorLabel(op: Operator): string {
   return OPERATOR_LABEL[op];
 }
 
-export function literalOf(type: FieldType, raw: string): string {
+// The decimal point of a percent moves 2 places, by string: a float
+// product gives noise (0.07 * 100). CEL refuses a double compared to
+// an int, so the literal always keeps a decimal point.
+function percentLiteral(n: string): string {
+  const neg = n.startsWith("-");
+  const [int, frac = ""] = (neg ? n.slice(1) : n).split(".");
+  const padded = int.padStart(3, "0");
+  const head = padded.slice(0, -2).replace(/^0+(?=\d)/, "");
+  const tail = (padded.slice(-2) + frac).replace(/0+$/, "");
+  return `${neg ? "-" : ""}${head}.${tail === "" ? "0" : tail}`;
+}
+
+// The reverse of percentLiteral: 0.33 gives 33, 1.0 gives 100.
+function percentValue(literal: string): string | null {
+  if (!/^-?\d+\.\d+$/.test(literal)) return null;
+  const neg = literal.startsWith("-");
+  const [int, frac] = (neg ? literal.slice(1) : literal).split(".");
+  const padded = frac.padEnd(2, "0");
+  const head = (int + padded.slice(0, 2)).replace(/^0+(?=\d)/, "");
+  const tail = padded.slice(2).replace(/0+$/, "");
+  return `${neg ? "-" : ""}${head}${tail === "" ? "" : "." + tail}`;
+}
+
+export function literalOf(type: RuleType, raw: string): string {
+  if (type === "percent") {
+    const n = raw.trim().replace(",", ".");
+    return /^-?\d+(\.\d+)?$/.test(n) ? percentLiteral(n) : JSON.stringify(raw.trim());
+  }
   if (type === "number" || type === "money" || type === "integer") {
     const n = raw.trim().replace(",", ".");
     return /^-?\d+(\.\d+)?$/.test(n) ? n : JSON.stringify(raw.trim());
@@ -76,7 +109,7 @@ export function literalOf(type: FieldType, raw: string): string {
   return JSON.stringify(raw);
 }
 
-export function conditionCel(row: RuleRow, type: FieldType): string {
+export function conditionCel(row: RuleRow, type: RuleType): string {
   switch (row.op) {
     case "eq":
       return `${row.field} == ${literalOf(type, row.value)}`;
@@ -104,7 +137,7 @@ export function conditionCel(row: RuleRow, type: FieldType): string {
 
 export function buildExpression(
   rows: RuleRow[],
-  types: Record<string, FieldType>,
+  types: Record<string, RuleType>,
   join: "and" | "or",
 ): string {
   return rows
@@ -112,8 +145,13 @@ export function buildExpression(
     .join(join === "or" ? " || " : " && ");
 }
 
-export function typesOf(def: ProcessDefinition): Record<string, FieldType> {
-  return Object.fromEntries(def.fields.map((field) => [field.name, field.type]));
+export function typesOf(def: ProcessDefinition): Record<string, RuleType> {
+  return Object.fromEntries(
+    def.fields.map((field) => [
+      field.name,
+      field.type === "number" && field.format === "percent" ? "percent" : field.type,
+    ]),
+  );
 }
 
 // The first operator of the type set and the default value of the
@@ -176,7 +214,8 @@ function stringOf(text: string): string | null {
   }
 }
 
-function valueOf(type: FieldType, literal: string): string | null {
+function valueOf(type: RuleType, literal: string): string | null {
+  if (type === "percent") return percentValue(literal);
   if (type === "date") {
     if (literal === "now") return "now";
     const match = /^timestamp\((".*")\)$/.exec(literal);
@@ -196,7 +235,7 @@ function valueOf(type: FieldType, literal: string): string | null {
 
 export function readCondition(
   text: string,
-  types: Record<string, FieldType>,
+  types: Record<string, RuleType>,
 ): RuleRow | null {
   const size = /^size\((\w+)\) >= (\d+)$/.exec(text);
   if (size) {
@@ -234,7 +273,7 @@ export function readCondition(
 
 export function readExpression(
   expression: string,
-  types: Record<string, FieldType>,
+  types: Record<string, RuleType>,
 ): { rows: RuleRow[]; join: "and" | "or" } | null {
   const join = expression.includes(" || ") ? "or" : "and";
   const rows: RuleRow[] = [];
@@ -255,7 +294,7 @@ export function readExpression(
 // button (ruleNotice).
 export function initialRuleMode(
   expression: string,
-  types: Record<string, FieldType>,
+  types: Record<string, RuleType>,
 ): "guided" | "expert" {
   if (expression === "" || expression === "true") return "guided";
   return readExpression(expression, types) === null ? "expert" : "guided";
