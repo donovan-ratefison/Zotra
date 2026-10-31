@@ -169,7 +169,7 @@ export interface ChatState {
 export type ChatEvent =
   | { type: "send"; text: string }
   | { type: "answer"; base: ProcessDefinition; next: ProcessDefinition }
-  | { type: "error"; status: number; message: string; details: string[] }
+  | { type: "error"; status: number; code: string; message: string; details: string[] }
   | { type: "accept-ok"; versionNumber: number }
   | { type: "accept-stale" }
   | { type: "save-failed" }
@@ -265,7 +265,9 @@ export function chatEvent(state: ChatState, event: ChatEvent): ChatState {
       }
       const text =
         event.status === 503
-          ? AI_OFF_TEXT
+          ? event.code === "ai_not_recorded"
+            ? event.message
+            : AI_OFF_TEXT
           : event.status === 422
             ? INVALID_OUTPUT_TEXT
             : `The request failed: ${event.message}`;
@@ -783,6 +785,7 @@ function errorEvent(err: unknown): ChatEvent {
     return {
       type: "error",
       status: err.status,
+      code: err.code,
       message: err.message,
       details: err.details.map((detail) => {
         const message = (detail as { message?: unknown } | null)?.message;
@@ -790,7 +793,7 @@ function errorEvent(err: unknown): ChatEvent {
       }),
     };
   }
-  return { type: "error", status: 0, message: String(err), details: [] };
+  return { type: "error", status: 0, code: "", message: String(err), details: [] };
 }
 
 // readRestateFirst reads the stored switch value: only "0" turns the

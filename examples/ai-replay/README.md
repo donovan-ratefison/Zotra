@@ -29,4 +29,4 @@ path and body). The files hold no key.
 
 Another PDF, another message, another order of the steps above, a scan
 read by SAM, the explanation of a failed check and the generation of
-test cases. Set `ZOTRA_AI_API_KEY` in `.env` and `ZOTRA_AI_MODE=cache`.
+test cases. See [Use the live AI with your own Meta key](../../README.md#use-the-live-ai-with-your-own-meta-key).

@@ -28,6 +28,9 @@ import {
 import { diffChips, diffDefinitions } from "./diff";
 import type { ProcessDefinition, Version } from "./types";
 
+const REPLAY_MISS =
+  "This request is not in the recorded demo answers. To use the live AI, set ZOTRA_AI_API_KEY and ZOTRA_AI_MODE=live in .env, then restart.";
+
 // The mini definition fixture of the approved 2.2 brief, with all
 // fields. Local copy: every test file keeps its fixtures local.
 const miniDefinition: ProcessDefinition = {
@@ -159,7 +162,7 @@ describe("chatEvent", () => {
 
   test("error 503 gives the not-available text", () => {
     const state = chatEvent(sent, {
-      type: "error", status: 503, message: "The AI layer is off.", details: [],
+      type: "error", status: 503, code: "ai_unavailable", message: "The AI layer is off.", details: [],
     });
     expect(state.turns.at(-1)).toEqual({
       kind: "error",
@@ -168,9 +171,18 @@ describe("chatEvent", () => {
     });
   });
 
+  test("error 503 ai_not_recorded shows the API message", () => {
+    const state = chatEvent(sent, {
+      type: "error", status: 503, code: "ai_not_recorded", message: REPLAY_MISS, details: [],
+    });
+    expect(state.turns.at(-1)).toEqual({
+      kind: "error", text: REPLAY_MISS, chips: [], rows: [], details: [],
+    });
+  });
+
   test("error 422 gives the invalid-output text and the first 3 details", () => {
     const state = chatEvent(sent, {
-      type: "error", status: 422, message: "failed",
+      type: "error", status: 422, code: "invalid_output", message: "failed",
       details: ["d1", "d2", "d3", "d4"],
     });
     expect(state.turns.at(-1)).toEqual({
@@ -182,7 +194,7 @@ describe("chatEvent", () => {
 
   test("error 500 gives the request-failed text", () => {
     const state = chatEvent(sent, {
-      type: "error", status: 500, message: "boom", details: [],
+      type: "error", status: 500, code: "http", message: "boom", details: [],
     });
     expect(state.turns.at(-1)).toEqual({
       kind: "error", text: "The request failed: boom",
@@ -303,8 +315,41 @@ describe("requestChange", () => {
     expect(event).toEqual({
       type: "error",
       status: 503,
+      code: "ai_unavailable",
       message: "The AI layer is off.",
       details: [],
+    });
+  });
+});
+
+describe("requestChange errors", () => {
+  test("an ai_not_recorded ApiError keeps its code", async () => {
+    const event = await requestChange({
+      version: draftVersion,
+      def: miniDefinition,
+      text: "add an expert review",
+      selectedNodeId: null,
+      change: async () => {
+        throw new ApiError(503, "ai_not_recorded", REPLAY_MISS);
+      },
+    });
+    expect(event).toEqual({
+      type: "error", status: 503, code: "ai_not_recorded", message: REPLAY_MISS, details: [],
+    });
+  });
+
+  test("another error gives status 0 and an empty code", async () => {
+    const event = await requestChange({
+      version: draftVersion,
+      def: miniDefinition,
+      text: "add an expert review",
+      selectedNodeId: null,
+      change: async () => {
+        throw new Error("boom");
+      },
+    });
+    expect(event).toEqual({
+      type: "error", status: 0, code: "", message: "Error: boom", details: [],
     });
   });
 });

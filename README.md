@@ -30,6 +30,8 @@ Open http://127.0.0.1:8080. No AI key is needed for the demo: the app
 replays recorded AI answers for the example policies. The steps are in
 [examples/ai-replay](examples/ai-replay/README.md).
 
+To call the live Meta models with your own key, see [Use the live AI with your own Meta key](#use-the-live-ai-with-your-own-meta-key).
+
 ## The problem
 
 A bank writes its credit procedures in PDF policies. To turn one policy into a
@@ -129,6 +131,46 @@ make run     # build and start
 
 Run `make` to see all the targets. `make demo` fills the database with a demo
 history. To use the live AI, set `ZOTRA_AI_API_KEY` in `.env`.
+
+## Use the live AI with your own Meta key
+
+The demo replays recorded AI answers. A new request, for example another
+PDF or a scan, needs the live AI and a Meta API key.
+
+### With Docker
+
+1. In the folder of the repository, create the file `.env` with these two
+   lines:
+
+   ```sh
+   ZOTRA_AI_API_KEY=<your Meta API key>
+   ZOTRA_AI_MODE=live
+   ```
+
+2. Run `docker compose up -d`. If the app runs already, run
+   `docker compose down` first. Your data stays.
+
+### From the sources
+
+1. Run `make setup`. It creates `.env` from `.env.example`.
+2. In `.env`, set `ZOTRA_AI_API_KEY`. The mode `cache` of `.env.example`
+   calls the live AI and keeps each answer.
+3. Run `make run`.
+
+### AI modes
+
+`ZOTRA_AI_MODE` sets the mode.
+
+| Mode | Behavior |
+|------|----------|
+| `live` | Each request calls the Meta API. A key is necessary. Use this mode with Docker. |
+| `cache` | A stored answer is used when it exists. Else the app calls the Meta API and stores the answer in `ZOTRA_AI_CACHE_DIR`. A key and a writable cache folder are necessary. Default from the sources. |
+| `replay` | Only the recorded answers are used. The app never calls the API. A new request gives the message "This request is not in the recorded demo answers." Default with Docker. |
+| `off` | No AI call. Each AI action gives the message "The AI layer is off." |
+
+The app stops the AI calls for the day when their cost reaches
+`ZOTRA_AI_BUDGET_USD` (default 2 USD). It keeps the daily cost in
+`ZOTRA_AI_STATE_DIR` (default: the cache folder; with Docker: a volume).
 
 ## Stack
 
