@@ -10,7 +10,7 @@ import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ApiError } from "./api";
 import { explainCheck, type ExplainAnswer } from "./ai-api";
-import { ChecksTab, ExplainCard } from "./ChecksTab";
+import { ChecksTab, ExplainCard, revealAnswer } from "./ChecksTab";
 import {
   withCheckExpression,
   withCheckMessage,
@@ -345,5 +345,32 @@ describe("the apply chain", () => {
     expect(next.nodes.find((n) => n.id === "review")).toBe(
       testDefinition.nodes.find((n) => n.id === "review"),
     );
+  });
+});
+
+describe("J6 revealAnswer", () => {
+  function fake() {
+    const calls: ScrollIntoViewOptions[] = [];
+    return { calls, el: { scrollIntoView: (o: ScrollIntoViewOptions) => calls.push(o) } };
+  }
+
+  test("R1 scrolls smoothly to the nearest edge", () => {
+    const { calls, el } = fake();
+    revealAnswer(el, false);
+    expect(calls).toEqual([{ block: "nearest", behavior: "smooth" }]);
+  });
+
+  test("R2 reduced motion gives an instant scroll", () => {
+    const { calls, el } = fake();
+    revealAnswer(el, true);
+    expect(calls).toEqual([{ block: "nearest", behavior: "auto" }]);
+  });
+
+  test("R3 refuses a null element", () => {
+    expect(revealAnswer(null, false)).toBeUndefined();
+  });
+
+  test("R4 refuses an element with no scrollIntoView", () => {
+    expect(revealAnswer({}, false)).toBeUndefined();
   });
 });

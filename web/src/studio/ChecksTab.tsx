@@ -4,7 +4,7 @@
 // The results come from the events up to the state seq; the words
 // carry the state, the color only backs them.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Sparkles } from "lucide-react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -25,6 +25,18 @@ function explainErrorText(err: unknown): string {
   return err instanceof ApiError ? err.message : "The explanation did not run.";
 }
 
+// revealAnswer scrolls the answer card into the visible part of its
+// scroll panel. It does nothing with no element or no scrollIntoView
+// (node has no DOM).
+export function revealAnswer(
+  el: { scrollIntoView?: (arg: ScrollIntoViewOptions) => void } | null,
+  reducedMotion: boolean,
+): void {
+  if (el && typeof el.scrollIntoView === "function") {
+    el.scrollIntoView({ block: "nearest", behavior: reducedMotion ? "auto" : "smooth" });
+  }
+}
+
 // ExplainCard renders the answer of one explain call: the
 // explanation in plain language, the proposed rule, and the accept or
 // reject buttons. It is presentational: ChecksTab holds the state.
@@ -36,8 +48,14 @@ export function ExplainCard({ answer, versionStatus, busyApply, onApply, onRejec
   onReject: () => void;
 }) {
   const draft = versionStatus === "draft";
+  const ref = useRef<HTMLDivElement | null>(null);
+  // A new answer opens below the fold of the Checks panel: show it.
+  useEffect(
+    () => revealAnswer(ref.current, matchMedia("(prefers-reduced-motion: reduce)").matches),
+    [answer],
+  );
   return (
-    <div className="flex flex-col gap-1.5 rounded-lg border border-primary/40 bg-primary/5 p-3">
+    <div ref={ref} className="flex flex-col gap-1.5 rounded-lg border border-primary/40 bg-primary/5 p-3">
       <p className="text-sm">{answer.explanation}</p>
       <p className="text-sm font-medium">Proposed rule:</p>
       <code className="font-mono text-[12px] text-muted-foreground">
