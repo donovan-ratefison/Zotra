@@ -1,0 +1,6 @@
+# Used by "make db" only: it publishes the database port for a local
+# run of the app.
+services:
+  db:
+    ports:
+      - "127.0.0.1:${ZOTRA_DB_PORT:-5432}:5432"

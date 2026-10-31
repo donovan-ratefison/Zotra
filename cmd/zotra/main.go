@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,17 +22,48 @@ import (
 var version = "dev"
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "health" {
+		if err := healthcheck(listenAddr()); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		slog.Error(err.Error())
 		os.Exit(1)
 	}
 }
 
-func run() error {
-	addr := os.Getenv("ZOTRA_ADDR")
-	if addr == "" {
-		addr = ":8080"
+// listenAddr returns ZOTRA_ADDR, or ":8080" if it is empty.
+func listenAddr() string {
+	if addr := os.Getenv("ZOTRA_ADDR"); addr != "" {
+		return addr
 	}
+	return ":8080"
+}
+
+// healthcheck asks /api/health of the app that listens on addr. The
+// container healthcheck uses it because the image has no curl.
+func healthcheck(addr string) error {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("health: %w", err)
+	}
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get("http://127.0.0.1:" + port + "/api/health")
+	if err != nil {
+		return fmt.Errorf("health: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("health: status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func run() error {
+	addr := listenAddr()
 
 	dist, err := web.Dist()
 	if err != nil {

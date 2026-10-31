@@ -15,6 +15,9 @@ import (
 	"github.com/donovan-ratefison/zotra/internal/store"
 )
 
+// version is set at build time with -ldflags "-X main.version=...".
+var version = "dev"
+
 const exampleVersionID = "00000000-0000-0000-0000-000000000002"
 
 func main() {
@@ -29,7 +32,12 @@ func run(ctx context.Context, args []string, dbURL string, out io.Writer) error 
 	fs.SetOutput(io.Discard)
 	days := fs.Int("days", 30, "number of days of the history")
 	n := fs.Int("cases", 60, "number of cases")
+	showVersion := fs.Bool("version", false, "print the version and stop")
 	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *showVersion {
+		_, err := fmt.Fprintf(out, "zotra-history %s\n", version)
 		return err
 	}
 	if *n < 1 || *n > 500 {

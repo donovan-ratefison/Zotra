@@ -48,6 +48,20 @@ func TestRunArgs(t *testing.T) { // R1 to R8
 	}
 }
 
+func TestVersionFlag(t *testing.T) { // V1, V2
+	var out strings.Builder
+	if err := run(context.Background(), []string{"-version"}, "", &out); err != nil {
+		t.Fatalf("V1: %v", err)
+	}
+	if got := out.String(); got != "zotra-history dev\n" {
+		t.Errorf("V1: output %q", got)
+	}
+	err := run(context.Background(), nil, "", io.Discard)
+	if err == nil || err.Error() != "ZOTRA_DATABASE_URL is required" {
+		t.Errorf("V2: error %v", err)
+	}
+}
+
 // wipedDB creates the test database if it is missing, wipes its schema,
 // and returns its URL. It copies the wipe of the api tests.
 func wipedDB(t *testing.T) string {

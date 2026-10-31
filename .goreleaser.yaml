@@ -1,0 +1,60 @@
+version: 2
+project_name: zotra
+before:
+  hooks:
+    - sh -c "cd web && pnpm install --frozen-lockfile && pnpm build"
+builds:
+  - id: zotra
+    main: ./cmd/zotra
+    binary: zotra
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags: ["-s -w -X main.version={{.Version}}"]
+  - id: zotra-history
+    main: ./cmd/zotra-history
+    binary: zotra-history
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags: ["-s -w -X main.version={{.Version}}"]
+  - id: zotra-demo
+    main: ./cmd/zotra-demo
+    binary: zotra-demo
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags: ["-s -w -X main.version={{.Version}}"]
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+      - .env.example
+      - examples/**/*
+checksum:
+  name_template: checksums.txt
+changelog:
+  use: git
+  groups:
+    - title: Features
+      regexp: '^feat(\(.+\))?!?:'
+      order: 0
+    - title: Fixes
+      regexp: '^fix(\(.+\))?!?:'
+      order: 1
+    - title: Documentation
+      regexp: '^docs(\(.+\))?!?:'
+      order: 2
+    - title: Others
+      order: 999
+dockers_v2:
+  - dockerfile: Dockerfile.release
+    images: [ghcr.io/donovan-ratefison/zotra]
+    tags: ["{{ .Version }}", latest]
+    platforms: [linux/amd64, linux/arm64]
+    extra_files: [examples]
+    sbom: false

@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+local/
+node_modules
+web/node_modules
+web/dist
+/zotra
+/dist
+.claude
+.pi
+AGENTS.md
+CLAUDE.md

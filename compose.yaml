@@ -1,0 +1,50 @@
+# The passwords are for a local trial only.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: zotra
+      POSTGRES_PASSWORD: zotra
+      POSTGRES_DB: zotra
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "zotra"]
+      interval: 5s
+      retries: 10
+
+  app:
+    image: ghcr.io/donovan-ratefison/zotra:${ZOTRA_VERSION:-latest}
+    build:
+      context: .
+      args:
+        VERSION: "${ZOTRA_VERSION:-dev}"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ZOTRA_DATABASE_URL: postgres://zotra:zotra@db:5432/zotra?sslmode=disable
+      ZOTRA_ADDR: ":8080"
+      ZOTRA_AI_MODE: ${ZOTRA_AI_MODE:-replay}
+      ZOTRA_AI_CACHE_DIR: /app/examples/ai-replay
+    ports:
+      - "127.0.0.1:${ZOTRA_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/app/zotra", "health"]
+      interval: 5s
+      retries: 12
+
+  # The example process calls the demo bank at 127.0.0.1:8097, so it
+  # shares the network of the app.
+  demo-bank:
+    image: ghcr.io/donovan-ratefison/zotra:${ZOTRA_VERSION:-latest}
+    entrypoint: ["/app/zotra-demo"]
+    network_mode: "service:app"
+    depends_on:
+      - app
+
+volumes:
+  db-data:

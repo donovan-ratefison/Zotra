@@ -1,0 +1,7 @@
+# Image of a release. GoReleaser builds the binaries before this step.
+FROM gcr.io/distroless/static-debian12:nonroot
+ARG TARGETPLATFORM
+COPY $TARGETPLATFORM/zotra $TARGETPLATFORM/zotra-history $TARGETPLATFORM/zotra-demo /app/
+COPY examples /app/examples
+EXPOSE 8080
+ENTRYPOINT ["/app/zotra"]
