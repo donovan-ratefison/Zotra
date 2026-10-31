@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, FileText } from "lucide-react";
+import { ChevronRight, FileText, PanelRightClose } from "lucide-react";
 import { toast } from "sonner";
 import {
   ApiError,
@@ -1127,10 +1127,21 @@ export function TopBar({
         variant="outline"
         size="sm"
         className="shrink-0"
-        aria-pressed={policyOpen}
+        aria-pressed={policyOpen === true}
+        title={policyOpen ? "Hide the policy" : "Show the policy"}
+        // The pressed look of the Design, Test, Monitor group.
+        style={
+          policyOpen
+            ? {
+                background: "var(--secondary)",
+                color: "var(--foreground)",
+                boxShadow: "inset 0 0 0 1px var(--border)",
+              }
+            : undefined
+        }
         onClick={() => onTogglePolicy?.()}
       >
-        <FileText aria-hidden="true" />
+        {policyOpen ? <PanelRightClose aria-hidden="true" /> : <FileText aria-hidden="true" />}
         Policy
       </Button>
       <NewProcessMenu

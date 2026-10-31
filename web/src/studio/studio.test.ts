@@ -1416,6 +1416,38 @@ describe("top bar", () => {
     expect(html).not.toContain("New draft from this version");
     expect(html).not.toContain("Freeze version");
   });
+
+  // The Policy button tag, found by its text.
+  const policyButton = (policyOpen?: boolean): string => {
+    const html = renderToString(
+      createElement(TopBar, { def: miniDefinition, version: versionRow(1, "published"), policyOpen }),
+    );
+    const m = html.match(/<button[^>]*>(?:(?!<\/button>).)*Policy<\/button>/);
+    expect(m).not.toBeNull();
+    return m![0];
+  };
+
+  test("fb-027 P1: an open policy gives a pressed Policy button", () => {
+    const tag = policyButton(true);
+    expect(tag).toContain('aria-pressed="true"');
+    expect(tag).toContain('title="Hide the policy"');
+    expect(tag).toContain("background:var(--secondary)");
+    expect(tag).toContain("box-shadow:inset 0 0 0 1px var(--border)");
+    expect(tag).toContain("lucide-panel-right-close");
+    expect(tag).not.toContain("lucide-file-text");
+  });
+
+  test("fb-027 P2: a closed policy gives the outline Policy button", () => {
+    const tag = policyButton(false);
+    expect(tag).toContain('aria-pressed="false"');
+    expect(tag).toContain('title="Show the policy"');
+    expect(tag).not.toContain("var(--secondary)");
+    expect(tag).toContain("lucide-file-text");
+  });
+
+  test("fb-027 P3: with no policyOpen prop the button has the closed look", () => {
+    expect(policyButton(undefined)).toBe(policyButton(false));
+  });
 });
 
 describe("node shapes", () => {
