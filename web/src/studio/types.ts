@@ -19,6 +19,13 @@ export interface Theme {
   primary_color: string;
   logo_url: string | null;
 }
+export interface Bank {
+  name: string;
+  primary_color: string;
+  accent_color: string;
+  logo_url: string | null;
+  updated_at: string;
+}
 export interface Role {
   id: string;
   name: string;

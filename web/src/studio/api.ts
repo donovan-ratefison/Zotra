@@ -2,6 +2,7 @@
 // the node panel, and the create and AI routes of the policy import.
 
 import type {
+  Bank,
   ProcessDefinition,
   ProcessSummary,
   ProcessesBody,
@@ -249,4 +250,34 @@ export async function fetchPolicy(processId: string): Promise<File | null> {
     }
   }
   return new File([await res.blob()], name, { type: "application/pdf" });
+}
+
+// fetchBank reads the bank profile of the delivered app.
+export async function fetchBank(): Promise<Bank> {
+  const body = await getJson<{ bank: Bank }>("/api/settings/bank");
+  return body.bank;
+}
+
+// saveBank stores the name and the two colors of the bank profile.
+export async function saveBank(input: {
+  name: string;
+  primary_color: string;
+  accent_color: string;
+}): Promise<Bank> {
+  const body = await requestJson<{ bank: Bank }>("/api/settings/bank", "PUT", input);
+  return body.bank;
+}
+
+// uploadBankLogo stores the PNG or SVG logo of the bank. A new upload
+// replaces the old logo.
+export async function uploadBankLogo(file: File): Promise<Bank> {
+  const res = await fetch("/api/settings/bank/logo", {
+    method: "PUT",
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+    body: file,
+  });
+  if (!res.ok) {
+    throw await apiError(res);
+  }
+  return ((await res.json()) as { bank: Bank }).bank;
 }
