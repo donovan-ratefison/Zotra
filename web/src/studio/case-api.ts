@@ -23,6 +23,8 @@ export type CaseState = {
   result: string;
   node_id: string;
   data: Record<string, unknown>;
+  // The fold carries the answers of the sources; a nil Go map gives null.
+  sources?: Record<string, Record<string, unknown>> | null;
   assignee: string;
   seq: number;
   prev_hash: string;

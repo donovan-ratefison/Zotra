@@ -53,3 +53,26 @@ export async function fetchInbox(
   }
   throw await apiError(res);
 }
+
+// One check of the current step, as GET /api/cases/{id}/checks gives it.
+export interface CheckResult {
+  id: string;
+  message: string;
+  expression: string;
+  passed: boolean;
+  error: string | null;
+}
+export interface CheckPreview {
+  node_id: string;
+  checks: CheckResult[];
+}
+
+// fetchChecks reads the preview of the checks of the current step. It
+// has the same access as the case read: no user header.
+export async function fetchChecks(caseId: string): Promise<CheckPreview> {
+  const res = await fetch(`/api/cases/${encodeURIComponent(caseId)}/checks`);
+  if (res.ok) {
+    return (await res.json()) as CheckPreview;
+  }
+  throw await apiError(res);
+}
