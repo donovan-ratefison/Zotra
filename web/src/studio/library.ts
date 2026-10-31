@@ -65,7 +65,7 @@ export function libraryRow(
     status: published === null ? latest.status : "published",
     published,
     latest,
-    steps: latest.definition.nodes.filter((n) => n.type === "task").length,
+    steps: latest.definition.nodes.length,
     roles: latest.definition.roles.length,
   };
 }

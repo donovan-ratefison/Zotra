@@ -1,4 +1,4 @@
-// The test rows 53a to 53q, L1 to L6 and P1 to P10 of the process library. The environment is
+// The test rows 53a to 53r, L1 to L6 and P1 to P10 of the process library. The environment is
 // node: direct calls of the pure functions, and renderToString of the
 // stateless view (one query client for the thumbnail query).
 
@@ -72,7 +72,7 @@ describe("libraryRow", () => {
     expect(r.published?.id).toBe("v1");
     expect(r.latest?.id).toBe("v2");
     expect(r.status).toBe("published");
-    expect(r.steps).toBe(6);
+    expect(r.steps).toBe(11);
     expect(r.roles).toBe(5);
   });
 
@@ -80,6 +80,12 @@ describe("libraryRow", () => {
     const r = libraryRow(p, [version(2, "draft"), version(1, "frozen")], false);
     expect(r.status).toBe("draft");
     expect(r.published).toBeNull();
+  });
+
+  test("53r: nodes that are not tasks count", () => {
+    const definition = { ...seed, nodes: seed.nodes.filter((n) => n.type !== "task" && n.type !== "gateway") };
+    const r = libraryRow(p, [{ ...version(1, "draft"), definition }], false);
+    expect(r.steps).toBe(3);
   });
 });
 
@@ -186,7 +192,8 @@ describe("LibraryView", () => {
     expect(html).toContain('aria-label="About processes"');
     expect(html).toContain("2 processes");
     expect(html.match(/href="\/\?process=/g)).toHaveLength(2);
-    expect(html).toContain("6 steps, 5 roles");
+    expect(html).toContain("11 steps, 5 roles");
+    expect(html).not.toContain("6 steps");
     expect(html).toContain("v1 Label 1");
     expect(html).toContain(">Search processes</span>");
     expect(html).toContain("lucide-search");
