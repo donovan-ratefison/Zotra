@@ -39,11 +39,44 @@ const msgNoContent = "the AI answer has no content"
 
 // policyBody is the request body of the import.
 type policyBody struct {
-	Name       string `json:"name"`
-	Paragraphs []struct {
-		ID   string `json:"id"`
-		Text string `json:"text"`
-	} `json:"paragraphs"`
+	Name       string        `json:"name"`
+	Paragraphs []paragraphIn `json:"paragraphs"`
+}
+
+// paragraphIn is one numbered paragraph of a request body.
+type paragraphIn struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
+}
+
+// validParagraphs applies the paragraph rule of the policy routes:
+// 1 to 500 items, unique ids of the form p<page>-<index>, 1 to 5000
+// characters of text.
+func validParagraphs(ps []paragraphIn) bool {
+	if len(ps) == 0 || len(ps) > 500 {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, p := range ps {
+		if !paragraphIDRE.MatchString(p.ID) || seen[p.ID] ||
+			p.Text == "" || utf8.RuneCountInString(p.Text) > 5000 {
+			return false
+		}
+		seen[p.ID] = true
+	}
+	return true
+}
+
+// policyParagraphs converts the request paragraphs to the prompt
+// paragraphs, and returns the set of their ids.
+func policyParagraphs(ps []paragraphIn) ([]ai.PolicyParagraph, map[string]bool) {
+	out := make([]ai.PolicyParagraph, 0, len(ps))
+	ids := map[string]bool{}
+	for _, p := range ps {
+		out = append(out, ai.PolicyParagraph{ID: p.ID, Text: p.Text})
+		ids[p.ID] = true
+	}
+	return out, ids
 }
 
 // policyToProcess converts one policy into one process document. The
@@ -61,26 +94,13 @@ func (d apiDeps) policyToProcess(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_name", "name is required")
 		return
 	}
-	// 3. The paragraphs: 1 to 500 items, unique ids of the form
-	// p<page>-<index>, 1 to 5000 characters of text, in this order.
-	if len(body.Paragraphs) == 0 || len(body.Paragraphs) > 500 {
+	// 3. The paragraphs.
+	if !validParagraphs(body.Paragraphs) {
 		writeError(w, http.StatusBadRequest, "invalid_paragraphs", msgInvalidParagraphs)
 		return
 	}
-	seen := map[string]bool{}
-	for _, p := range body.Paragraphs {
-		if !paragraphIDRE.MatchString(p.ID) || seen[p.ID] ||
-			p.Text == "" || utf8.RuneCountInString(p.Text) > 5000 {
-			writeError(w, http.StatusBadRequest, "invalid_paragraphs", msgInvalidParagraphs)
-			return
-		}
-		seen[p.ID] = true
-	}
 	// 4. The prompt.
-	paragraphs := make([]ai.PolicyParagraph, 0, len(body.Paragraphs))
-	for _, p := range body.Paragraphs {
-		paragraphs = append(paragraphs, ai.PolicyParagraph{ID: p.ID, Text: p.Text})
-	}
+	paragraphs, seen := policyParagraphs(body.Paragraphs)
 	messages := []ai.Message{
 		{Role: "system", Content: ai.PolicyToProcessSystem},
 		{Role: "user", Content: ai.PolicyToProcessUser(paragraphs)},

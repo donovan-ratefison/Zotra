@@ -174,3 +174,21 @@ const CompareVersionsSystem = `You summarize the changes between two versions of
 You receive one change on each line: "+" added, "-" removed, "~" changed.
 Write at most 5 short sentences in plain English. Use the names of the lines.
 Do not invent a change. Do not give advice.`
+
+// UpdatePolicySystem is the system prompt of the policy update. The
+// engine computes the changes since version 1; the model drafts the
+// policy paragraphs that they make wrong.
+const UpdatePolicySystem = `You update the text of a credit policy after changes to its process file. The bank reviews your draft.
+You receive the numbered policy paragraphs, the new process file (JSON) and the changes since version 1, one on each line: "+" added, "-" removed, "~" changed, with the element id.
+Rules:
+- changed: only the paragraphs that the changes make wrong. paragraph_id is an existing id. new_text is the full new text. element_ids lists the changed element ids that the new text covers.
+- added: one paragraph for each added step that no paragraph covers. step_id is the added step id. after_paragraph_id is the existing paragraph that it follows.
+- reason: one short line. Keep the style of the policy. Do not invent a rule that the process file does not hold.`
+
+// UpdatePolicyUser formats the user message of the policy update: the
+// paragraphs, the new process file and the change lines.
+func UpdatePolicyUser(paragraphs []PolicyParagraph, definition string, changes []string) string {
+	return "Policy paragraphs:\n" + PolicyToProcessUser(paragraphs) +
+		"\n\nProcess file (JSON):\n" + definition +
+		"\n\nChanges since version 1:\n" + strings.Join(changes, "\n")
+}
