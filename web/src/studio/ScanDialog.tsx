@@ -93,8 +93,15 @@ export function ScanDialogBody({ doc, mode, onSign, reading, readValues, onRead,
       <div className="flex flex-col gap-1">
         <h2 className="text-lg font-semibold leading-tight">{doc.name}</h2>
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[12px] text-muted-foreground">{`sha256:${doc.sha256}`}</span>
-          {mode === "view" && <Badge variant="secondary">Read only</Badge>}
+          <span
+            className="min-w-0 truncate font-mono text-[12px] text-muted-foreground"
+            title={`sha256:${doc.sha256}`}
+          >{`sha256:${doc.sha256}`}</span>
+          {mode === "view" && (
+            <Badge variant="secondary" className="shrink-0">
+              Read only
+            </Badge>
+          )}
         </div>
       </div>
       {zonesQuery.isError && (
@@ -109,11 +116,11 @@ export function ScanDialogBody({ doc, mode, onSign, reading, readValues, onRead,
       {zonesQuery.isPending && (
         <p className="text-sm text-muted-foreground">Detecting the zones...</p>
       )}
-      <div className="relative">
+      <div className="relative mx-auto w-fit">
         <img
           src={documentBytesUrl(doc.id)}
           alt={`Scan ${doc.name}`}
-          className="max-h-[320px] w-full object-contain"
+          className="block max-h-[320px] w-auto max-w-full"
           onLoad={(e) =>
             setSize({
               width: e.currentTarget.naturalWidth,

@@ -708,6 +708,24 @@ describe("scan dialog body", () => {
     expect(html).toContain("signature: 25, 10, 50, 20");
   });
 
+  test("12.13 row T1: the overlay wrapper fits the drawn image", () => {
+    const html = renderBody("view", signatureZones);
+    expect(html).toContain('class="relative mx-auto w-fit"');
+    expect(html).toContain("block max-h-[320px] w-auto max-w-full");
+    expect(html).not.toContain("object-contain");
+  });
+
+  test("12.13 row T2: the hash line truncates and keeps the full value", () => {
+    const html = renderBody("view", signatureZones);
+    expect(html).toContain(`title="sha256:${"a".repeat(64)}"`);
+    expect(html).toMatch(/<span class="[^"]*\btruncate\b[^"]*" title="sha256:/);
+  });
+
+  test("12.13 row T3: the Read only badge does not shrink", () => {
+    const html = renderBody("view", signatureZones);
+    expect(html).toMatch(/class="[^"]*\bshrink-0\b[^"]*"[^>]*>Read only/);
+  });
+
   test("5.2 row 20: a pending zones query gives the detection line", () => {
     const html = renderBody("view", null);
     expect(html).toContain("Detecting the zones...");
