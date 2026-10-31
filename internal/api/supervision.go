@@ -40,6 +40,7 @@ type supCase struct {
 	Assignee  string         `json:"assignee"`
 	AgeHours  int            `json:"age_hours"`
 	Late      bool           `json:"late"`
+	Returned  bool           `json:"returned"`
 	Data      map[string]any `json:"data"`
 }
 
@@ -136,6 +137,7 @@ func (d apiDeps) supervision(w http.ResponseWriter, r *http.Request) {
 			Assignee:  st.Assignee,
 			AgeHours:  int(math.Floor(age)),
 			Late:      late,
+			Returned:  enteredCount(events, st.NodeID) > 1,
 			Data:      st.Data,
 		})
 	}
@@ -190,4 +192,20 @@ func lowerMedian(hours []float64) int {
 	sorted := slices.Clone(hours)
 	sort.Float64s(sorted)
 	return int(math.Floor(sorted[(len(sorted)-1)/2]))
+}
+
+// enteredCount gives the number of step_entered events with the
+// payload node id. More than one means that the case came back.
+func enteredCount(events []engine.Event, nodeID string) int {
+	n := 0
+	for _, e := range events {
+		if e.Type != engine.EventStepEntered {
+			continue
+		}
+		var p engine.StepEnteredPayload
+		if json.Unmarshal(e.Payload, &p) == nil && p.NodeID == nodeID {
+			n++
+		}
+	}
+	return n
 }

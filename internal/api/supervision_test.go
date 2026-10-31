@@ -312,3 +312,28 @@ func TestSupervisionSkipsEventlessCase(t *testing.T) {
 		t.Errorf("cases = %d, want 2", len(body.Cases))
 	}
 }
+
+// S: a case on entry for the second time is returned.
+func TestSupervisionReturned(t *testing.T) {
+	st := newSupTestAPI(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	x := seedCaseX(t, st, now, false)
+	z := createCase(t, seedVersionID, true)
+	supChain(t, st, z, seedVersionID, now)
+
+	rec := do(t, "GET", "/api/versions/"+seedVersionID+"/supervision", "", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	body := decodeSupervision(t, rec)
+	want := map[string]bool{x: true, z: false}
+	if len(body.Cases) != 2 {
+		t.Fatalf("cases = %d, want 2", len(body.Cases))
+	}
+	for _, c := range body.Cases {
+		if c.NodeID != "entry" || c.Returned != want[c.CaseID] {
+			t.Errorf("case %s: node %q returned %v, want entry %v",
+				c.CaseID, c.NodeID, c.Returned, want[c.CaseID])
+		}
+	}
+}
