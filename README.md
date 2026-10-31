@@ -62,6 +62,8 @@ With no `ZOTRA_AI_API_KEY`, the AI buttons answer that the AI is not available (
 
 Before a real case of the example reaches the analysis step, start the demo core banking service on port 8097: `go run ./cmd/zotra-demo`.
 
+To fill an empty database with a demo history (60 cases of the example process over the last 30 days), run `go run ./cmd/zotra-history` with `ZOTRA_DATABASE_URL` set. It refuses a database that already holds real cases.
+
 To test from another machine on the same network, run `make serve`.
 It binds 0.0.0.0, picks a free port, and prints the URL.
 
