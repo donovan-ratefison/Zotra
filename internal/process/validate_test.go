@@ -546,3 +546,81 @@ func TestValidateSources(t *testing.T) {
 		})
 	}
 }
+
+// numberAmount turns field 1 of the slim base into a number field.
+func numberAmount(format any) func(doc map[string]any) {
+	return func(doc map[string]any) {
+		field := doc["fields"].([]any)[1].(map[string]any)
+		field["type"] = "number"
+		field["format"] = format
+	}
+}
+
+// V2 to V5: the format key of a field.
+func TestValidateFormat(t *testing.T) {
+	// V2: a money field with a format.
+	errs := Validate(inlineDoc(t, func(doc map[string]any) {
+		doc["fields"].([]any)[1].(map[string]any)["format"] = "percent"
+	}))
+	if len(errs) != 1 || errs[0].Path != "/fields/1/format" ||
+		!strings.Contains(errs[0].Message, "format percent needs a number field") {
+		t.Errorf("V2: errors = %+v", errs)
+	}
+	// V3: an unknown format.
+	errs = Validate(inlineDoc(t, numberAmount("permille")))
+	if len(errs) == 0 || !strings.HasPrefix(errs[0].Path, "/fields/1") {
+		t.Errorf("V3: errors = %+v, want a schema error at /fields/1", errs)
+	}
+	// V4: a number field with the percent format.
+	if errs := Validate(inlineDoc(t, numberAmount("percent"))); len(errs) != 0 {
+		t.Errorf("V4: errors = %+v", errs)
+	}
+	// V5: a null format.
+	data := inlineDoc(t, numberAmount(nil))
+	if errs := Validate(data); len(errs) != 0 {
+		t.Errorf("V5: errors = %+v", errs)
+	}
+	def, err := Decode(data)
+	if err != nil || def.Fields[1].Format != nil {
+		t.Errorf("V5: Decode err = %v, Format = %v, want nil", err, def.Fields[1].Format)
+	}
+}
+
+// V6: the example file marks the rates as percent.
+func TestDecodeExampleFormat(t *testing.T) {
+	data, err := os.ReadFile("../../examples/home-loan/process.json")
+	if err != nil {
+		t.Fatalf("read example: %v", err)
+	}
+	def, err := Decode(data)
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	formats := map[string]*string{}
+	for _, f := range def.Fields {
+		formats[f.Name] = f.Format
+	}
+	if f := formats["annual_rate"]; f == nil || *f != "percent" {
+		t.Errorf("annual_rate format = %v, want percent", f)
+	}
+	if f := formats["amount"]; f != nil {
+		t.Errorf("amount format = %q, want nil", *f)
+	}
+}
+
+// V7: the AI schema has no format key; the file schema has it.
+func TestJSONSchemaFormat(t *testing.T) {
+	fieldProps := func(raw map[string]any) map[string]any {
+		return raw["$defs"].(map[string]any)["field"].(map[string]any)["properties"].(map[string]any)
+	}
+	if _, ok := fieldProps(JSONSchema())["format"]; ok {
+		t.Error("AI schema has the key format")
+	}
+	var file map[string]any
+	if err := json.Unmarshal(schemaJSON, &file); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := fieldProps(file)["format"]; !ok {
+		t.Error("file schema has no key format")
+	}
+}

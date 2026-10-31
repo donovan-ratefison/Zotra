@@ -21,7 +21,7 @@
     { "name": "amount", "label": "Loan amount", "type": "money", "options": [], "computed": null },
     { "name": "duration_months", "label": "Duration (months)", "type": "integer", "options": [], "computed": null },
     { "name": "down_payment", "label": "Down payment", "type": "money", "options": [], "computed": null },
-    { "name": "annual_rate", "label": "Annual rate", "type": "number", "options": [], "computed": null },
+    { "name": "annual_rate", "label": "Annual rate", "type": "number", "options": [], "computed": null, "format": "percent" },
     { "name": "monthly_income", "label": "Monthly income", "type": "money", "options": [], "computed": null },
     {
       "name": "monthly_payment",
@@ -35,7 +35,8 @@
       "label": "Debt ratio",
       "type": "number",
       "options": [],
-      "computed": "monthly_payment / monthly_income"
+      "computed": "monthly_payment / monthly_income",
+      "format": "percent"
     },
     { "name": "documents", "label": "Supporting documents", "type": "document", "options": [], "computed": null },
     { "name": "analysis_opinion", "label": "Analysis opinion", "type": "enum", "options": ["favorable", "unfavorable"], "computed": null },

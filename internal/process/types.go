@@ -49,6 +49,8 @@ type Field struct {
 	Type     string   `json:"type"`
 	Options  []string `json:"options"`
 	Computed *string  `json:"computed"`
+	// Format is "percent" or nil. Only a number field can carry it.
+	Format *string `json:"format,omitempty"`
 }
 
 // Scope is one entry of the field access matrix.

@@ -95,14 +95,14 @@ func (d apiDeps) changeProcess(w http.ResponseWriter, r *http.Request) {
 		}
 		var errs []process.Error
 		content, ok := answerContent(ansBody)
-		// merged is the answer with the sources of the current
-		// definition: the AI never writes sources.
+		// merged is the answer with the sources and the field formats
+		// of the current definition: the AI never writes them.
 		merged := content
 		switch {
 		case !ok || content == "":
 			errs = []process.Error{{Path: "", Message: msgNoContent}}
 		default:
-			merged = withSources(content, v.Definition)
+			merged = withFormats(withSources(content, v.Definition), v.Definition)
 			errs = rules.ValidateDocument([]byte(merged))
 		}
 		if len(errs) == 0 {
@@ -145,6 +145,55 @@ func withSources(content string, current []byte) string {
 		return content
 	}
 	answer["sources"] = src
+	out, err := json.Marshal(answer)
+	if err != nil {
+		return content
+	}
+	return string(out)
+}
+
+// withFormats returns the AI answer with the format of each number
+// field that has a format in the current definition, matched by name.
+// It returns content unchanged when it copies nothing.
+func withFormats(content string, current []byte) string {
+	var cur struct {
+		Fields []process.Field `json:"fields"`
+	}
+	if err := json.Unmarshal(current, &cur); err != nil {
+		return content
+	}
+	formats := map[string]string{}
+	for _, f := range cur.Fields {
+		if f.Format != nil {
+			formats[f.Name] = *f.Format
+		}
+	}
+	if len(formats) == 0 {
+		return content
+	}
+	var answer map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(content), &answer); err != nil || answer == nil {
+		return content
+	}
+	var fields []map[string]json.RawMessage
+	if err := json.Unmarshal(answer["fields"], &fields); err != nil {
+		return content
+	}
+	copied := false
+	for _, f := range fields {
+		var name, typ string
+		if json.Unmarshal(f["name"], &name) != nil || json.Unmarshal(f["type"], &typ) != nil {
+			continue
+		}
+		if format, ok := formats[name]; ok && typ == "number" {
+			f["format"], _ = json.Marshal(format)
+			copied = true
+		}
+	}
+	if !copied {
+		return content
+	}
+	answer["fields"], _ = json.Marshal(fields)
 	out, err := json.Marshal(answer)
 	if err != nil {
 		return content

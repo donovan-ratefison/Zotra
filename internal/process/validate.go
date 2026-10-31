@@ -106,13 +106,16 @@ func Validate(data []byte) []Error {
 	errors = append(errors, checkIdentifiers(&def)...)
 	errors = append(errors, checkReferences(&def)...)
 	errors = append(errors, checkSources(&def)...)
+	errors = append(errors, checkFormats(&def)...)
 	return errors
 }
 
 // schemaObject decodes the embedded schema once, for callers that
 // send it to the AI provider as a response format. The sources item
 // becomes false: the AI never writes sources, and a strict-mode
-// provider refuses the free keys of test_values.
+// provider refuses the free keys of test_values. The field format key
+// goes away: the AI never writes the format, and the cached AI
+// requests keep the same bytes.
 var schemaObject = sync.OnceValue(func() map[string]any {
 	var raw map[string]any
 	if err := json.Unmarshal(schemaJSON, &raw); err != nil {
@@ -120,6 +123,8 @@ var schemaObject = sync.OnceValue(func() map[string]any {
 	}
 	properties := raw["properties"].(map[string]any)
 	properties["sources"].(map[string]any)["items"] = false
+	field := raw["$defs"].(map[string]any)["field"].(map[string]any)
+	delete(field["properties"].(map[string]any), "format")
 	return raw
 })
 
@@ -653,6 +658,18 @@ func checkSources(def *Definition) []Error {
 					Message: fmt.Sprintf("node references unknown source %s", id)})
 			}
 			seen[id] = true
+		}
+	}
+	return errors
+}
+
+// checkFormats checks that only a number field carries a format.
+func checkFormats(def *Definition) []Error {
+	var errors []Error
+	for i, field := range def.Fields {
+		if field.Format != nil && field.Type != "number" {
+			errors = append(errors, Error{Path: fmt.Sprintf("/fields/%d/format", i),
+				Message: "format percent needs a number field"})
 		}
 	}
 	return errors

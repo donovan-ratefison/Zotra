@@ -892,3 +892,100 @@ func TestChangeSelectedStepRefusals(t *testing.T) {
 		}
 	}
 }
+
+// formatAnswer returns the seed with the format keys removed, as the
+// AI answers it, after one change of the fields.
+func formatAnswer(t *testing.T, change func(fields []any) []any) string {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(seedBytes(t), &doc); err != nil {
+		t.Fatal(err)
+	}
+	fields := doc["fields"].([]any)
+	for _, f := range fields {
+		delete(f.(map[string]any), "format")
+	}
+	doc["fields"] = change(fields)
+	out, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}
+
+// fieldFormats maps each field name of a definition to its format
+// key, or to "absent".
+func fieldFormats(t *testing.T, definition []byte) map[string]any {
+	t.Helper()
+	var doc struct {
+		Fields []map[string]any `json:"fields"`
+	}
+	if err := json.Unmarshal(definition, &doc); err != nil {
+		t.Fatalf("definition: %v", err)
+	}
+	out := map[string]any{}
+	for _, f := range doc.Fields {
+		format, ok := f["format"]
+		if !ok {
+			format = "absent"
+		}
+		out[f["name"].(string)] = format
+	}
+	return out
+}
+
+func sameFields(fields []any) []any { return fields }
+
+// F1 to F5: withFormats copies the format of the current fields.
+func TestWithFormats(t *testing.T) {
+	cur := seedBytes(t)
+	// F1
+	got := fieldFormats(t, []byte(withFormats(formatAnswer(t, sameFields), cur)))
+	if got["annual_rate"] != "percent" || got["debt_ratio"] != "percent" || got["amount"] != "absent" {
+		t.Errorf("F1: formats = %v", got)
+	}
+	// F2
+	money := formatAnswer(t, func(fields []any) []any {
+		for _, f := range fields {
+			if f.(map[string]any)["name"] == "annual_rate" {
+				f.(map[string]any)["type"] = "money"
+			}
+		}
+		return fields
+	})
+	got = fieldFormats(t, []byte(withFormats(money, cur)))
+	if got["annual_rate"] != "absent" || got["debt_ratio"] != "percent" {
+		t.Errorf("F2: formats = %v", got)
+	}
+	// F3
+	extra := formatAnswer(t, func(fields []any) []any {
+		return append(fields, map[string]any{"name": "fee_rate", "label": "Fee rate",
+			"type": "number", "options": []any{}, "computed": nil})
+	})
+	got = fieldFormats(t, []byte(withFormats(extra, cur)))
+	if got["fee_rate"] != "absent" || got["annual_rate"] != "percent" {
+		t.Errorf("F3: formats = %v", got)
+	}
+	// F4
+	if out := withFormats("[1]", cur); out != "[1]" {
+		t.Errorf("F4: out = %s, want [1]", out)
+	}
+	// F5: a current definition with no format.
+	answer := formatAnswer(t, sameFields)
+	if out := withFormats(answer, []byte(answer)); out != answer {
+		t.Error("F5: content changed, want the same string")
+	}
+}
+
+// F6: the change route keeps the format of the draft.
+func TestChangeKeepsFormat(t *testing.T) {
+	srv, count, _ := changeLiveStub(t, []string{chatEnvelope(formatAnswer(t, sameFields))})
+	aiLive(t, srv.URL)
+	newTestAPI(t)
+	draftID := createProcessVersion(t, seedBytes(t), "Format")
+
+	definition := postChangeOnce(t, draftID, count)
+	if got := fieldFormats(t, definition); got["annual_rate"] != "percent" {
+		t.Errorf("annual_rate format = %v, want percent", got["annual_rate"])
+	}
+}

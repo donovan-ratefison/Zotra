@@ -88,7 +88,8 @@
           ]
         },
         "options": { "type": "array", "items": { "type": "string" } },
-        "computed": { "type": ["string", "null"] }
+        "computed": { "type": ["string", "null"] },
+        "format": { "enum": ["percent", null] }
       }
     },
     "scope": {
