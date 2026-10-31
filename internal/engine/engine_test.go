@@ -1052,3 +1052,103 @@ func TestHandleWithSources(t *testing.T) {
 		}
 	})
 }
+
+// previewState is a state on analysis, open, with the sources of the
+// preview rows and the E1 values.
+func previewState() State {
+	return State{
+		CaseID: caseID, VersionID: versionID, Status: StatusOpen, NodeID: "analysis",
+		Data: map[string]any{
+			"debt_ratio": 0.30, "monthly_payment": 900.0,
+			"monthly_income": 5000.0, "analysis_comment": "ok",
+		},
+		Sources: map[string]map[string]any{
+			"blacklist":      {"listed": false},
+			"existing_loans": {"monthly_total": 200.0},
+		},
+	}
+}
+
+// E1 to E6c.
+func TestPreviewChecks(t *testing.T) {
+	def := exampleDef(t)
+	ids := []string{"analysis-debt-ratio", "analysis-blacklist", "analysis-existing-loans"}
+	// check runs PreviewChecks and compares the passed flags in node
+	// order. A true wantErr asks for a non-nil Error on that check.
+	check := func(t *testing.T, st State, passed, wantErr []bool) {
+		t.Helper()
+		got, err := PreviewChecks(def, st, t0)
+		if err != nil {
+			t.Fatalf("PreviewChecks: %v", err)
+		}
+		if len(got) != len(ids) {
+			t.Fatalf("got %d results, want %d", len(got), len(ids))
+		}
+		for i, r := range got {
+			if r.ID != ids[i] || r.Passed != passed[i] || (r.Error != nil) != wantErr[i] {
+				t.Errorf("result %d = %+v, want id %s passed %t error %t",
+					i, r, ids[i], passed[i], wantErr[i])
+			}
+			if r.Message != def.Nodes[3].Checks[i].Message ||
+				r.Expression != def.Nodes[3].Checks[i].Expression {
+				t.Errorf("result %d message or expression = %+v", i, r)
+			}
+		}
+	}
+	noErr := []bool{false, false, false}
+
+	t.Run("E1 pass", func(t *testing.T) {
+		check(t, previewState(), []bool{true, true, true}, noErr)
+	})
+	failState := func() State {
+		st := previewState()
+		st.Data["debt_ratio"] = 0.40
+		st.Data["analysis_comment"] = ""
+		return st
+	}
+	t.Run("E2 fail", func(t *testing.T) {
+		check(t, failState(), []bool{false, true, true}, noErr)
+	})
+	t.Run("E3 missing field", func(t *testing.T) {
+		st := failState()
+		delete(st.Data, "analysis_comment")
+		check(t, st, []bool{false, true, true}, noErr)
+	})
+	t.Run("E4 eval error", func(t *testing.T) {
+		st := previewState()
+		st.Sources = map[string]map[string]any{}
+		check(t, st, []bool{true, false, false}, []bool{false, true, true})
+	})
+	t.Run("E5 closed", func(t *testing.T) {
+		st := previewState()
+		st.Status = StatusClosed
+		if _, err := PreviewChecks(def, st, t0); !errors.Is(err, ErrNotATask) {
+			t.Errorf("err = %v, want ErrNotATask", err)
+		}
+	})
+	t.Run("E6 gateway", func(t *testing.T) {
+		st := previewState()
+		st.NodeID = "complete"
+		if _, err := PreviewChecks(def, st, t0); !errors.Is(err, ErrNotATask) {
+			t.Errorf("err = %v, want ErrNotATask", err)
+		}
+	})
+	t.Run("E6b task offer has no check", func(t *testing.T) {
+		st := previewState()
+		st.NodeID = "offer"
+		got, err := PreviewChecks(def, st, t0)
+		if err != nil || got == nil || len(got) != 0 {
+			t.Errorf("got %v, %v, want an empty non-nil slice", got, err)
+		}
+	})
+	t.Run("E6c no mutation", func(t *testing.T) {
+		st := failState()
+		delete(st.Data, "analysis_comment")
+		if _, err := PreviewChecks(def, st, t0); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := st.Data["analysis_comment"]; ok {
+			t.Error("st.Data has analysis_comment after the call")
+		}
+	})
+}

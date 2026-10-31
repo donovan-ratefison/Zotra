@@ -76,6 +76,7 @@ func NewHandler(static fs.FS, version string, st *store.Store, feedbackDir strin
 		mux.HandleFunc("POST /api/cases", d.createCase)
 		mux.HandleFunc("GET /api/cases/{id}", d.readCase)
 		mux.HandleFunc("GET /api/cases/{id}/events", d.listEvents)
+		mux.HandleFunc("GET /api/cases/{id}/checks", d.caseChecks)
 		mux.HandleFunc("POST /api/cases/{id}/commands", d.runCommand)
 		mux.HandleFunc("GET /api/cases/{id}/verify", d.verifyCase)
 		mux.HandleFunc("GET /api/versions/{id}/supervision", d.supervision)

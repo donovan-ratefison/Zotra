@@ -165,6 +165,26 @@ func (d apiDeps) readCase(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"case": toCaseDTO(c), "state": st})
 }
 
+// caseChecks answers {"node_id":...,"checks":[...]}: the preview of
+// the checks of the current task node. It writes no event.
+func (d apiDeps) caseChecks(w http.ResponseWriter, r *http.Request) {
+	_, def, _, st, ok := d.loadCaseState(w, r, r.PathValue("id"))
+	if !ok {
+		return
+	}
+	checks, err := engine.PreviewChecks(def, st, time.Now().UTC())
+	if errors.Is(err, engine.ErrNotATask) {
+		writeError(w, http.StatusConflict, "not_a_task", "the case is not on a task")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal",
+			"cannot complete the request")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"node_id": st.NodeID, "checks": checks})
+}
+
 // listEvents answers {"events":[...]} in seq order.
 func (d apiDeps) listEvents(w http.ResponseWriter, r *http.Request) {
 	c, err := d.st.GetCase(r.Context(), r.PathValue("id"))

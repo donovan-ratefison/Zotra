@@ -136,27 +136,17 @@ func HandleWithSources(ctx context.Context, def process.Definition,
 	// failed check and reports whether all checks passed.
 	runChecks := func(node process.Node, actor, decision string) (bool, error) {
 		for _, chk := range node.Checks {
-			prg, err := env.Compile(chk.Expression, cel.BoolType)
+			res, err := evalCheck(env, def, ws, chk, at, decision)
 			if err != nil {
 				return false, err
-			}
-			result, err := prg.EvalBool(activation(def, ws), at, decision)
-			if err != nil {
-				text := err.Error()
-				emit(actor, EventCheckEvaluated, CheckEvaluatedPayload{
-					NodeID:  node.ID,
-					CheckID: chk.ID,
-					Result:  false,
-					Error:   &text,
-				})
-				return false, nil
 			}
 			emit(actor, EventCheckEvaluated, CheckEvaluatedPayload{
 				NodeID:  node.ID,
 				CheckID: chk.ID,
-				Result:  result,
+				Result:  res.Passed,
+				Error:   res.Error,
 			})
-			if !result {
+			if !res.Passed {
 				return false, nil
 			}
 		}
@@ -442,6 +432,91 @@ func HandleWithSources(ctx context.Context, def process.Definition,
 	default:
 		return nil, errors.New("unknown command")
 	}
+}
+
+// CheckResult is the preview of one check of a node.
+type CheckResult struct {
+	ID         string  `json:"id"`
+	Message    string  `json:"message"`
+	Expression string  `json:"expression"`
+	Passed     bool    `json:"passed"`
+	Error      *string `json:"error"`
+}
+
+// ErrNotATask is the error of PreviewChecks when the case is not open
+// on a task node.
+var ErrNotATask = errors.New("not_a_task")
+
+// evalCheck evaluates one check on the state. A compile error is
+// returned. An eval error gives Passed false and the error text.
+func evalCheck(env *rules.Env, def process.Definition, st State,
+	chk process.Check, at time.Time, decision string,
+) (CheckResult, error) {
+	res := CheckResult{ID: chk.ID, Message: chk.Message, Expression: chk.Expression}
+	prg, err := env.Compile(chk.Expression, cel.BoolType)
+	if err != nil {
+		return CheckResult{}, err
+	}
+	passed, err := prg.EvalBool(activation(def, st), at, decision)
+	if err != nil {
+		text := err.Error()
+		res.Error = &text
+		return res, nil
+	}
+	res.Passed = passed
+	return res, nil
+}
+
+// PreviewChecks evaluates every check of the current task node on the
+// state, in node order, with decision "". It does not stop at the
+// first failure and it writes no event. A non-computed field with no
+// value gets the empty value of its type. It does not modify st.
+func PreviewChecks(def process.Definition, st State, at time.Time) ([]CheckResult, error) {
+	if st.Status != StatusOpen {
+		return nil, ErrNotATask
+	}
+	node, err := findNode(def, st.NodeID)
+	if err != nil || node.Type != "task" {
+		return nil, ErrNotATask
+	}
+	env, err := newEnv(def)
+	if err != nil {
+		return nil, err
+	}
+	ws := st
+	ws.Data = copyData(st.Data)
+	for _, f := range def.Fields {
+		if _, ok := ws.Data[f.Name]; !ok && f.Computed == nil {
+			ws.Data[f.Name] = emptyValue(f.Type)
+		}
+	}
+	results := make([]CheckResult, 0, len(node.Checks))
+	for _, chk := range node.Checks {
+		res, err := evalCheck(env, def, ws, chk, at, "")
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, res)
+	}
+	return results, nil
+}
+
+// emptyValue returns the empty value of a field type, in the Go shape
+// of coerceValue.
+func emptyValue(typ string) any {
+	switch typ {
+	case "number", "money":
+		return 0.0
+	case "integer":
+		return int64(0)
+	case "boolean":
+		return false
+	case "date":
+		return time.Time{}
+	case "document":
+		return []string{}
+	}
+	return ""
 }
 
 // newEnv returns the CEL environment of the definition.
