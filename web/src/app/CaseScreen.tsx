@@ -1,11 +1,12 @@
-// The case screen of the delivered app: the header card and the step
-// screen with the actor locked to the picked user. The command and
-// upload wiring copies the delivered test screen.
+// The case screen of the delivered app: the header card (figures,
+// deadline and stepper) and the step screen with the actor locked to
+// the picked user. The command and upload wiring copies the delivered
+// test screen.
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Check } from "lucide-react";
 import { ApiError, getVersion } from "../studio/api";
 import {
   listEvents,
@@ -26,6 +27,8 @@ import { StepScreen } from "../studio/StepScreen";
 import { Button } from "@/ui/button";
 import { dayTimeText, moneyText, pickField } from "./InboxScreen";
 import { leftStep, sendDecision } from "./triage";
+import { Pill } from "./TriageScreen";
+import { deadlineOf, stepperOf, type StepperItem } from "./case-header";
 
 // Loading is the pending stage of the case or of its version.
 function Loading() {
@@ -33,6 +36,49 @@ function Loading() {
     <div className="flex flex-1 items-center justify-center text-muted-foreground">
       Loading the case.
     </div>
+  );
+}
+
+// Stepper renders the case path: a circle and a label for each step,
+// with a connector line to the next step.
+function Stepper({ items }: { items: StepperItem[] }) {
+  return (
+    <ol
+      aria-label="Steps"
+      className="grid"
+      style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
+    >
+      {items.map((item, i) => (
+        <li
+          key={item.id}
+          aria-current={item.mark === "current" ? "step" : undefined}
+          className="relative flex flex-col items-center gap-1 px-1 text-center"
+        >
+          {i < items.length - 1 && (
+            <span
+              aria-hidden
+              className={`absolute top-[10px] left-[calc(50%+15px)] right-[calc(-50%+15px)] h-0.5 ${item.mark === "done" ? "bg-primary" : "bg-border"}`}
+            />
+          )}
+          {item.mark === "done" ? (
+            <span className="flex size-[22px] items-center justify-center rounded-full bg-primary text-primary-foreground">
+              <Check size={12} strokeWidth={3} />
+            </span>
+          ) : (
+            <span
+              className={`flex size-[22px] items-center justify-center rounded-full text-[11px] ${item.mark === "current" ? "border-2 border-primary font-bold" : "border text-muted-foreground"}`}
+            >
+              {i + 1}
+            </span>
+          )}
+          <span
+            className={`text-[12px] leading-tight line-clamp-2 ${item.mark === "current" ? "font-semibold" : item.mark === "next" ? "text-muted-foreground" : ""}`}
+          >
+            {item.label}
+          </span>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -176,20 +222,29 @@ export function CaseScreen({
   const rawClient =
     stringField === null ? undefined : loaded.state.data[stringField.name];
   const clientName = typeof rawClient === "string" ? rawClient : "-";
-  const nodeName =
-    loadedDef.nodes.find((node) => node.id === loaded.state.node_id)?.name ??
-    loaded.state.node_id;
+  const currentNode = loadedDef.nodes.find(
+    (node) => node.id === loaded.state.node_id,
+  );
+  const nodeName = currentNode?.name ?? loaded.state.node_id;
+  const events = eventsQuery.data ?? [];
+  const deadline = deadlineOf(
+    events,
+    currentNode,
+    loaded.state,
+    caseQuery.dataUpdatedAt,
+  );
+  const steps = stepperOf(loadedDef, events, loaded.state);
 
   return (
-    <div className="mx-auto flex w-full max-w-[720px] flex-col gap-4 px-6 py-6">
+    <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-4 px-6 py-6">
       <div>
         <Button variant="ghost" size="sm" className="-ml-2" onClick={onBack}>
           <ArrowLeft className="size-4" />
           {backLabel}
         </Button>
       </div>
-      <div className="rounded-lg border bg-card p-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="rounded-lg border bg-card">
+        <div className="flex flex-wrap items-start justify-between gap-4 p-4">
           <div className="min-w-0">
             <span className="font-mono text-xs text-muted-foreground">
               {`${caseRow.reference} · ${loadedDef.name} v${versionRow.number}`}
@@ -218,6 +273,20 @@ export function CaseScreen({
                 </span>
               </span>
             </div>
+            {deadline !== null && (
+              <>
+                <div className="flex flex-col">
+                  <span className="text-xs text-muted-foreground">Deadline</span>
+                  <span className="text-sm font-medium">{deadline.due}</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-xs text-muted-foreground">Time spent</span>
+                  <span>
+                    <Pill tone={deadline.tone} text={deadline.spent} />
+                  </span>
+                </div>
+              </>
+            )}
             <div className="flex flex-col">
               <span className="text-xs text-muted-foreground">Status</span>
               <span className="text-sm font-medium">
@@ -227,6 +296,9 @@ export function CaseScreen({
               </span>
             </div>
           </div>
+        </div>
+        <div className="border-t px-4 py-3">
+          <Stepper items={steps} />
         </div>
       </div>
       <div className="rounded-lg border bg-card">

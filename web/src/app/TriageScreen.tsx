@@ -112,7 +112,7 @@ const TONES = {
   none: "bg-zinc-100 text-zinc-600",
 };
 
-function Pill({ tone, text }: { tone: keyof typeof TONES; text: string }) {
+export function Pill({ tone, text }: { tone: keyof typeof TONES; text: string }) {
   return (
     <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${TONES[tone]}`}>
       <span className="size-1.5 rounded-full bg-current" />

@@ -105,10 +105,10 @@ export function milestonesOf(
   return out;
 }
 
-// upcomingOf gives the names of the steps the case still has to take
+// upcomingIds gives the ids of the steps the case still has to take
 // on the shortest path to an approved end, current step excluded. A
 // closed case has none.
-export function upcomingOf(def: ProcessDefinition, state: CaseState): string[] {
+export function upcomingIds(def: ProcessDefinition, state: CaseState): string[] {
   if (state.status === "closed" || state.node_id === null) {
     return [];
   }
@@ -134,9 +134,14 @@ export function upcomingOf(def: ProcessDefinition, state: CaseState): string[] {
   }
   const path: string[] = [];
   for (let id = goal; id !== null && id !== state.node_id; id = prev.get(id) ?? null) {
-    path.unshift(def.nodes.find((n) => n.id === id)?.name ?? id);
+    path.unshift(id);
   }
   return path;
+}
+
+// upcomingOf gives the names of the steps of upcomingIds.
+export function upcomingOf(def: ProcessDefinition, state: CaseState): string[] {
+  return upcomingIds(def, state).map((id) => def.nodes.find((n) => n.id === id)?.name ?? id);
 }
 
 const SPEEDS = [1, 2, 4] as const;
