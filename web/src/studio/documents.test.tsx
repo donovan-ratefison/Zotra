@@ -24,7 +24,7 @@ import {
 import { FieldInput } from "./field-inputs";
 import { ScanDialogBody, ZoneOverlay, zoneStyle } from "./ScanDialog";
 import { documentProvides, StepDocuments } from "./StepDocuments";
-import { StepScreen } from "./StepScreen";
+import { sendsBack, StepScreen } from "./StepScreen";
 import { TestScreen } from "./TestScreen";
 import { useStudioStore, type StudioMode } from "./store";
 import type { ProcessDefinition, ProcessNode, VersionSummary } from "./types";
@@ -283,10 +283,13 @@ function renderStep(state: CaseState, props?: {
   events?: CaseEvent[];
   decisionEnabled?: boolean;
   actor?: string;
+  def?: ProcessDefinition;
+  readOnly?: boolean;
 }): string {
   return renderToString(
     createElement(StepScreen, {
-      def: docsDefinition,
+      def: props?.def ?? docsDefinition,
+      readOnly: props?.readOnly,
       state,
       users: usersFixture,
       actor: props?.actor ?? "u-advisor",
@@ -695,6 +698,87 @@ describe("step screen gate", () => {
     const html = renderStep(takenState);
     expect(html).toContain("Documents");
     expect(html).toContain("ID card.png");
+  });
+});
+
+// backDefinition is a copy of the docs fixture: the signoff step (d)
+// also has the decision back, with a link back to analysis (a).
+const backDefinition: ProcessDefinition = {
+  ...docsDefinition,
+  nodes: docsDefinition.nodes.map((n) =>
+    n.id === "signoff" ? { ...n, decisions: ["approve", "back"] } : n,
+  ),
+  edges: [
+    ...docsDefinition.edges,
+    { id: "e11", from: "signoff", to: "analysis", label: null, decision: "back", condition: null, is_default: false },
+  ],
+};
+
+// entered builds the step_entered event of a node at a sequence number.
+function entered(node: string, seq: number): CaseEvent {
+  return {
+    case_id: "c1",
+    seq,
+    type: "step_entered",
+    at: "2026-10-27T12:00:02Z",
+    actor: "system",
+    payload: { node_id: node },
+    prev_hash: "x",
+    hash: "y",
+  };
+}
+
+// The case entered analysis (a), then signoff (d).
+const toSignoff = [entered("analysis", 4), entered("signoff", 5)];
+
+describe("send-back decision", () => {
+  test("fb-023 row R1: a link to an entered step sends back", () => {
+    expect(sendsBack(backDefinition, "signoff", "back", toSignoff)).toBe(true);
+  });
+
+  test("fb-023 row R2: a target that the case did not enter is refused", () => {
+    expect(sendsBack(backDefinition, "signoff", "back", [])).toBe(false);
+  });
+
+  test("fb-023 row R3: a forward link does not send back", () => {
+    expect(sendsBack(backDefinition, "signoff", "approve", toSignoff)).toBe(false);
+  });
+
+  test("fb-023 row R4: an unknown decision is refused", () => {
+    expect(sendsBack(backDefinition, "signoff", "nope", toSignoff)).toBe(false);
+  });
+
+  test("fb-023 row R5: the send-back decision is open with no signature", () => {
+    const html = renderStep(signoffState, {
+      def: backDefinition,
+      decisionEnabled: false,
+      events: toSignoff,
+    });
+    expect(html).toMatch(/<button(?![^>]*\bdisabled=)[^>]*>[^<]*back</);
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>[^<]*approve/);
+    expect(html).toMatch(/Missing: [^<]*signature/);
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>[^<]*Submit/);
+  });
+
+  test("fb-023 row R6: a read-only step shows no decision", () => {
+    const html = renderStep(signoffState, {
+      def: backDefinition,
+      decisionEnabled: false,
+      events: toSignoff,
+      readOnly: true,
+    });
+    expect(html).not.toMatch(/<button[^>]*>[^<]*back</);
+    expect(html).not.toMatch(/<button[^>]*>[^<]*approve/);
+  });
+
+  test("fb-023 row R7: after a send-back, a forward link keeps the gate", () => {
+    const loop = [...toSignoff, entered("analysis", 6)];
+    expect(sendsBack(backDefinition, "analysis", "favorable", loop)).toBe(false);
+    expect(sendsBack(backDefinition, "signoff", "back", loop)).toBe(true);
+  });
+
+  test("fb-023 row R8: a step that the case did not enter is refused", () => {
+    expect(sendsBack(backDefinition, "signoff", "back", [entered("analysis", 4)])).toBe(false);
   });
 });
 

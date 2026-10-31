@@ -385,6 +385,22 @@ function CaseSummary({ def, node, state, withWrites = false }: {
   );
 }
 
+// sendsBack tells if the link of a decision goes to a step that the case
+// entered before its first entry in the current step. Such a link sends
+// the case back, so the gate of the current step does not apply to that
+// decision. A forward link after a loop keeps the gate.
+export function sendsBack(def: ProcessDefinition, nodeId: string, decision: string, events: CaseEvent[]): boolean {
+  const edge = def.edges.find((e) => e.from === nodeId && e.decision === decision);
+  const entered = (id: string) =>
+    events.filter((e) => e.type === "step_entered" && (e.payload as { node_id?: string }).node_id === id);
+  const here = entered(nodeId);
+  if (edge === undefined || here.length === 0) {
+    return false;
+  }
+  const first = Math.min(...here.map((e) => e.seq));
+  return entered(edge.to).some((e) => e.seq < first);
+}
+
 // StepForm is the taken-step part: the case summary, the write
 // fields with the local values, the documents, and the sticky
 // actions. The key on the parent render resets the values at each
@@ -561,7 +577,7 @@ function StepForm({ def, node, state, actorLine, onCommand, failedChecks, decisi
               <Button
                 key={decision}
                 className="capitalize"
-                disabled={!decisionEnabled || blocked}
+                disabled={!sendsBack(def, node.id, decision, events) && (!decisionEnabled || blocked)}
                 onClick={() => onCommand({ type: "decide", decision })}
               >
                 {decision}
@@ -569,7 +585,7 @@ function StepForm({ def, node, state, actorLine, onCommand, failedChecks, decisi
             ))}
             {node.decisions.length > 0 && (
               <Hint label="How to decide">
-                Submit the values first. The decisions open when the checks pass.
+                Submit the values first. The decisions open when the checks pass. A decision that sends the case back to an earlier step is always open.
               </Hint>
             )}
           </div>
