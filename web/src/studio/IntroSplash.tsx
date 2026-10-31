@@ -1,5 +1,6 @@
 // The intro of the studio: the animated logo plays one time per
-// browser session, faster than the brand guide, then fades out.
+// browser session, faster than the brand guide. The finished logo
+// holds on screen, then fades out.
 import { useEffect, useRef, useState } from "react";
 import type { JSX, RefObject } from "react";
 import { buildLogo, LOGO_CONFIG } from "./logo-engine";
@@ -7,10 +8,17 @@ import { buildLogo, LOGO_CONFIG } from "./logo-engine";
 export const INTRO_SPEED = 2.5;
 export const INTRO_FADE_MS = 250;
 export const INTRO_KEY = "zotra-intro-seen";
+// The time to read the finished logo before the fade, in ms.
+export const INTRO_HOLD_MS = 1500;
 
 // Wall time of the intro, in ms.
 export function introLength(): number {
   return Math.round(LOGO_CONFIG.dur / INTRO_SPEED);
+}
+
+// Wall time from the first frame to the removal of the intro, in ms.
+export function introTotal(): number {
+  return introLength() + INTRO_HOLD_MS + INTRO_FADE_MS;
 }
 
 export function shouldPlayIntro(e: {
@@ -80,7 +88,7 @@ export function IntroView({
   );
 }
 
-type Phase = "play" | "fade" | "gone";
+type Phase = "play" | "hold" | "fade" | "gone";
 
 export function IntroSplash(): JSX.Element | null {
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -110,11 +118,17 @@ export function IntroSplash(): JSX.Element | null {
     const tick = (now: number) => {
       const t = Math.min((now - start) * INTRO_SPEED, LOGO_CONFIG.dur);
       frame(t);
-      if (t >= LOGO_CONFIG.dur) setPhase("fade");
+      if (t >= LOGO_CONFIG.dur) setPhase("hold");
       else id = requestAnimationFrame(tick);
     };
     id = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(id);
+  }, [phase]);
+
+  useEffect(() => {
+    if (phase !== "hold") return;
+    const id = setTimeout(() => setPhase("fade"), INTRO_HOLD_MS);
+    return () => clearTimeout(id);
   }, [phase]);
 
   useEffect(() => {

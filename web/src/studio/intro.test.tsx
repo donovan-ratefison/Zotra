@@ -8,11 +8,13 @@ import { LOGO_CONFIG } from "./logo-engine";
 import {
   forceFromSearch,
   INTRO_FADE_MS,
+  INTRO_HOLD_MS,
   INTRO_KEY,
   INTRO_SPEED,
   IntroSplash,
   IntroView,
   introLength,
+  introTotal,
   markSeen,
   readSeen,
   shouldPlayIntro,
@@ -113,6 +115,18 @@ describe("intro", () => {
     expect(INTRO_KEY).toBe("zotra-intro-seen");
     expect(INTRO_SPEED).toBe(2.5);
     expect(INTRO_FADE_MS).toBe(250);
+  });
+
+  test("I-hold-1: the logo holds 1500 ms", () => {
+    expect(INTRO_HOLD_MS).toBe(1500);
+  });
+
+  test("I-hold-2: the intro takes 3834 ms from the first frame to the removal", () => {
+    expect(introTotal()).toBe(3834);
+  });
+
+  test("I-hold-3: the view of the phase hold is fully visible", () => {
+    expect(view(false)).toContain("opacity:1");
   });
 
   test.each([
