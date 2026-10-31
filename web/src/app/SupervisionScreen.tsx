@@ -198,7 +198,7 @@ function clientOf(def: ProcessDefinition, data: Record<string, unknown>) {
 
 function amountOf(def: ProcessDefinition, data: Record<string, unknown>) {
   const field = pickField(def, "money");
-  return field === null ? "-" : moneyText(data[field.name]);
+  return field === null ? "-" : moneyText(data[field.name], def.currency);
 }
 
 // userNameOf gives the name of a user id, the raw id when unknown.

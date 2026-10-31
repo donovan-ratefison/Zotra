@@ -970,6 +970,11 @@ export function StudioShell() {
                       select(id);
                     }}
                     onHighlight={setCanvasFocus}
+                    onCurrency={
+                      editing
+                        ? (code) => void saveStructure({ ...loaded.definition, currency: code })
+                        : undefined
+                    }
                   />
                 ) : (
                   <NodePanel

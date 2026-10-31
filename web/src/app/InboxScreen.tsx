@@ -17,6 +17,7 @@ import {
   type UserDTO,
 } from "../studio/case-api";
 import { initials } from "../studio/case-view";
+import { moneyFormat } from "../studio/format";
 import { Button } from "@/ui/button";
 import { Hint } from "@/ui/hint";
 import { Input } from "@/ui/input";
@@ -34,14 +35,10 @@ export function pickField(
   return def.fields.find((field) => field.type === type) ?? null;
 }
 
-const eur = new Intl.NumberFormat("en-IE", {
-  style: "currency",
-  currency: "EUR",
-});
-
-// moneyText formats one money value; anything but a number gives -.
-export function moneyText(value: unknown): string {
-  return typeof value === "number" ? eur.format(value) : "-";
+// moneyText formats one money value in the currency of its process;
+// anything but a number gives -.
+export function moneyText(value: unknown, currency: string): string {
+  return typeof value === "number" ? moneyFormat(currency).format(value) : "-";
 }
 
 // dayTimeText gives the short UTC date form: day, month and time,
@@ -97,7 +94,7 @@ function InboxRow({
   const amount =
     state === undefined || moneyField === null
       ? "-"
-      : moneyText(state.data[moneyField.name]);
+      : moneyText(state.data[moneyField.name], def.currency);
   const node = def.nodes.find((n) => n.id === row.node_id);
   const nodeName = node?.name ?? row.node_id;
   const entered = events === undefined ? null : enteredAt(events, row.node_id);

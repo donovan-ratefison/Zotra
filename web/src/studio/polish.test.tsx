@@ -7,7 +7,7 @@ import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 import seedJson from "../../../internal/store/seed/example-process.json";
-import { valueText } from "./format";
+import { CURRENCIES, currencyLabel, currencyOptions, valueText } from "./format";
 import { StepScreen } from "./StepScreen";
 import type { Field, ProcessDefinition } from "./types";
 
@@ -113,5 +113,19 @@ describe("percent values", () => {
     ["P7", field("number"), 0.16159475447984215, "0.162"],
   ])("%s: valueText gives the display form", (_id, f, value, text) => {
     expect(valueText(f, value, "EUR")).toBe(text);
+  });
+});
+
+describe("currency choices", () => {
+  test("fb-030 row C8: currencyLabel gives the label, else the code", () => {
+    expect(currencyLabel("MGA")).toBe("MGA, Malagasy ariary");
+    expect(currencyLabel("GBP")).toBe("GBP");
+  });
+
+  test("fb-030 row C9: currencyOptions keeps a code that is not in the list", () => {
+    expect(currencyOptions("USD")).toEqual(CURRENCIES);
+    const options = currencyOptions("GBP");
+    expect(options).toHaveLength(4);
+    expect(options[3]).toEqual({ code: "GBP", label: "GBP" });
   });
 });

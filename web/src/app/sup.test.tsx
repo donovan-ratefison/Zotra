@@ -272,10 +272,11 @@ function renderSupervision(
   sup: Supervision,
   selectedNodeId?: string | null,
   initialTab?: "live" | "flow",
+  def: ProcessDefinition = defFixture,
 ): string {
   return renderToString(
     createElement(SupervisionScreen, {
-      def: defFixture,
+      def,
       users: usersFixture,
       supervision: sup,
       flow: flowFixture,
@@ -1030,6 +1031,11 @@ describe("step panel", () => {
   test("14.3 row I1: the initials", () => {
     expect(initials("Demo Advisor")).toBe("DA");
     expect(initials("u-ghost")).toBe("U");
+  });
+
+  test("fb-030 row C7: the step detail uses the currency of the process", () => {
+    const html = renderSupervision(supAnswer, "entry", undefined, { ...defFixture, currency: "USD" });
+    expect(html).toContain("Hanta Rakotobe · US$240,000.00");
   });
 
   test("14.3 row P1: the panel of the selected step", () => {

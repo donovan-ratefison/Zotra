@@ -284,7 +284,7 @@ export function CaseScreen({
               <span className="text-sm font-medium">
                 {moneyField === null
                   ? "-"
-                  : moneyText(loaded.state.data[moneyField.name])}
+                  : moneyText(loaded.state.data[moneyField.name], loadedDef.currency)}
               </span>
             </div>
             <div className="flex flex-col">

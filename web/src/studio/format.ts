@@ -24,7 +24,7 @@ const moneyFormats = new Map<string, Intl.NumberFormat>();
 
 // moneyFormat gives the cached currency format of one ISO code. An
 // unknown code falls back to a plain number with two decimals.
-function moneyFormat(currency: string): Intl.NumberFormat {
+export function moneyFormat(currency: string): Intl.NumberFormat {
   let f = moneyFormats.get(currency);
   if (f === undefined) {
     try {
@@ -35,6 +35,25 @@ function moneyFormat(currency: string): Intl.NumberFormat {
     moneyFormats.set(currency, f);
   }
   return f;
+}
+
+// CURRENCIES are the currency choices of a process.
+export const CURRENCIES: { code: string; label: string }[] = [
+  { code: "EUR", label: "EUR, euro" },
+  { code: "USD", label: "USD, US dollar" },
+  { code: "MGA", label: "MGA, Malagasy ariary" },
+];
+
+// currencyLabel gives the label of a code, else the code itself.
+export function currencyLabel(code: string): string {
+  return CURRENCIES.find((c) => c.code === code)?.label ?? code;
+}
+
+// currencyOptions gives the choices, plus the stored code when it is
+// not in the list (an AI or imported process file can hold another
+// code, and the select must keep it).
+export function currencyOptions(code: string): { code: string; label: string }[] {
+  return CURRENCIES.some((c) => c.code === code) ? CURRENCIES : [...CURRENCIES, { code, label: code }];
 }
 
 // valueText gives the display form of one value of one field. An

@@ -24,6 +24,7 @@ import {
   withNodeSignature,
 } from "./node-edit";
 import { NodePanel, UnsavedBadge } from "./NodePanel";
+import { ProcessPanel } from "./ProcessPanel";
 import { ScopeMatrix } from "./ScopeMatrix";
 import { StudioShell } from "./StudioShell";
 import { useStudioStore, type PanelTab } from "./store";
@@ -460,6 +461,42 @@ describe("shell empty state", () => {
     expect(html).toContain("Select a step to edit it.");
     expect(html).toContain("Structure");
     expect(html).toContain("Roles");
+    // fb-030 row P4: a draft in design mode can change the currency.
+    expect(html).toContain('aria-label="Currency"');
+  });
+});
+
+describe("process currency", () => {
+  const noop = () => {};
+
+  test("fb-030 row P1: a draft shows the currency select", () => {
+    const html = renderToString(
+      <ProcessPanel def={panelDefinition} onSelectNode={noop} onHighlight={noop} onCurrency={noop} />,
+    );
+    expect(html).toContain('role="combobox"');
+    expect(html).toContain('aria-label="Currency"');
+    expect(html).toContain("EUR, euro");
+  });
+
+  test("fb-030 row P2: other versions show the currency as text", () => {
+    const html = renderToString(
+      <ProcessPanel def={panelDefinition} onSelectNode={noop} onHighlight={noop} />,
+    );
+    expect(html).toContain(">Currency<");
+    expect(html).toContain("EUR, euro");
+    expect(html).not.toContain('role="combobox"');
+  });
+
+  test("fb-030 row P3: the select keeps another stored code", () => {
+    const html = renderToString(
+      <ProcessPanel
+        def={{ ...panelDefinition, currency: "GBP" }}
+        onSelectNode={noop}
+        onHighlight={noop}
+        onCurrency={noop}
+      />,
+    );
+    expect(html).toContain(">GBP<");
   });
 });
 

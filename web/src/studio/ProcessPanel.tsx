@@ -4,6 +4,8 @@
 // lights the steps of that role on the diagram.
 
 import { CircleAlert, CircleCheck } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
+import { currencyLabel, currencyOptions } from "./format";
 import { mainPath, roleColor } from "./layout";
 import type { FieldType, ProcessDefinition } from "./types";
 
@@ -87,10 +89,13 @@ function Section({ title, aside, children }: {
   );
 }
 
-export function ProcessPanel({ def, onSelectNode, onHighlight }: {
+// onCurrency is set only when the version can change (a draft in
+// design mode); otherwise the currency is read only.
+export function ProcessPanel({ def, onSelectNode, onHighlight, onCurrency }: {
   def: ProcessDefinition;
   onSelectNode: (nodeId: string) => void;
   onHighlight: (nodeIds: string[] | null) => void;
+  onCurrency?: (code: string) => void;
 }) {
   const problems = structureProblems(def);
   const tasks = def.nodes.filter((n) => n.type === "task");
@@ -109,6 +114,25 @@ export function ProcessPanel({ def, onSelectNode, onHighlight }: {
         <p className="mt-1 text-xs text-muted-foreground">
           {`${def.nodes.length} steps, ${def.edges.length} links. Select a step to edit it.`}
         </p>
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <span className="text-xs text-muted-foreground">Currency</span>
+          {onCurrency === undefined ? (
+            <span className="text-[13px]">{currencyLabel(def.currency)}</span>
+          ) : (
+            <Select value={def.currency} onValueChange={onCurrency}>
+              <SelectTrigger aria-label="Currency" size="sm" className="w-48">
+                <SelectValue>{currencyLabel(def.currency)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {currencyOptions(def.currency).map((c) => (
+                  <SelectItem key={c.code} value={c.code}>
+                    {c.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
       </header>
 
       <Section title="Structure">

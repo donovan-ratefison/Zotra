@@ -219,6 +219,7 @@ function renderInbox(
   cases: InboxCase[],
   state?: CaseState,
   enteredAt = "2026-10-27T12:05:00Z",
+  def: ProcessDefinition = defFixture,
 ): string {
   const client = newClient();
   if (state !== undefined) {
@@ -235,7 +236,7 @@ function renderInbox(
       QueryClientProvider,
       { client },
       createElement(InboxScreen, {
-        def: defFixture,
+        def,
         userId: "u-advisor",
         users: usersFixture,
         now: Date.parse("2026-10-28T02:00:00Z"),
@@ -252,13 +253,13 @@ function renderInbox(
 // pends (row 23).
 function renderCase(
   state: CaseState,
-  options?: { withCase?: boolean; backLabel?: string },
+  options?: { withCase?: boolean; backLabel?: string; def?: ProcessDefinition },
 ): string {
   const client = newClient();
   if (options?.withCase !== false) {
     client.setQueryData(["case", "c1"], { case: caseFixture, state });
   }
-  client.setQueryData(["version", "v1"], versionSeed);
+  client.setQueryData(["version", "v1"], { ...versionSeed, definition: options?.def ?? defFixture });
   client.setQueryData(["events", "c1"], []);
   client.setQueryData(["documents", "c1"], []);
   return renderToString(
@@ -301,10 +302,24 @@ describe("format helpers", () => {
   });
 
   test("6.2 row 3: moneyText formats numbers and refuses the rest", () => {
-    expect(moneyText(240000)).toBe("€240,000.00");
-    expect(moneyText(27500)).toBe("€27,500.00");
-    expect(moneyText(null)).toBe("-");
-    expect(moneyText("x")).toBe("-");
+    // fb-030 rows C1 to C4.
+    expect(moneyText(240000, "EUR")).toBe("€240,000.00");
+    expect(moneyText(27500, "EUR")).toBe("€27,500.00");
+    expect(moneyText(240000, "USD")).toBe("US$240,000.00");
+    expect(moneyText(27500.5, "MGA")).toBe("MGA\u00a027,501");
+    expect(moneyText(null, "USD")).toBe("-");
+    expect(moneyText("x", "MGA")).toBe("-");
+  });
+
+  test("fb-030 row C5: the inbox uses the currency of the process", () => {
+    const html = renderInbox([inboxCase], stateFixture, undefined, { ...defFixture, currency: "USD" });
+    expect(html).toContain("US$240,000.00");
+    expect(html).not.toContain("€240,000.00");
+  });
+
+  test("fb-030 row C6: the case screen uses the currency of its version", () => {
+    const html = renderCase(stateFixture, { def: { ...defFixture, currency: "MGA" } });
+    expect(html).toContain("MGA\u00a0240,000");
   });
 
   test("6.2 row 4: pickField gives the first field of a type, else null", () => {
