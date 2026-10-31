@@ -179,6 +179,12 @@ const signatureZones: ZoneDTO[] = [
 const stampZones: ZoneDTO[] = [
   { label: "stamp", box: { x: 1, y: 2, width: 3, height: 4 } },
 ];
+// twoStamps holds two zones with one label: the real model can give
+// two stamps on one scan.
+const twoStamps: ZoneDTO[] = [
+  { label: "stamp", box: { x: 0, y: 0, width: 10, height: 10 } },
+  { label: "stamp", box: { x: 50, y: 20, width: 10, height: 10 } },
+];
 
 // fillTargetsFixture is the read target list of the lot 5.3 rows: the
 // write fields of the docsDefinition advisor scope in def.fields
@@ -400,6 +406,21 @@ describe("zone helpers", () => {
     );
     expect(html).toContain("left:12.5%");
     expect(html).toContain(">signature</span>");
+  });
+
+  test("Z1: two zones with one label give two zone boxes", () => {
+    const html = renderToString(
+      createElement(ZoneOverlay, { zones: twoStamps, size: { width: 200, height: 100 } }),
+    );
+    expect(html.split(">stamp</span>").length - 1).toBe(2);
+    expect(html).toContain("left:0%");
+    expect(html).toContain("left:25%");
+  });
+
+  test("Z2: two zones with one label give two zone lines", () => {
+    const html = renderBody("view", twoStamps);
+    expect(html).toContain("stamp: 0, 0, 10, 10");
+    expect(html).toContain("stamp: 50, 20, 10, 10");
   });
 });
 

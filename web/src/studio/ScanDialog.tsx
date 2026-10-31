@@ -43,8 +43,8 @@ export function ZoneOverlay({ zones, size }: {
   }
   return (
     <>
-      {zones.map((zone) => (
-        <div key={zone.label} style={zoneStyle(zone, size)} className="absolute border-2 border-primary">
+      {zones.map((zone, i) => (
+        <div key={i} style={zoneStyle(zone, size)} className="absolute border-2 border-primary">
           <span className="bg-primary px-1 text-[10px] leading-4 text-primary-foreground">
             {zone.label}
           </span>
@@ -127,8 +127,8 @@ export function ScanDialogBody({ doc, mode, onSign, reading, readValues, onRead,
       </div>
       {zones !== undefined && (
         <div className="flex flex-col gap-0.5">
-          {zones.map((zone) => (
-            <p key={zone.label} className="text-[12px]">
+          {zones.map((zone, i) => (
+            <p key={i} className="text-[12px]">
               {`${zone.label}: ${zone.box.x}, ${zone.box.y}, ${zone.box.width}, ${zone.box.height}`}
             </p>
           ))}
