@@ -80,18 +80,25 @@ func (c *Client) PostChat(ctx context.Context, payload []byte) ([]byte, error) {
 func VisionPayload(model, text, mime string, imageData []byte,
 	schemaName string, schema map[string]any,
 ) []byte {
+	return VisionPagesPayload(model, text, mime, [][]byte{imageData}, schemaName, schema)
+}
+
+// VisionPagesPayload builds the Chat Completions payload of one vision
+// request with many images: one user message with the text part first,
+// then one image part for each image in order, and the strict
+// json_schema response format.
+func VisionPagesPayload(model, text, mime string, images [][]byte,
+	schemaName string, schema map[string]any,
+) []byte {
+	parts := []visionPart{{Type: "text", Text: text}}
+	for _, img := range images {
+		parts = append(parts, visionPart{Type: "image_url", ImageURL: &visionImage{
+			URL: "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(img),
+		}})
+	}
 	payload := visionPayload{
-		Model: model,
-		Messages: []visionMessage{{
-			Role: "user",
-			Content: []visionPart{
-				{Type: "text", Text: text},
-				{Type: "image_url", ImageURL: &visionImage{
-					URL: "data:" + mime + ";base64," +
-						base64.StdEncoding.EncodeToString(imageData),
-				}},
-			},
-		}},
+		Model:    model,
+		Messages: []visionMessage{{Role: "user", Content: parts}},
 		ResponseFormat: &responseFormat{
 			Type: "json_schema",
 			JSONSchema: jsonSchema{

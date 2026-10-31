@@ -92,6 +92,7 @@ func NewHandler(static fs.FS, version string, st *store.Store, feedbackDir strin
 		mux.HandleFunc("POST /api/ai/generate-tests", d.generateTests)
 		mux.HandleFunc("GET /api/versions/{id}/coverage", d.coverage)
 		mux.HandleFunc("POST /api/ai/policy-to-process", d.policyToProcess)
+		mux.HandleFunc("POST /api/ai/read-policy-scan", d.readPolicyScan)
 		mux.HandleFunc("POST /api/ai/explain-check", d.explainCheck)
 		mux.HandleFunc("POST /api/ai/change-process", d.changeProcess)
 		mux.HandleFunc("POST /api/ai/restate-change", d.restateChange)

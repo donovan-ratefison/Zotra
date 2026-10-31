@@ -208,3 +208,8 @@ func UpdatePolicyCheckUser(paragraphs []PolicyParagraph, definition string) stri
 	return "Policy paragraphs:\n" + PolicyToProcessUser(paragraphs) +
 		"\n\nProcess file (JSON):\n" + definition
 }
+
+// ReadPolicyScanPrompt is the instruction of the policy scan reading.
+const ReadPolicyScanPrompt = `Read the text of these policy pages. The images are the pages in order: the first image is page 1.
+Answer one JSON object with the key paragraphs. Each paragraph has page (the page number) and text (the full text of one paragraph, title or list item, as written).
+Keep the order of the text. Keep the language of the text. Do not summarize. Skip the page numbers, running headers and stamps.`

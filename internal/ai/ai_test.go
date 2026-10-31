@@ -889,3 +889,33 @@ func TestNoAPIKey(t *testing.T) {
 		}
 	})
 }
+
+// A1: VisionPayload keeps its bytes and equals VisionPagesPayload
+// with one image.
+func TestVisionPayloadBytes(t *testing.T) {
+	schema := map[string]any{"type": "object"}
+	got := VisionPayload("m", "t", "image/png", []byte{1, 2, 3}, "s", schema)
+	want := `{"model":"m","messages":[{"role":"user","content":[{"type":"text","text":"t"},{"type":"image_url","image_url":{"url":"data:image/png;base64,AQID"}}]}],"response_format":{"type":"json_schema","json_schema":{"name":"s","strict":true,"schema":{"type":"object"}}}}`
+	if string(got) != want {
+		t.Errorf("VisionPayload = %s, want %s", got, want)
+	}
+	pages := VisionPagesPayload("m", "t", "image/png", [][]byte{{1, 2, 3}}, "s", schema)
+	if !bytes.Equal(got, pages) {
+		t.Errorf("VisionPagesPayload = %s, want %s", pages, got)
+	}
+}
+
+// A2: the pages go in order after the text part.
+func TestVisionPagesPayloadOrder(t *testing.T) {
+	b := VisionPagesPayload("m", "t", "image/png", [][]byte{{1}, {2}}, "s", map[string]any{})
+	var p visionPayload
+	if err := json.Unmarshal(b, &p); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	parts := p.Messages[0].Content
+	if len(parts) != 3 || parts[0].Text != "t" ||
+		parts[1].ImageURL.URL != "data:image/png;base64,AQ==" ||
+		parts[2].ImageURL.URL != "data:image/png;base64,Ag==" {
+		t.Errorf("parts = %+v, want text, AQ==, Ag==", parts)
+	}
+}
