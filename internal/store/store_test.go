@@ -428,6 +428,118 @@ func TestCases(t *testing.T) {
 	wantErr(t, err, "case ghost does not exist")
 }
 
+var (
+	at1 = time.Date(2025, 12, 31, 22, 0, 0, 0, time.UTC)
+	at2 = time.Date(2025, 6, 1, 8, 30, 0, 0, time.UTC)
+	at3 = time.Date(2026, 10, 12, 6, 15, 30, 0, time.UTC)
+)
+
+// TestCreateCaseAt creates cases at given times: the year of the
+// reference is the UTC year of the time. CreateCase uses the current
+// time.
+func TestCreateCaseAt(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+
+	// A1
+	c1, err := s.CreateCaseAt(ctx, seedVersionID, false, at1)
+	if err != nil {
+		t.Fatalf("A1: %v", err)
+	}
+	if c1.Reference != "CASE-2025-0001" || !c1.CreatedAt.Equal(at1) || c1.IsTest {
+		t.Fatalf("A1 gives %+v", c1)
+	}
+	got, err := s.GetCase(ctx, c1.ID)
+	if err != nil || !got.CreatedAt.Equal(at1) {
+		t.Fatalf("A1 GetCase gives %+v, %v", got, err)
+	}
+
+	// A2
+	c2, err := s.CreateCaseAt(ctx, seedVersionID, true, at2)
+	if err != nil {
+		t.Fatalf("A2: %v", err)
+	}
+	if c2.Reference != "CASE-2025-0002" || !c2.IsTest {
+		t.Fatalf("A2 gives %+v", c2)
+	}
+
+	// A3
+	before := time.Now()
+	c3, err := s.CreateCase(ctx, seedVersionID, false)
+	after := time.Now()
+	if err != nil {
+		t.Fatalf("A3: %v", err)
+	}
+	year := c3.CreatedAt.UTC().Year()
+	if want := fmt.Sprintf("CASE-%d-0001", year); c3.Reference != want {
+		t.Fatalf("A3 reference is %q, want %q", c3.Reference, want)
+	}
+	if c3.CreatedAt.Before(before.Truncate(time.Microsecond)) || c3.CreatedAt.After(after) {
+		t.Fatalf("A3 created at %v, want between %v and %v", c3.CreatedAt, before, after)
+	}
+
+	// A4, A5
+	_, err = s.CreateCaseAt(ctx, "00000000-0000-0000-0000-0000000000f1", false, at1)
+	wantErr(t, err, "version 00000000-0000-0000-0000-0000000000f1 does not exist")
+	_, err = s.CreateCaseAt(ctx, "ghost", false, at1)
+	wantErr(t, err, "version ghost does not exist")
+
+	// A6
+	c6, err := s.CreateCaseAt(ctx, seedVersionID, false, at3)
+	if err != nil {
+		t.Fatalf("A6: %v", err)
+	}
+	want := "CASE-2026-0001"
+	if year == 2026 {
+		want = "CASE-2026-0002"
+	}
+	if c6.Reference != want || !c6.CreatedAt.Equal(at3) {
+		t.Fatalf("A6 gives %+v, want reference %q", c6, want)
+	}
+}
+
+// TestSaveDocumentAt stores scans at given times. SaveDocument uses
+// the current time.
+func TestSaveDocumentAt(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	c, err := s.CreateCaseAt(ctx, seedVersionID, false, at1)
+	if err != nil {
+		t.Fatalf("CreateCaseAt: %v", err)
+	}
+
+	// D1
+	d1, err := s.SaveDocumentAt(ctx, &c.ID, "ID card.png", "image/png", "abc", []byte{1}, at3)
+	if err != nil || !d1.CreatedAt.Equal(at3) {
+		t.Fatalf("D1 gives %+v, %v", d1, err)
+	}
+	docs, err := s.ListCaseDocuments(ctx, c.ID)
+	if err != nil || len(docs) != 1 || !docs[0].CreatedAt.Equal(at3) || docs[0].Name != "ID card.png" {
+		t.Fatalf("D1 list gives %+v, %v", docs, err)
+	}
+
+	// D2
+	d2, err := s.SaveDocumentAt(ctx, nil, "x.png", "image/png", "abc", []byte{1}, at2)
+	if err != nil || d2.CaseID != nil || !d2.CreatedAt.Equal(at2) {
+		t.Fatalf("D2 gives %+v, %v", d2, err)
+	}
+
+	// D3
+	before := time.Now()
+	d3, err := s.SaveDocument(ctx, &c.ID, "b.png", "image/png", "abc", []byte{2})
+	after := time.Now()
+	if err != nil {
+		t.Fatalf("D3: %v", err)
+	}
+	if d3.CreatedAt.Before(before.Truncate(time.Microsecond)) || d3.CreatedAt.After(after) {
+		t.Fatalf("D3 created at %v, want between %v and %v", d3.CreatedAt, before, after)
+	}
+	docs, err = s.ListCaseDocuments(ctx, c.ID)
+	if err != nil || len(docs) != 2 || docs[0].Name != "b.png" {
+		t.Fatalf("D3 list gives %+v, %v", docs, err)
+	}
+}
+
 // TestEvents appends the events of one Start command and reads them
 // back. The hash chain survives the round trip.
 func TestEvents(t *testing.T) {

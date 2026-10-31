@@ -314,6 +314,13 @@ func (s *Store) Fork(ctx context.Context, id string, label string) (Version, err
 // the year, zero padded to 4. A unique violation retries, at most 3
 // times. An unknown version gives version <id> does not exist.
 func (s *Store) CreateCase(ctx context.Context, versionID string, isTest bool) (Case, error) {
+	return s.CreateCaseAt(ctx, versionID, isTest, time.Now().UTC().Truncate(time.Microsecond))
+}
+
+// CreateCaseAt creates a case on the version, created at the given
+// time, with the reference CASE-<YYYY>-<NNNN>. YYYY is the UTC year
+// of at. The other rules are the rules of CreateCase.
+func (s *Store) CreateCaseAt(ctx context.Context, versionID string, isTest bool, at time.Time) (Case, error) {
 	if !isUUID(versionID) {
 		return Case{}, notExist("version", versionID)
 	}
@@ -330,16 +337,16 @@ func (s *Store) CreateCase(ctx context.Context, versionID string, isTest bool) (
 	var lastErr error
 	for attempt := 0; attempt <= 3; attempt++ {
 		err := s.db.QueryRow(ctx, `
-			INSERT INTO cases (id, version_id, reference, is_test)
+			INSERT INTO cases (id, version_id, reference, is_test, created_at)
 			SELECT $1, $2,
-				'CASE-' || to_char(now() AT TIME ZONE 'UTC', 'YYYY') || '-'
+				'CASE-' || to_char($4::timestamptz AT TIME ZONE 'UTC', 'YYYY') || '-'
 					|| lpad((COUNT(*) + 1)::text, 4, '0'),
-				$3
+				$3, $4
 			FROM cases
 			WHERE reference LIKE 'CASE-'
-				|| to_char(now() AT TIME ZONE 'UTC', 'YYYY') || '-%'
+				|| to_char($4::timestamptz AT TIME ZONE 'UTC', 'YYYY') || '-%'
 			RETURNING reference, created_at`,
-			c.ID, c.VersionID, c.IsTest).Scan(&c.Reference, &c.CreatedAt)
+			c.ID, c.VersionID, c.IsTest, at).Scan(&c.Reference, &c.CreatedAt)
 		if err == nil {
 			return c, nil
 		}
@@ -521,13 +528,19 @@ type Document struct {
 
 // SaveDocument stores one scan with the hash it receives.
 func (s *Store) SaveDocument(ctx context.Context, caseID *string, name, mime, sha string, data []byte) (Document, error) {
+	return s.SaveDocumentAt(ctx, caseID, name, mime, sha, data, time.Now().UTC().Truncate(time.Microsecond))
+}
+
+// SaveDocumentAt stores one scan with the hash it receives, created
+// at the given time.
+func (s *Store) SaveDocumentAt(ctx context.Context, caseID *string, name, mime, sha string, data []byte, at time.Time) (Document, error) {
 	d := Document{ID: newID(), CaseID: caseID, Name: name, MIME: mime,
 		SHA256: sha, Bytes: data}
 	err := s.db.QueryRow(ctx, `
-		INSERT INTO documents (id, case_id, name, mime, sha256, bytes)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO documents (id, case_id, name, mime, sha256, bytes, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING created_at`,
-		d.ID, d.CaseID, d.Name, d.MIME, d.SHA256, d.Bytes).
+		d.ID, d.CaseID, d.Name, d.MIME, d.SHA256, d.Bytes, at).
 		Scan(&d.CreatedAt)
 	return d, err
 }
