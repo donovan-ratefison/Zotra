@@ -27,7 +27,7 @@ export function isHighlighted(
   return typeof id === "string" && highlight.some((p) => p.id === id);
 }
 
-function escapeHtml(s: string): string {
+export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

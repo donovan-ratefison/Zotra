@@ -1,13 +1,16 @@
 // The policy draft dialog: the AI draft of the policy text for the
 // changes of one version since version 1. Each changed paragraph shows
 // its old text struck and its new text highlighted. Nothing is stored:
-// the designer can download the draft as Markdown.
+// the designer can download the draft as Markdown or as branded HTML.
 
 import { Download } from "lucide-react";
+import { toast } from "sonner";
 import { BrandLoader } from "@/components/BrandLoader";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/ui/dialog";
 import type { PolicyDraft } from "./ai-api";
+import { ApiError } from "./api";
+import { draftHtmlFile } from "./draft-html";
 import type { Paragraph } from "./policy";
 import type { ProcessDefinition, VersionSummary } from "./types";
 import { docLinks } from "./version-actions";
@@ -116,6 +119,27 @@ export function PolicyDraftView({ status, draft, blocks, error }: {
   );
 }
 
+export function PolicyDraftActions({ ready, onMarkdown, onHtml, onClose }: {
+  ready: boolean;
+  onMarkdown: () => void;
+  onHtml: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <DialogFooter>
+      <Button variant="outline" disabled={!ready} onClick={onMarkdown}>
+        <Download aria-hidden="true" />
+        Download Markdown
+      </Button>
+      <Button variant="outline" disabled={!ready} onClick={onHtml}>
+        <Download aria-hidden="true" />
+        Download HTML
+      </Button>
+      <Button onClick={onClose}>Close</Button>
+    </DialogFooter>
+  );
+}
+
 export function PolicyDraftDialog({ open, onOpenChange, def, version, paragraphs, status, draft, error }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -128,20 +152,37 @@ export function PolicyDraftDialog({ open, onOpenChange, def, version, paragraphs
 }) {
   const blocks = draft === undefined ? [] : draftBlocks(paragraphs, draft, def);
 
-  // onDownload saves the draft as one Markdown file, the way the
-  // export of the definition does.
+  // saveFile saves body as one file, the way the export of the
+  // definition does.
+  function saveFile(body: string, type: string, name: string) {
+    const url = URL.createObjectURL(new Blob([body], { type }));
+    const a = document.createElement("a");
+    a.download = name;
+    a.href = url;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   function onDownload() {
     if (draft === undefined) {
       return;
     }
-    const url = URL.createObjectURL(
-      new Blob([draftMarkdown(def.name, draft.base_number, blocks)], { type: "text/markdown" }),
+    saveFile(
+      draftMarkdown(def.name, draft.base_number, blocks),
+      "text/markdown",
+      docLinks(def, version).mdName.replace(/\.md$/, "-policy-draft.md"),
     );
-    const a = document.createElement("a");
-    a.download = docLinks(def, version).mdName.replace(/\.md$/, "-policy-draft.md");
-    a.href = url;
-    a.click();
-    URL.revokeObjectURL(url);
+  }
+
+  function onDownloadHtml() {
+    if (draft === undefined) {
+      return;
+    }
+    draftHtmlFile(def, version, draft.base_number, blocks).then(
+      (f) => saveFile(f.html, "text/html", f.name),
+      (e: unknown) =>
+        toast(`The export failed. ${e instanceof ApiError ? e.message : "Network error."}`),
+    );
   }
 
   return (
@@ -154,13 +195,12 @@ export function PolicyDraftDialog({ open, onOpenChange, def, version, paragraphs
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
           <PolicyDraftView status={status} draft={draft} blocks={blocks} error={error} />
         </div>
-        <DialogFooter>
-          <Button variant="outline" disabled={status !== "success"} onClick={onDownload}>
-            <Download aria-hidden="true" />
-            Download Markdown
-          </Button>
-          <Button onClick={() => onOpenChange(false)}>Close</Button>
-        </DialogFooter>
+        <PolicyDraftActions
+          ready={status === "success"}
+          onMarkdown={onDownload}
+          onHtml={onDownloadHtml}
+          onClose={() => onOpenChange(false)}
+        />
       </DialogContent>
     </Dialog>
   );

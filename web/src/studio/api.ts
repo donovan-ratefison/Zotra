@@ -281,3 +281,21 @@ export async function uploadBankLogo(file: File): Promise<Bank> {
   }
   return ((await res.json()) as { bank: Bank }).bank;
 }
+
+// logoDataURI reads the logo at url as a data URI, so that a saved
+// file shows the logo with no request. A null url gives "".
+export async function logoDataURI(url: string | null): Promise<string> {
+  if (url === null) {
+    return "";
+  }
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw await apiError(res);
+  }
+  // One char for each byte: a spread of a 1 MiB array throws RangeError.
+  let binary = "";
+  for (const b of new Uint8Array(await res.arrayBuffer())) {
+    binary += String.fromCharCode(b);
+  }
+  return `data:${res.headers.get("Content-Type")};base64,${btoa(binary)}`;
+}
