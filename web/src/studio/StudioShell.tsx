@@ -21,6 +21,7 @@ import {
   listProcesses,
   listVersions,
   updateDraft,
+  uploadPolicy,
 } from "./api";
 import { readCase, type CaseDTO, type CaseState } from "./case-api";
 import { Button } from "@/ui/button";
@@ -38,7 +39,7 @@ import { ProcessPanel } from "./ProcessPanel";
 import { ProposalBar } from "./ProposalBar";
 import { ResizeHandle } from "./resize";
 import { VersionActions } from "./version-actions";
-import type { Paragraph } from "./policy";
+import { loadStoredPolicy, policySource, type Paragraph } from "./policy";
 import { useStudioStore, type PanelTab } from "./store";
 import { TestScreen } from "./TestScreen";
 import type {
@@ -258,6 +259,15 @@ export function StudioShell() {
     queryKey: ["versions", processId],
     queryFn: () => listVersions(processId!),
     enabled: processId !== null,
+  });
+  // The stored policy of the opened process. The browser file of the
+  // last import wins, so the query stays off for that process.
+  const policyQuery = useQuery({
+    queryKey: ["policy", processId],
+    queryFn: () => loadStoredPolicy(processId!),
+    enabled: processId !== null && lastImport?.processId !== processId,
+    staleTime: Infinity,
+    retry: false,
   });
   // The version override (the URL at mount, or a selector click)
   // wins over the automatic pick. An id that matches no row falls
@@ -555,9 +565,11 @@ export function StudioShell() {
   }
 
   // The proposal, the highlight source and the drawer values.
-  const paragraphs =
-    proposal !== null ? proposal.paragraphs : lastImport?.paragraphs ?? [];
-  const panelFile = proposal !== null ? proposal.file : lastImport?.file ?? null;
+  const policy = policySource(proposal, lastImport, processId, {
+    status: policyQuery.status,
+    data: policyQuery.data,
+  });
+  const paragraphs = policy.paragraphs;
   const loadedDef = q3.data?.definition;
   // The diagram and the top bar show the proposal while it is open.
   const shownDef = proposal !== null ? proposal.definition : loadedDef;
@@ -642,7 +654,8 @@ export function StudioShell() {
         style={policyMax ? undefined : { height: `${policyShare * 100}%` }}
       >
         <PolicyPanel
-          file={panelFile}
+          file={policy.file}
+          status={policy.status}
           highlight={highlight}
           maximized={policyMax}
           onToggleMaximize={() => setPolicyMax((v) => !v)}
@@ -667,6 +680,13 @@ export function StudioShell() {
         "From policy",
         proposal.definition,
       );
+      // The draft exists: a failed upload keeps the draft flow, and
+      // the memory file still shows.
+      try {
+        await uploadPolicy(process.id, proposal.file);
+      } catch {
+        toast.error("The policy file did not save.");
+      }
       onImported(process.id, version.id, proposal.paragraphs, proposal.file);
       setProposal(null);
       toast.success("Draft created.");

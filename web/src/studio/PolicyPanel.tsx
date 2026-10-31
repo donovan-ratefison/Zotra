@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { Button } from "@/ui/button";
-import type { Paragraph } from "./policy";
+import type { Paragraph, PolicyStatus } from "./policy";
 
 export function isHighlighted(str: string, highlight: Paragraph[]): boolean {
   return (
@@ -28,8 +28,10 @@ export function PolicyPanel({
   highlight,
   maximized = false,
   onToggleMaximize,
+  status = "ready",
 }: {
   file: File | null;
+  status?: PolicyStatus;
   highlight: Paragraph[];
   maximized?: boolean;
   onToggleMaximize?: () => void;
@@ -90,7 +92,15 @@ export function PolicyPanel({
           </Button>
         )}
       </div>
-      {file === null ? (
+      {status === "loading" ? (
+        <p className="px-4 py-3 text-sm text-muted-foreground">
+          Loading the policy...
+        </p>
+      ) : status === "error" ? (
+        <p className="px-4 py-3 text-sm text-destructive">
+          The policy did not load.
+        </p>
+      ) : file === null ? (
         <p className="px-4 py-3 text-sm text-muted-foreground">
           No policy file. Ask for an import first.
         </p>

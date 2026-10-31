@@ -1,6 +1,7 @@
 /// <reference types="node" />
-// The 13 test rows of the policy import brief: the pure paragraph
-// rules, the new api functions, the error line, and the dialog body.
+// The test rows of the policy import: the pure paragraph rules, the
+// api functions, the error line, the dialog body, and the stored
+// policy (api, source rules, panel stages).
 // The environment is node: renderToString for the components, no
 // jsdom, and the pdf.js legacy build for the read errors.
 
@@ -8,7 +9,14 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { ApiError, createProcess, createVersion, policyToProcess } from "./api";
+import {
+  ApiError,
+  createProcess,
+  createVersion,
+  fetchPolicy,
+  policyToProcess,
+  uploadPolicy,
+} from "./api";
 import {
   AnalyzeProgress,
   ImportDialogBody,
@@ -17,10 +25,13 @@ import {
   elapsedText,
   isAbort,
 } from "./ImportDialog";
+import { PolicyPanel } from "./PolicyPanel";
 import {
   extractParagraphs,
+  loadStoredPolicy,
   paragraphsOfItems,
   policyErrorText,
+  policySource,
   type PdfItem,
 } from "./policy";
 import type { ProcessDefinition } from "./types";
@@ -372,5 +383,195 @@ describe("PDF without text", () => {
     const result = await extractParagraphs(buffer);
     expect(result).toMatchObject({ pages: 1 });
     expect(result.paragraphs).toEqual([]);
+  });
+});
+
+// The stored policy rows: the stub records each call and answers one
+// real Response, built fresh for each call.
+function stubResponse(make: () => Response) {
+  const calls: { path: string; init?: RequestInit }[] = [];
+  vi.stubGlobal("fetch", (path: string, init?: RequestInit) => {
+    calls.push({ path, init });
+    return Promise.resolve(make());
+  });
+  return calls;
+}
+
+function errorBody(status: number, code: string, message: string) {
+  return () =>
+    new Response(JSON.stringify({ error: { code, message } }), { status });
+}
+
+describe("stored policy api", () => {
+  test("B1: uploadPolicy sends one PUT with the PDF and the escaped name", async () => {
+    const calls = stubResponse(() => new Response(null, { status: 200 }));
+    const file = new File(["%PDF-1 a"], "Home loan.pdf");
+    await uploadPolicy("p 1", file);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].path).toBe("/api/processes/p%201/policy");
+    expect(calls[0].init?.method).toBe("PUT");
+    expect(calls[0].init?.headers).toEqual({
+      "Content-Type": "application/pdf",
+      "X-File-Name": "Home%20loan.pdf",
+    });
+    expect(calls[0].init?.body).toBe(file);
+  });
+
+  test("B2: a 413 rejects with the ApiError of the body", async () => {
+    stubResponse(
+      errorBody(413, "too_large", "the policy file must stay under 20 MiB"),
+    );
+    const err = await uploadPolicy("p 1", new File(["%PDF-1 a"], "Home loan.pdf")).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({
+      status: 413,
+      message: "the policy file must stay under 20 MiB",
+    });
+  });
+
+  test("B3: fetchPolicy gives a PDF file with the decoded name", async () => {
+    const calls = stubResponse(
+      () =>
+        new Response("%PDF-1 a", {
+          status: 200,
+          headers: { "X-File-Name": "Home%20loan.pdf" },
+        }),
+    );
+    const file = await fetchPolicy("p1");
+    expect(calls[0].path).toBe("/api/processes/p1/policy");
+    expect(file).toBeInstanceOf(File);
+    expect(file?.name).toBe("Home loan.pdf");
+    expect(file?.type).toBe("application/pdf");
+    expect(await file?.text()).toBe("%PDF-1 a");
+  });
+
+  test("B4: no name header gives policy.pdf", async () => {
+    stubResponse(() => new Response("%PDF-1 a", { status: 200 }));
+    expect((await fetchPolicy("p1"))?.name).toBe("policy.pdf");
+  });
+
+  test("B5: a bad escape keeps the raw name", async () => {
+    stubResponse(
+      () =>
+        new Response("%PDF-1 a", {
+          status: 200,
+          headers: { "X-File-Name": "%E0%A4%A" },
+        }),
+    );
+    expect((await fetchPolicy("p1"))?.name).toBe("%E0%A4%A");
+  });
+
+  test("B6: a 404 gives null", async () => {
+    stubResponse(errorBody(404, "not_found", "no policy p1"));
+    expect(await fetchPolicy("p1")).toBeNull();
+  });
+
+  test("B7: a 500 rejects with ApiError status 500", async () => {
+    stubResponse(errorBody(500, "internal", "cannot complete the request"));
+    const err = await fetchPolicy("p1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 500 });
+  });
+
+  test("B8: loadStoredPolicy cuts the stored example policy", async () => {
+    const bytes = readFileSync(
+      new URL("../../../examples/home-loan/policy.pdf", import.meta.url),
+    );
+    stubResponse(
+      () =>
+        new Response(bytes, {
+          status: 200,
+          headers: { "X-File-Name": "home-loan-policy.pdf" },
+        }),
+    );
+    const result = await loadStoredPolicy("p1");
+    expect(result?.file.name).toBe("home-loan-policy.pdf");
+    expect(result?.paragraphs).toHaveLength(12);
+    expect(result?.paragraphs[0]).toEqual({
+      id: "p1-1",
+      text: "Banque Ravina, Credit Policy",
+    });
+  });
+
+  test("B9: loadStoredPolicy on a 404 gives null", async () => {
+    stubResponse(errorBody(404, "not_found", "no policy p1"));
+    expect(await loadStoredPolicy("p1")).toBeNull();
+  });
+});
+
+describe("policy source", () => {
+  const pFile = new File(["a"], "proposal.pdf");
+  const mFile = new File(["b"], "memory.pdf");
+  const sFile = new File(["c"], "stored.pdf");
+  const pPar = [{ id: "p1-1", text: "Proposal" }];
+  const mPar = [{ id: "p1-1", text: "Memory" }];
+  const sPar = [{ id: "p1-1", text: "Stored" }];
+  const memory = { processId: "p1", file: mFile, paragraphs: mPar };
+  const empty = { file: null, paragraphs: [] };
+
+  test("B10: the proposal wins", () => {
+    expect(
+      policySource({ file: pFile, paragraphs: pPar }, memory, "p1", {
+        status: "success",
+        data: { file: sFile, paragraphs: sPar },
+      }),
+    ).toEqual({ file: pFile, paragraphs: pPar, status: "ready" });
+  });
+
+  test("B11: no process gives the empty panel", () => {
+    expect(
+      policySource(null, null, null, { status: "pending", data: undefined }),
+    ).toEqual({ ...empty, status: "ready" });
+  });
+
+  test("B12: the memory of the same process wins over a pending query", () => {
+    expect(
+      policySource(null, memory, "p1", { status: "pending", data: undefined }),
+    ).toEqual({ file: mFile, paragraphs: mPar, status: "ready" });
+  });
+
+  test("B13: the memory of another process gives the stored file", () => {
+    expect(
+      policySource(null, memory, "p2", {
+        status: "success",
+        data: { file: sFile, paragraphs: sPar },
+      }),
+    ).toEqual({ file: sFile, paragraphs: sPar, status: "ready" });
+  });
+
+  test("B14: pending gives loading, error gives error", () => {
+    expect(
+      policySource(null, null, "p1", { status: "pending", data: undefined }),
+    ).toEqual({ ...empty, status: "loading" });
+    expect(
+      policySource(null, null, "p1", { status: "error", data: undefined }),
+    ).toEqual({ ...empty, status: "error" });
+  });
+
+  test("B15: success with no data gives the empty panel", () => {
+    expect(
+      policySource(null, null, "p1", { status: "success", data: null }),
+    ).toEqual({ ...empty, status: "ready" });
+    expect(
+      policySource(null, null, "p1", { status: "success", data: undefined }),
+    ).toEqual({ ...empty, status: "ready" });
+  });
+
+  test("B16: the panel shows the loading and error stages", () => {
+    const loading = renderToString(
+      createElement(PolicyPanel, { file: null, highlight: [], status: "loading" }),
+    );
+    expect(loading).toContain("Loading the policy...");
+    const error = renderToString(
+      createElement(PolicyPanel, { file: null, highlight: [], status: "error" }),
+    );
+    expect(error).toContain("The policy did not load.");
+    expect(error).toContain("text-destructive");
+    const ready = renderToString(
+      createElement(PolicyPanel, { file: new File([], "p.pdf"), highlight: [] }),
+    );
+    expect(ready).toContain("Loading the policy...");
   });
 });

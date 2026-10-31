@@ -3,7 +3,7 @@
 
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
-import { ApiError } from "./api";
+import { ApiError, fetchPolicy } from "./api";
 
 // The browser needs the worker asset URL. In node (the tests) pdf.js
 // loads its fake worker itself; a ?url value here breaks its loader.
@@ -103,4 +103,58 @@ export async function extractParagraphs(data: ArrayBuffer): Promise<{
 // generic line.
 export function policyErrorText(err: unknown): string {
   return err instanceof ApiError ? err.message : "The analysis did not run.";
+}
+
+// loadStoredPolicy reads the stored PDF of a process and cuts it with
+// the same function as the import, so the citation ids match. No
+// stored file gives null.
+export async function loadStoredPolicy(
+  processId: string,
+): Promise<{ file: File; paragraphs: Paragraph[] } | null> {
+  const file = await fetchPolicy(processId);
+  if (file === null) {
+    return null;
+  }
+  const { paragraphs } = await extractParagraphs(await file.arrayBuffer());
+  return { file, paragraphs };
+}
+
+export type PolicyStatus = "ready" | "loading" | "error";
+
+interface PolicyFile {
+  file: File;
+  paragraphs: Paragraph[];
+}
+
+// policySource picks the policy file and paragraphs of the panel. The
+// first rule that applies wins: the open proposal, no process, the
+// memory file of this process, then the stored file of the process.
+export function policySource(
+  proposal: PolicyFile | null,
+  memory: (PolicyFile & { processId: string }) | null,
+  processId: string | null,
+  stored: {
+    status: "pending" | "error" | "success";
+    data: PolicyFile | null | undefined;
+  },
+): { file: File | null; paragraphs: Paragraph[]; status: PolicyStatus } {
+  if (proposal !== null) {
+    return { file: proposal.file, paragraphs: proposal.paragraphs, status: "ready" };
+  }
+  if (processId === null) {
+    return { file: null, paragraphs: [], status: "ready" };
+  }
+  if (memory?.processId === processId) {
+    return { file: memory.file, paragraphs: memory.paragraphs, status: "ready" };
+  }
+  if (stored.status === "pending") {
+    return { file: null, paragraphs: [], status: "loading" };
+  }
+  if (stored.status === "error") {
+    return { file: null, paragraphs: [], status: "error" };
+  }
+  if (stored.data == null) {
+    return { file: null, paragraphs: [], status: "ready" };
+  }
+  return { file: stored.data.file, paragraphs: stored.data.paragraphs, status: "ready" };
 }

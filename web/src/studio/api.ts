@@ -206,3 +206,47 @@ export async function forkVersion(
     { label },
   ).then((body) => body.version);
 }
+
+// uploadPolicy stores the policy PDF of a process. A new upload
+// replaces the old file. The header carries the escaped file name.
+export async function uploadPolicy(processId: string, file: File): Promise<void> {
+  const res = await fetch(
+    `/api/processes/${encodeURIComponent(processId)}/policy`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/pdf",
+        "X-File-Name": encodeURIComponent(file.name),
+      },
+      body: file,
+    },
+  );
+  if (!res.ok) {
+    throw await apiError(res);
+  }
+}
+
+// fetchPolicy reads the stored policy PDF of a process. No stored
+// file (404) gives null. A bad escape in the name header keeps the
+// raw value; no header gives "policy.pdf".
+export async function fetchPolicy(processId: string): Promise<File | null> {
+  const res = await fetch(
+    `/api/processes/${encodeURIComponent(processId)}/policy`,
+  );
+  if (res.status === 404) {
+    return null;
+  }
+  if (!res.ok) {
+    throw await apiError(res);
+  }
+  const raw = res.headers.get("X-File-Name");
+  let name = "policy.pdf";
+  if (raw !== null) {
+    try {
+      name = decodeURIComponent(raw);
+    } catch {
+      name = raw;
+    }
+  }
+  return new File([await res.blob()], name, { type: "application/pdf" });
+}
