@@ -16,12 +16,14 @@ export interface Paragraph {
   text: string;
 }
 
-// One text item of a PDF page, with its position and width in points.
+// One text item of a PDF page, with its position, width and text
+// height in points.
 export interface PdfItem {
   str: string;
   x: number;
   y: number;
   width: number;
+  height: number;
 }
 
 // pdfItemsOf gives one PdfItem for each pdf.js content item, at the
@@ -29,20 +31,28 @@ export interface PdfItem {
 // item.
 export function pdfItemsOf(
   items: ReadonlyArray<
-    { str: string; transform: number[]; width: number } | { type: string }
+    | { str: string; transform: number[]; width: number; height: number }
+    | { type: string }
   >,
 ): PdfItem[] {
   return items.map((it) =>
     "str" in it
-      ? { str: it.str, x: it.transform[4], y: it.transform[5], width: it.width }
-      : { str: "", x: 0, y: 0, width: 0 },
+      ? {
+          str: it.str,
+          x: it.transform[4],
+          y: it.transform[5],
+          width: it.width,
+          height: it.height,
+        }
+      : { str: "", x: 0, y: 0, width: 0, height: 0 },
   );
 }
 
-// One line of text: the y of its first item, its text, the right edge
-// of its last item, and the indexes of its items.
+// One line of text: the y and the text height of its first item, its
+// text, the right edge of its last item, and the indexes of its items.
 interface TextLine {
   y: number;
+  height: number;
   text: string;
   end: number;
   members: number[];
@@ -87,7 +97,13 @@ function cut(
       line.end = it.x + it.width;
       line.members.push(i);
     } else {
-      lines.push({ y: it.y, text: it.str, end: it.x + it.width, members: [i] });
+      lines.push({
+        y: it.y,
+        height: it.height,
+        text: it.str,
+        end: it.x + it.width,
+        members: [i],
+      });
     }
   }
   // The gaps between consecutive lines decide the paragraph cuts.
@@ -95,18 +111,28 @@ function cut(
   for (let k = 1; k < lines.length; k++) {
     gaps.push(lines[k - 1].y - lines[k].y);
   }
-  // The threshold is 1.6 times the lower middle of the sorted gaps
-  // (integer division). No gap means no cut.
+  // The base is the line spacing: the 20th percentile of the gaps that
+  // are at least the text height of the lower line (table rows are
+  // closer), or of all gaps if none is. No gap means no cut.
   let threshold = Infinity;
   if (gaps.length > 0) {
-    const sortedGaps = [...gaps].sort((a, b) => a - b);
-    threshold = 1.6 * sortedGaps[Math.floor((sortedGaps.length - 1) / 2)];
+    const tall = gaps.filter((g, k) => g >= lines[k + 1].height);
+    const base = [...(tall.length > 0 ? tall : gaps)].sort((a, b) => a - b);
+    threshold = 1.25 * base[Math.floor(0.2 * (base.length - 1))];
   }
   const paragraphs: Paragraph[] = [];
   let index = 0;
   for (let k = 0; k < lines.length; k++) {
     const text = lines[k].text.replace(/\s+/g, " ").trim();
-    if (k === 0 || gaps[k - 1] > threshold) {
+    if (
+      k === 0 ||
+      // A gap over 1.25 times the line spacing starts a paragraph.
+      gaps[k - 1] > threshold ||
+      // A change of text height (a title, a heading) starts one.
+      Math.abs(lines[k].height - lines[k - 1].height) > 0.5 ||
+      // A numbered section line ("2. Scope", "1.2 Rates") starts one.
+      /^\d+\.(\d+\.?)*\s/.test(text)
+    ) {
       index++;
       paragraphs.push({ id: `p${page}-${index}`, text });
     } else {

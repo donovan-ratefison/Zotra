@@ -97,9 +97,37 @@ const miniDefinition: ProcessDefinition = {
 
 // item builds one text item at a position.
 // The default width 0 keeps a gap over 1 between the items of rows 16
-// to 21, so they join with a space.
-function item(str: string, x: number, y: number, width = 0): PdfItem {
-  return { str, x, y, width };
+// to 21, so they join with a space. The default height is 10.
+function item(
+  str: string,
+  x: number,
+  y: number,
+  width = 0,
+  height = 10,
+): PdfItem {
+  return { str, x, y, width, height };
+}
+
+// texts gives the paragraph texts of synthetic lines, all at x 72.
+function texts(lines: [string, number, number?][]): string[] {
+  return paragraphsOfItems(
+    1,
+    lines.map(([str, y, height]) => item(str, 72, y, 0, height)),
+  ).map((p) => p.text);
+}
+
+// readPolicy cuts a PDF of the repository (a path from this folder)
+// and counts the paragraphs of each page.
+async function readPolicy(path: string) {
+  const bytes = readFileSync(new URL(path, import.meta.url));
+  const result = await extractParagraphs(
+    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+  );
+  const perPage: number[] = Array(result.pages).fill(0);
+  for (const p of result.paragraphs) {
+    perPage[Number(p.id.slice(1, p.id.indexOf("-"))) - 1]++;
+  }
+  return { ...result, perPage };
 }
 
 // The fetch stubs need only ok, status and json, the surface that the
@@ -138,13 +166,13 @@ describe("paragraph rules", () => {
     expect(rows).toEqual([{ id: "p1-1", text: "A. B. C." }]);
   });
 
-  test("18: the gap over 1.6 times the lower middle splits", () => {
+  test("18: the gap over 1.25 times the line spacing splits", () => {
     const rows = paragraphsOfItems(1, [
       item("A.", 72, 720),
       item("B.", 72, 706),
       item("C.", 72, 670),
     ]);
-    // Median 14, threshold 22.4, the gap 36 splits.
+    // Base 14, threshold 17.5, the gap 36 splits.
     expect(rows).toEqual([
       { id: "p1-1", text: "A. B." },
       { id: "p1-2", text: "C." },
@@ -215,12 +243,12 @@ describe("split ligatures", () => {
   test("P5: pdfItemsOf keeps the index of a marked content item", () => {
     expect(
       pdfItemsOf([
-        { str: "a", transform: [1, 0, 0, 1, 5, 6], width: 3 },
+        { str: "a", transform: [1, 0, 0, 1, 5, 6], width: 3, height: 7 },
         { type: "beginMarkedContent" },
       ]),
     ).toEqual([
-      { str: "a", x: 5, y: 6, width: 3 },
-      { str: "", x: 0, y: 0, width: 0 },
+      { str: "a", x: 5, y: 6, width: 3, height: 7 },
+      { str: "", x: 0, y: 0, width: 0, height: 0 },
     ]);
   });
 
@@ -231,12 +259,113 @@ describe("split ligatures", () => {
     const doc = await pdfjsLib.getDocument({ data: new Uint8Array(bytes) }).promise;
     const content = await (await doc.getPage(1)).getTextContent();
     const ids = paragraphIdsOfItems(1, pdfItemsOf(content.items));
-    expect(ids[12]).toBe("p1-3");
-    expect(ids[39]).toBe("p1-4");
+    expect(ids[12]).toBe("p1-5");
+    expect(ids[39]).toBe("p1-9");
     expect(ids[7]).toBeNull();
-    const hl = [{ id: "p1-3", text: "x" }];
+    const hl = [{ id: "p1-5", text: "x" }];
     expect(isHighlighted(ids[12], hl)).toBe(true);
     expect(isHighlighted(ids[39], hl)).toBe(false);
+  });
+});
+
+describe("paragraph cut", () => {
+  test("J3-1: the line spacing is the base, a gap over 1.25 times cuts", () => {
+    // Base 15.75, threshold 19.6875: the gaps 20.25 cut.
+    expect(
+      texts([["A", 720], ["B", 704.25], ["C", 684], ["D", 668.25], ["E", 648]]),
+    ).toEqual(["A B", "C D", "E"]);
+  });
+
+  test("J3-2: a text height change cuts", () => {
+    expect(
+      texts([["1. Scope", 720, 12.5], ["Body a", 704, 11], ["Body b", 688, 11]]),
+    ).toEqual(["1. Scope", "Body a Body b"]);
+  });
+
+  test("J3-3: a height change of 0.5 or less does not cut", () => {
+    expect(texts([["A", 720, 10.99], ["B", 705, 10.5]])).toEqual(["A B"]);
+  });
+
+  test("J3-4: a numbered section line starts a paragraph", () => {
+    expect(
+      texts([["Intro text", 720], ["2. Next", 705], ["more", 690]]),
+    ).toEqual(["Intro text", "2. Next more"]);
+  });
+
+  test("J3-5: a sub-section number starts a paragraph", () => {
+    expect(texts([["Intro", 720], ["1.2 Sub", 705]])).toEqual(["Intro", "1.2 Sub"]);
+  });
+
+  test("J3-6: a wrapped line that starts with a number does not cut", () => {
+    expect(
+      texts([["Each member pays", 720], ["10 percent of her loan.", 705]]),
+    ).toEqual(["Each member pays 10 percent of her loan."]);
+  });
+
+  test("J3-7: gaps under the text height stay out of the base", () => {
+    // Without the filter the base is 7.5 and gives 5 paragraphs.
+    expect(
+      texts([
+        ["A", 720], ["B", 712.5], ["C", 705], ["D", 690],
+        ["E", 675], ["F", 660], ["G", 636],
+      ]),
+    ).toEqual(["A B C D E F", "G"]);
+  });
+
+  test("J3-8: with all gaps under the text height, all gaps count", () => {
+    expect(texts([["A", 720], ["B", 712], ["C", 704]])).toEqual(["A B C"]);
+  });
+
+  test("J3-9: one gap is its own base and does not cut", () => {
+    expect(texts([["Title", 720], ["Body", 690]])).toEqual(["Title Body"]);
+  });
+
+  test("J3-10: the consumer loan policy cuts at each section", async () => {
+    const { pages, paragraphs } = await readPolicy(
+      "./testdata/consumer-loan-policy.pdf",
+    );
+    expect(pages).toBe(1);
+    expect(paragraphs).toHaveLength(20);
+    const sections = ["p1-4", "p1-6", "p1-9", "p1-13", "p1-15", "p1-17", "p1-19"];
+    expect(paragraphs.filter((p) => sections.includes(p.id))).toEqual([
+      { id: "p1-4", text: "1. Scope" },
+      { id: "p1-6", text: "2. Application" },
+      { id: "p1-9", text: "3. Eligibility rules" },
+      { id: "p1-13", text: "4. Credit assessment" },
+      { id: "p1-15", text: "5. Approval limits" },
+      { id: "p1-17", text: "6. Compliance" },
+      { id: "p1-19", text: "7. Contract and disbursement" },
+    ]);
+    expect(paragraphs.find((p) => p.id === "p1-5")?.text).toBe(
+      "This policy covers unsecured personal loans from 1,000 EUR to 30,000 EUR, with a term of 6 to 84 months, for salaried and retired clients.",
+    );
+  });
+
+  test("J3-11: the group microloan policy cuts at a height change", async () => {
+    const { paragraphs } = await readPolicy(
+      "./testdata/group-microloan-policy.pdf",
+    );
+    expect(paragraphs).toHaveLength(15);
+    // The gap 20.25 is under the threshold 20.625: the height cuts.
+    expect(paragraphs.find((p) => p.id === "p1-7")?.text).toMatch(
+      /^The field officer meets the group/,
+    );
+    expect(paragraphs.find((p) => p.id === "p1-11")?.text).toContain(
+      "10 percent of her loan",
+    );
+  });
+
+  test("J3-12 to J3-14: the example policies", async () => {
+    expect((await readPolicy("../../../examples/home-loan/policy.pdf")).perPage)
+      .toEqual([20, 21]);
+    expect(
+      (await readPolicy("../../../examples/policies/sme-loan-disbursement.pdf"))
+        .perPage,
+    ).toEqual([20, 22, 3]);
+    expect(
+      (await readPolicy("../../../examples/policies/deblocage-pret-immobilier.pdf"))
+        .perPage,
+    ).toEqual([20, 28, 6]);
   });
 });
 
@@ -560,15 +689,15 @@ describe("stored policy api", () => {
     );
     const result = await loadStoredPolicy("p1");
     expect(result?.file.name).toBe("home-loan-policy.pdf");
-    expect(result?.paragraphs).toHaveLength(12);
+    expect(result?.paragraphs).toHaveLength(41);
     expect(result?.paragraphs[0]).toEqual({
       id: "p1-1",
       text: "Banque Ravina, Credit Policy",
     });
     // P6: the ligature pieces join, the paragraph count stays.
-    expect(result?.paragraphs[2]).toEqual({
-      id: "p1-3",
-      text: "1. Purpose and scope This policy fixes the rules for the payment of a home loan. The bank pays each home loan in one payment to the notary of the buyer. The policy applies to each home loan of 50,000 EUR or more that the head office or a branch grants. It runs from the signature of the loan agreement to the payment of the funds to the notary.",
+    expect(result?.paragraphs[4]).toEqual({
+      id: "p1-5",
+      text: "This policy fixes the rules for the payment of a home loan. The bank pays each home loan in one payment to the notary of the buyer. The policy applies to each home loan of 50,000 EUR or more that the head office or a branch grants. It runs from the signature of the loan agreement to the payment of the funds to the notary.",
     });
     for (const p of result?.paragraphs ?? []) {
       expect(p.text).not.toMatch(/\b(fi|ff|fl) | (fi|ff|fl)\b/);
