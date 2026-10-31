@@ -77,7 +77,16 @@ export function NewCaseDialog({ open, onOpenChange, def, busy, error, onCreate, 
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent aria-label="New test case" className="sm:max-w-[560px]">
+      {/* Focus the dialog content, not its first focusable element:
+          that is the Hint, and a focus opens its tooltip at each open. */}
+      <DialogContent
+        aria-label="New test case"
+        className="sm:max-w-[560px]"
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          (e.currentTarget as HTMLElement).focus();
+        }}
+      >
         <NewCaseDialogBody
           def={def}
           busy={busy}

@@ -36,10 +36,11 @@ export function Inspector({
   const node = def.nodes.find((nd) => nd.id === nodeId);
   const hasRole = node !== undefined && node.role !== null;
 
-  // A field changed when a side misses it, or when both sides hold it
-  // and the values differ (strict JSON inequality).
+  // Compare by JSON: arrays and objects are new objects at each event.
   const changed = (name: string) =>
-    !(name in before) || !(name in after) || before[name] !== after[name];
+    !(name in before) ||
+    !(name in after) ||
+    JSON.stringify(before[name]) !== JSON.stringify(after[name]);
   const fields = def.fields.filter(
     (f) =>
       (f.name in before || f.name in after) &&
@@ -107,7 +108,7 @@ export function Inspector({
                   isAdded ? "bg-[#dcfce7]" : isChanged ? "bg-[#fef3c7]" : ""
                 }`}
               >
-                <span className="w-[42%] shrink-0 truncate text-muted-foreground" title={field.label}>
+                <span className="w-[42%] shrink-0 break-words text-muted-foreground" title={field.label}>
                   {field.label}
                 </span>
                 <span className="min-w-0 flex-1 break-words">

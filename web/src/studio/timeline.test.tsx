@@ -530,6 +530,45 @@ describe("inspector", () => {
     expect(html).toContain(">computed<");
     expect((html.match(/<li class="[^"]*bg-\[#fef3c7\]"/g) ?? []).length).toBe(2);
   });
+
+  const docsRow = (html: string) => html.match(/<li class="[^"]*"><span[^>]*title="Documents"[\s\S]*?<\/li>/)?.[0] ?? "";
+
+  test("pol-4 row I1: equal arrays in other objects are not a change", () => {
+    const html = renderInspector(testDefinition, {
+      before: { docs: [{ name: "ID", read: true }] },
+      after: { docs: [{ name: "ID", read: true }] },
+    });
+    const row = docsRow(html);
+    expect(row).toContain(">Documents<");
+    expect(row).not.toContain("bg-[#fef3c7]");
+    expect(row).not.toContain("line-through");
+  });
+
+  test("pol-4 row I2: a list with one more item is a change", () => {
+    const row = docsRow(renderInspector(testDefinition, {
+      before: { docs: [{ name: "ID" }] },
+      after: { docs: [{ name: "ID" }, { name: "Payslips" }] },
+    }));
+    expect(row).toContain("bg-[#fef3c7]");
+    expect(row).toContain("line-through");
+  });
+
+  test("pol-4 row I3: a field only in after is added", () => {
+    const row = docsRow(renderInspector(testDefinition, {
+      before: {},
+      after: { docs: [{ name: "ID" }] },
+    }));
+    expect(row).toContain("bg-[#dcfce7]");
+  });
+
+  test("pol-4 row I4: the label wraps and is not cut", () => {
+    const html = renderInspector(testDefinition, {
+      before: { amount: 1 },
+      after: { amount: 1 },
+    });
+    expect(html).toMatch(/<span class="[^"]*break-words[^"]*" title="Amount">/);
+    expect(html).not.toContain("truncate");
+  });
 });
 
 describe("checks tab", () => {
