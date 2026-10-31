@@ -180,3 +180,15 @@ body {
     animation: sup-dot 6s linear infinite;
   }
 }
+
+/* The ticker of the supervision live bar. Two copies of the lines make the loop. */
+@keyframes sup-tick {
+  to {
+    transform: translateX(-50%);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sup-tick {
+    animation: sup-tick 90s linear infinite;
+  }
+}

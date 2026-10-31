@@ -25,6 +25,7 @@ import {
 import { AuditScreen } from "./AuditScreen";
 import { CaseScreen } from "./CaseScreen";
 import { InboxScreen } from "./InboxScreen";
+import { LiveBar } from "./LiveBar";
 import { initials, SupervisionScreen, type ReadRequest } from "./SupervisionScreen";
 import { TriageScreen } from "./TriageScreen";
 import { editableTarget } from "./triage";
@@ -517,17 +518,20 @@ export function AppShell() {
       );
     } else {
       main = (
-        <SupervisionScreen
-          def={def}
-          users={users}
-          supervision={supervisionQuery.data}
-          flow={flowQuery.data}
-          selectedNodeId={backStep}
-          onRead={(r) => {
-            setBackStep(r.nodeId);
-            setReading(r);
-          }}
-        />
+        <>
+          <SupervisionScreen
+            def={def}
+            users={users}
+            supervision={supervisionQuery.data}
+            flow={flowQuery.data}
+            selectedNodeId={backStep}
+            onRead={(r) => {
+              setBackStep(r.nodeId);
+              setReading(r);
+            }}
+          />
+          <LiveBar def={def} users={users} />
+        </>
       );
     }
   } else if (view === "audit") {

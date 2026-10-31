@@ -336,7 +336,7 @@ function StepPanel({ def, users, sup, nodeId, onClose, onRead }: {
   return (
     <aside
       aria-label="Step detail"
-      className="fixed top-0 right-0 bottom-0 z-20 flex w-[468px] flex-col border-l bg-white shadow-[-18px_0_40px_rgba(12,10,9,.12)]"
+      className="fixed top-0 right-0 bottom-10 z-20 flex w-[468px] flex-col border-l bg-white shadow-[-18px_0_40px_rgba(12,10,9,.12)]"
     >
       <div className="flex items-start justify-between gap-3 px-[18px] pt-3.5 pb-2.5">
         <div>
