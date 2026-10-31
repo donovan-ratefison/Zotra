@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, FileText, Undo2 } from "lucide-react";
+import { ChevronRight, FileText } from "lucide-react";
 import { toast } from "sonner";
 import {
   ApiError,
@@ -332,20 +332,24 @@ export function StudioShell() {
     );
   }, [caseVersion.data, testCaseId, processId, versionId]);
 
-  // Undo: the stack holds the definition as it was before each save
-  // of the open draft, at most 20 entries. A version switch clears
-  // it: each version undoes only its own saves. The reset compares
-  // the version of the stack during render, the pattern that the
-  // react-hooks lint asks for a state change on a value change.
-  const [undoStack, setUndoStack] = useState<ProcessDefinition[]>([]);
-  const [undoBusy, setUndoBusy] = useState(false);
+  // Undo and redo: the undo stack holds the definition as it was
+  // before each save of the open draft, at most 20 entries; the redo
+  // stack holds the definitions that an undo replaced. savedAt is the
+  // time of the last save in this browser session. A version switch
+  // clears them: each version undoes only its own saves. The reset
+  // compares the version of the stack during render, the pattern that
+  // the react-hooks lint asks for a state change on a value change.
+  const [history, setHistory] = useState<EditHistory>({ undo: [], redo: [] });
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [historyBusy, setHistoryBusy] = useState(false);
   // True from a structure save to the end of its refetch: a second
   // add or link built on the stale definition would drop the first.
   const [structureBusy, setStructureBusy] = useState(false);
   const [stackVersionId, setStackVersionId] = useState(versionId);
   if (stackVersionId !== versionId) {
     setStackVersionId(versionId);
-    setUndoStack([]);
+    setHistory({ undo: [], redo: [] });
+    setSavedAt(null);
   }
 
   // The proposal of the assistant chat. A version switch clears it:
@@ -407,14 +411,15 @@ export function StudioShell() {
   }
 
   // onSavedDraft pushes the pre-save definition onto the undo stack,
-  // then refetches the version. loadedDef is still the cached
+  // clears the redo stack, then refetches the version. loadedDef is still the cached
   // pre-save definition at this moment (the invalidation runs
   // after).
   function onSavedDraft() {
     if (loadedDef === undefined) {
       return;
     }
-    setUndoStack((stack) => pushUndo(stack, loadedDef));
+    setHistory((h) => afterSave(h, loadedDef));
+    setSavedAt(new Date().toISOString());
     return queryClient.invalidateQueries({ queryKey: ["version", versionId] });
   }
 
@@ -488,40 +493,46 @@ export function StudioShell() {
     void saveStructure(removeEdge(loadedDef, id));
   }
 
-  // undo writes the previous definition back as a normal draft
-  // save. Unsaved edits of the step panel are dropped with it.
-  const undo = useCallback(async () => {
-    if (undoBusy || undoStack.length === 0) {
-      return;
-    }
-    if (version === null || version.status !== "draft") {
-      return;
-    }
-    const previous = undoStack[undoStack.length - 1]!;
-    setUndoBusy(true);
-    try {
-      await updateDraft(version.id, previous);
-      setUndoStack((stack) => stack.slice(0, -1));
-      void queryClient.invalidateQueries({
-        queryKey: ["version", version.id],
-      });
-      toast.success("Undone");
-    } catch {
-      toast.error("The undo did not save.");
-    } finally {
-      setUndoBusy(false);
-    }
-  }, [undoBusy, undoStack, version, queryClient]);
-
-  // Ctrl+Z or Cmd+Z undoes the last save. While the focus sits in a
-  // field, the browser undo of that field wins: the listener skips
-  // inputs, textareas, selects and editable nodes.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) {
+  // undo and redo write a definition of the history back as a normal
+  // draft save. Unsaved edits of the step panel are dropped with it.
+  // current is the cached definition before the write: the other
+  // stack keeps it.
+  const step = useCallback(
+    async (dir: "undo" | "redo") => {
+      const target = history[dir].at(-1);
+      if (historyBusy || target === undefined || def === undefined) {
         return;
       }
-      if (e.key.toLowerCase() !== "z") {
+      if (version === null || version.status !== "draft") {
+        return;
+      }
+      const current = def;
+      setHistoryBusy(true);
+      try {
+        await updateDraft(version.id, target);
+        setHistory((h) => (dir === "undo" ? afterUndo(h, current) : afterRedo(h, current)));
+        setSavedAt(new Date().toISOString());
+        void queryClient.invalidateQueries({
+          queryKey: ["version", version.id],
+        });
+        toast.success(dir === "undo" ? "Undone" : "Redone");
+      } catch {
+        toast.error(dir === "undo" ? "The undo did not save." : "The redo did not save.");
+      } finally {
+        setHistoryBusy(false);
+      }
+    },
+    [historyBusy, history, def, version, queryClient],
+  );
+
+  // Ctrl+Z (Cmd+Z) undoes the last save; Ctrl+Shift+Z and Ctrl+Y
+  // redo. While the focus sits in a field, the browser undo of that
+  // field wins: the listener skips inputs, textareas, selects and
+  // editable nodes.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const dir = historyKey(e);
+      if (dir === null) {
         return;
       }
       const target = e.target;
@@ -535,11 +546,11 @@ export function StudioShell() {
         return;
       }
       e.preventDefault();
-      void undo();
+      void step(dir);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo]);
+  }, [step]);
 
   // onSelectVersion opens the version of the selector click and
   // writes the id into the URL, so a reload reopens the same
@@ -839,8 +850,6 @@ export function StudioShell() {
                 }
               : undefined
           }
-          onUndo={() => void undo()}
-          canUndo={undoStack.length > 0 && version.status === "draft"}
         />
         <main ref={mainRef} className="flex min-h-0 flex-1">
           {compareBase !== null ? (
@@ -872,7 +881,18 @@ export function StudioShell() {
                     highlightNodeIds={selectedNodeId === null ? canvasFocus : null}
                     edit={
                       editing
-                        ? { onAdd: (t) => void onAdd(t), onConnect, onDeleteNode, onDeleteEdge }
+                        ? {
+                            onAdd: (t) => void onAdd(t),
+                            onConnect,
+                            onDeleteNode,
+                            onDeleteEdge,
+                            onUndo: () => void step("undo"),
+                            onRedo: () => void step("redo"),
+                            canUndo: history.undo.length > 0,
+                            canRedo: history.redo.length > 0,
+                            versionNumber: version.number,
+                            savedAt,
+                          }
                         : null
                     }
                   />
@@ -1009,8 +1029,6 @@ export function TopBar({
   onSelectVersion,
   onCompareVersion,
   onUpdatePolicy,
-  onUndo,
-  canUndo = false,
   processId,
 }: {
   def: ProcessDefinition;
@@ -1029,8 +1047,6 @@ export function TopBar({
   onSelectVersion?: (id: string) => void;
   onCompareVersion?: (id: string) => void;
   onUpdatePolicy?: () => void;
-  onUndo?: () => void;
-  canUndo?: boolean;
   // The opened process. The Monitor link opens its app supervision.
   processId?: string | null;
 }) {
@@ -1105,20 +1121,6 @@ export function TopBar({
         <span className="shrink-0">
           <UnsavedBadge className="text-[12px]" />
         </span>
-      )}
-      {onUndo !== undefined && (
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-sm"
-          className="shrink-0"
-          disabled={!canUndo}
-          aria-label="Undo"
-          title="Undo the last save (Ctrl+Z)"
-          onClick={() => onUndo()}
-        >
-          <Undo2 aria-hidden="true" />
-        </Button>
       )}
       <span className="flex-1" />
       <Button
@@ -1203,4 +1205,51 @@ export function pushUndo(
   def: ProcessDefinition,
 ): ProcessDefinition[] {
   return [...stack.slice(-19), def];
+}
+
+// EditHistory holds the two stacks of the open draft. Each stack
+// keeps the newest definition last.
+export interface EditHistory {
+  undo: ProcessDefinition[];
+  redo: ProcessDefinition[];
+}
+
+// afterSave records the definition that a save replaces. A new save
+// drops the redo stack.
+export function afterSave(h: EditHistory, before: ProcessDefinition): EditHistory {
+  return { undo: pushUndo(h.undo, before), redo: [] };
+}
+
+// afterUndo moves the top of the undo stack out, and keeps the
+// replaced definition for a redo.
+export function afterUndo(h: EditHistory, current: ProcessDefinition): EditHistory {
+  return { undo: h.undo.slice(0, -1), redo: [...h.redo, current] };
+}
+
+// afterRedo moves the top of the redo stack out, and keeps the
+// replaced definition for an undo.
+export function afterRedo(h: EditHistory, current: ProcessDefinition): EditHistory {
+  return { undo: pushUndo(h.undo, current), redo: h.redo.slice(0, -1) };
+}
+
+// historyKey maps a key press to undo or redo: Ctrl or Cmd with Z
+// undoes; with Shift+Z or Y it redoes. Alt keeps the key free.
+export function historyKey(e: {
+  key: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+}): "undo" | "redo" | null {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) {
+    return null;
+  }
+  const key = e.key.toLowerCase();
+  if (key === "z") {
+    return e.shiftKey ? "redo" : "undo";
+  }
+  if (key === "y" && !e.shiftKey) {
+    return "redo";
+  }
+  return null;
 }

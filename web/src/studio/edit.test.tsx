@@ -9,6 +9,7 @@ import {
   addNode,
   connect,
   EditToolbar,
+  errorText,
   menuItems,
   newEdgeId,
   newNodeId,
@@ -18,10 +19,20 @@ import {
   setEndResult,
   setLinkCondition,
   setLinkDecision,
+  savedText,
+  StatusLine,
 } from "./edit";
 import type { ProcessDefinition } from "./types";
 
 const base = seedJson as ProcessDefinition;
+
+// The undo and redo props of the toolbar.
+const history = (canUndo: boolean, canRedo: boolean) => ({
+  onUndo: () => {},
+  onRedo: () => {},
+  canUndo,
+  canRedo,
+});
 
 // The seed with the task "entry" given the decisions a and b, and
 // its link e02 holding decision a. extra edges come after.
@@ -157,11 +168,59 @@ describe("remove", () => {
 
 describe("EditToolbar", () => {
   test("124-17: the toolbar shows Add, Start, Task, Gateway and End", () => {
-    const html = renderToString(createElement(EditToolbar, { onAdd: () => {}, hasStart: false }));
+    const html = renderToString(createElement(EditToolbar, { ...history(false, false), onAdd: () => {}, hasStart: false }));
     expect(html).toContain('role="toolbar"');
     for (const text of ["Add", "Start", "Task", "Gateway", "End"]) {
       expect(html).toContain(text);
     }
+  });
+
+  const iconButton = (html: string, label: string) =>
+    html.match(new RegExp(`<button[^>]*aria-label="${label}"[^>]*>`))![0];
+
+  test("E1: Undo enabled, Redo disabled", () => {
+    const html = renderToString(createElement(EditToolbar, { ...history(true, false), onAdd: () => {}, hasStart: true }));
+    expect(iconButton(html, "Undo")).not.toContain('disabled=""');
+    expect(iconButton(html, "Redo")).toContain('disabled=""');
+  });
+
+  test("E2: Undo disabled, Redo enabled", () => {
+    const html = renderToString(createElement(EditToolbar, { ...history(false, true), onAdd: () => {}, hasStart: true }));
+    expect(iconButton(html, "Undo")).toContain('disabled=""');
+    expect(iconButton(html, "Redo")).not.toContain('disabled=""');
+  });
+});
+
+describe("status line", () => {
+  const line = (def: ProcessDefinition) =>
+    renderToString(createElement(StatusLine, { def, versionNumber: 3, savedAt: null }));
+  const without = (id: string): ProcessDefinition => ({
+    ...base,
+    edges: base.edges.filter((e) => e.id !== id),
+  });
+
+  test("S1: the draft number, with the save time in UTC", () => {
+    expect(savedText(16, null)).toBe("Draft v16");
+    expect(savedText(16, "2026-10-31T16:09:30Z")).toBe("Draft v16, saved at 16:09 UTC");
+  });
+
+  test("S2: the error count", () => {
+    expect([0, 1, 2].map(errorText)).toEqual(["0 errors", "1 error", "2 errors"]);
+  });
+
+  test("S3: the seed has 11 steps, 14 links and no error", () => {
+    const html = line(base);
+    for (const text of ["11 steps, 14 links", "0 errors", "Draft v3"]) {
+      expect(html).toContain(text);
+    }
+  });
+
+  test("S4: a gateway with no default link is 1 error", () => {
+    expect(line(without("e08"))).toContain("1 error<");
+  });
+
+  test("S5: the seed with no e14 has 4 errors", () => {
+    expect(line(without("e14"))).toContain("4 errors");
   });
 });
 

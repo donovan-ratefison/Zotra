@@ -1,9 +1,19 @@
 // Manual structure edits of a draft: pure functions that return a
 // new definition, and the toolbar of the diagram. The shell saves
-// each result at once, so the undo of the top bar reverts it.
+// each result at once, so the undo of the toolbar reverts it.
 
-import { CircleDot, Diamond, Play, Square } from "lucide-react";
+import {
+  CircleAlert,
+  CircleCheck,
+  CircleDot,
+  Diamond,
+  Play,
+  Redo2,
+  Square,
+  Undo2,
+} from "lucide-react";
 import { Button } from "@/ui/button";
+import { structureProblems } from "./ProcessPanel";
 import type { EndResult, ProcessDefinition, ProcessEdge } from "./types";
 
 export type AddType = "start" | "task" | "gateway" | "end";
@@ -239,9 +249,17 @@ const BUTTONS: { type: AddType; label: string; Icon: typeof Square }[] = [
 export function EditToolbar({
   onAdd,
   hasStart,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
 }: {
   onAdd: (type: AddType) => void;
   hasStart: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 }) {
   return (
     <div
@@ -265,6 +283,80 @@ export function EditToolbar({
           {label}
         </Button>
       ))}
+      <span aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        disabled={!canUndo}
+        aria-label="Undo"
+        title="Undo the last save (Ctrl+Z)"
+        onClick={() => onUndo()}
+      >
+        <Undo2 aria-hidden="true" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        disabled={!canRedo}
+        aria-label="Redo"
+        title="Redo the last undo (Ctrl+Shift+Z)"
+        onClick={() => onRedo()}
+      >
+        <Redo2 aria-hidden="true" />
+      </Button>
     </div>
+  );
+}
+
+// savedText names the open draft, with the time of the last save in
+// this browser session, in UTC.
+export function savedText(versionNumber: number, savedAt: string | null): string {
+  if (savedAt === null) {
+    return `Draft v${versionNumber}`;
+  }
+  const time = new Date(savedAt).toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "UTC",
+  });
+  return `Draft v${versionNumber}, saved at ${time} UTC`;
+}
+
+export function errorText(n: number): string {
+  return n === 1 ? "1 error" : `${n} errors`;
+}
+
+// StatusLine shows the size of the draft, its structure errors and
+// its last save, on the canvas.
+export function StatusLine({
+  def,
+  versionNumber,
+  savedAt,
+}: {
+  def: ProcessDefinition;
+  versionNumber: number;
+  savedAt: string | null;
+}) {
+  const errors = structureProblems(def).length;
+  return (
+    // The parts wrap as whole groups when the line meets the toolbar.
+    <p className="flex flex-wrap items-center justify-end gap-x-1.5 text-[12px] text-muted-foreground">
+      <span className="whitespace-nowrap">{`${def.nodes.length} steps, ${def.edges.length} links`}</span>
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+        <span aria-hidden="true">·</span>
+        {errors === 0 ? (
+          <CircleCheck aria-hidden="true" size={14} className="text-green-600" />
+        ) : (
+          <CircleAlert aria-hidden="true" size={14} className="text-red-600" />
+        )}
+        {errorText(errors)}
+      </span>
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+        <span aria-hidden="true">·</span>
+        {savedText(versionNumber, savedAt)}
+      </span>
+    </p>
   );
 }

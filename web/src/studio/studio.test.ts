@@ -31,7 +31,15 @@ import {
 import { EdgePill, edgeAnchor, EventShape, fitViewport, focusBox, focusViewport, neighborIn, TaskCard } from "./diagram";
 import { addNode, connect } from "./edit";
 import { structureProblems } from "./ProcessPanel";
-import { StudioShell, TopBar, pushUndo } from "./StudioShell";
+import {
+  afterRedo,
+  afterSave,
+  afterUndo,
+  historyKey,
+  pushUndo,
+  StudioShell,
+  TopBar,
+} from "./StudioShell";
 import ELK from "elkjs/lib/elk.bundled.js";
 import seedJson from "../../../internal/store/seed/example-process.json";
 import aiHomeJson from "./testdata/ai-home.json";
@@ -1518,40 +1526,14 @@ describe("undo", () => {
   // The Undo button is an icon button: its name is the aria-label.
   const undoButton = /<button[^>]*aria-label="Undo"[^>]*>/;
 
-  test("55: the Undo button renders enabled, disabled, or not at all", () => {
-    const enabled = renderToString(
-      createElement(TopBar, {
-        def: miniDefinition,
-        version: versionRow(2, "draft"),
-        onUndo: () => {},
-        canUndo: true,
-      }),
-    );
-    const matches = enabled.match(new RegExp(undoButton.source, "g")) ?? [];
-    expect(matches).toHaveLength(1);
-    expect(matches[0]).not.toContain('disabled=""');
-    expect(enabled).not.toContain(">Undo<");
-
-    const disabled = renderToString(
-      createElement(TopBar, {
-        def: miniDefinition,
-        version: versionRow(2, "draft"),
-        onUndo: () => {},
-        canUndo: false,
-      }),
-    );
-    expect(disabled).toMatch(undoButton);
-    expect(disabled.match(undoButton)![0]).toContain('disabled=""');
-    expect(disabled).not.toContain(">Undo<");
-
-    const absent = renderToString(
+  test("55: the top bar of a draft has no Undo button", () => {
+    const html = renderToString(
       createElement(TopBar, {
         def: miniDefinition,
         version: versionRow(2, "draft"),
       }),
     );
-    expect(absent).not.toMatch(undoButton);
-    expect(absent).not.toContain(">Undo<");
+    expect(html).not.toMatch(undoButton);
   });
 
   test("56: pushUndo keeps at most 20 entries", () => {
@@ -1563,6 +1545,54 @@ describe("undo", () => {
     expect(stack[0]!.name).toBe("d2");
     expect(stack[19]!.name).toBe("d21");
     expect(pushUndo([], miniDefinition)).toEqual([miniDefinition]);
+  });
+
+  const named = (name: string): ProcessDefinition => ({ ...miniDefinition, name });
+  const [a, b, c, d] = ["a", "b", "c", "d"].map(named) as [
+    ProcessDefinition,
+    ProcessDefinition,
+    ProcessDefinition,
+    ProcessDefinition,
+  ];
+
+  test("H1: a save pushes the old definition and clears the redo stack", () => {
+    expect(afterSave({ undo: [a], redo: [b] }, c)).toEqual({ undo: [a, c], redo: [] });
+  });
+
+  test("H2: an undo moves the current definition to the redo stack", () => {
+    expect(afterUndo({ undo: [a, c], redo: [] }, d)).toEqual({ undo: [a], redo: [d] });
+  });
+
+  test("H3: a redo moves the current definition to the undo stack", () => {
+    expect(afterRedo({ undo: [a], redo: [d] }, c)).toEqual({ undo: [a, c], redo: [] });
+  });
+
+  test("H4: a redo keeps at most 20 undo entries", () => {
+    const undo = Array.from({ length: 20 }, (_, i) => named(`u${i}`));
+    const h = afterRedo({ undo, redo: [d] }, c);
+    expect(h.undo).toHaveLength(20);
+    expect(h.undo[0]!.name).toBe("u1");
+    expect(h.undo[19]).toEqual(c);
+  });
+
+  const key = (k: string, mods: Partial<Record<"ctrlKey" | "metaKey" | "shiftKey" | "altKey", boolean>> = {}) =>
+    historyKey({ key: k, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...mods });
+
+  test("K1: Ctrl+Z and Cmd+Z undo", () => {
+    expect(key("z", { ctrlKey: true })).toBe("undo");
+    expect(key("Z", { metaKey: true })).toBe("undo");
+  });
+
+  test("K2: Ctrl+Shift+Z and Ctrl+Y redo", () => {
+    expect(key("Z", { ctrlKey: true, shiftKey: true })).toBe("redo");
+    expect(key("y", { ctrlKey: true })).toBe("redo");
+  });
+
+  test("K3: other keys do nothing", () => {
+    expect(key("z")).toBeNull();
+    expect(key("z", { ctrlKey: true, altKey: true })).toBeNull();
+    expect(key("y", { ctrlKey: true, shiftKey: true })).toBeNull();
+    expect(key("a", { ctrlKey: true })).toBeNull();
   });
 });
 

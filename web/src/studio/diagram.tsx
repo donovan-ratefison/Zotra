@@ -51,7 +51,7 @@ import {
   withSources,
 } from "./layout";
 import { initials, type CaseView } from "./case-view";
-import { EditToolbar, menuItems, type AddType, type MenuItem, type MenuTarget } from "./edit";
+import { EditToolbar, StatusLine, menuItems, type AddType, type MenuItem, type MenuTarget } from "./edit";
 import { useStudioStore } from "./store";
 import {
   DropdownMenu,
@@ -1077,6 +1077,12 @@ export function ProcessDiagram({
     onConnect: (from: string, to: string) => void;
     onDeleteNode: (id: string) => void;
     onDeleteEdge: (id: string) => void;
+    onUndo: () => void;
+    onRedo: () => void;
+    canUndo: boolean;
+    canRedo: boolean;
+    versionNumber: number;
+    savedAt: string | null;
   } | null;
 }) {
   const [layout, setLayout] = useState<ReturnType<typeof withSources> | null>(null);
@@ -1357,7 +1363,19 @@ export function ProcessDiagram({
             <EditToolbar
               onAdd={edit.onAdd}
               hasStart={def.nodes.some((n) => n.type === "start")}
+              onUndo={edit.onUndo}
+              onRedo={edit.onRedo}
+              canUndo={edit.canUndo}
+              canRedo={edit.canRedo}
             />
+          </Panel>
+        )}
+        {edit !== null && (
+          <Panel
+            position="top-right"
+            className="max-w-[calc(50%-232px)] rounded-md border bg-white px-2.5 py-1 shadow-sm"
+          >
+            <StatusLine def={def} versionNumber={edit.versionNumber} savedAt={edit.savedAt} />
           </Panel>
         )}
       </ReactFlow>

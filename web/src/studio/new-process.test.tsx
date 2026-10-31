@@ -40,14 +40,32 @@ describe("new process from scratch", () => {
   });
 
   test("N3: with a start, the Start button is disabled with a title", () => {
-    const html = renderToString(createElement(EditToolbar, { onAdd: () => {}, hasStart: true }));
+    const html = renderToString(
+      createElement(EditToolbar, {
+        onAdd: () => {},
+        hasStart: true,
+        onUndo: () => {},
+        onRedo: () => {},
+        canUndo: false,
+        canRedo: false,
+      }),
+    );
     expect(buttonOf(html, "Start")).toContain('disabled=""');
     expect(buttonOf(html, "Start")).toContain('title="A process has one start."');
     expect(buttonOf(html, "Task")).not.toContain('disabled=""');
   });
 
   test("N4: with no start, the Start button is enabled", () => {
-    const html = renderToString(createElement(EditToolbar, { onAdd: () => {}, hasStart: false }));
+    const html = renderToString(
+      createElement(EditToolbar, {
+        onAdd: () => {},
+        hasStart: false,
+        onUndo: () => {},
+        onRedo: () => {},
+        canUndo: false,
+        canRedo: false,
+      }),
+    );
     expect(buttonOf(html, "Start")).not.toContain('disabled=""');
   });
 
