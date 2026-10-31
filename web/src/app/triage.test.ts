@@ -8,10 +8,13 @@ import { ApiError } from "../studio/api";
 import { fetchChecks, type CheckResult } from "./app-api";
 import {
   decisionLabel,
+  docConsequence,
+  docStep,
   documentRows,
   dueText,
   editableTarget,
   enteredAt,
+  firstDocIndex,
   keyFigures,
   lockReason,
   msLeft,
@@ -22,6 +25,7 @@ import {
   sendResultText,
   shareOfIncome,
   triageAction,
+  zoneText,
 } from "./triage";
 
 const def = seedJson as ProcessDefinition;
@@ -289,9 +293,11 @@ describe("send", () => {
 
 describe("keys", () => {
   test("K1: the key map", () => {
-    expect(["k", "K", "j", "J", "f", "F", "u", "U", "Escape", "d", "t"].map((k) => triageAction(k, false, false))).toEqual([
-      "prev", "prev", "next", "next", "first", "first", "second", "second", "exit", null, null,
+    expect(["k", "K", "j", "J", "f", "F", "u", "U", "Escape", "d", "D", "t"].map((k) => triageAction(k, false, false))).toEqual([
+      "prev", "prev", "next", "next", "first", "first", "second", "second", "exit", "docs", "docs", null,
     ]);
+    expect(triageAction("d", true, false)).toBeNull();
+    expect(triageAction("d", false, true)).toBeNull();
   });
 
   test("K2: a modifier or an editable target gives null", () => {
@@ -306,6 +312,69 @@ describe("keys", () => {
       { tagName: "DIV", isContentEditable: true }, { tagName: "BUTTON" }, null,
     ];
     expect(targets.map(editableTarget)).toEqual([true, true, true, true, false, false]);
+  });
+});
+
+describe("documents dialog", () => {
+  const idDoc = doc("d1", "ID card.png");
+  const missing = { name: "ID card", scan: null };
+  const signed = (nodeId: string) => [ev(7, "signature_added", "2026-10-31T09:00:00Z", { node_id: nodeId })];
+
+  test("G1: firstDocIndex", () => {
+    expect(firstDocIndex([])).toBeNull();
+    expect(firstDocIndex([{ name: "A", scan: idDoc }, { name: "B", scan: idDoc }])).toBe(0);
+    expect(firstDocIndex([{ name: "A", scan: idDoc }, { name: "B", scan: null }])).toBe(1);
+  });
+
+  test("G2: docStep", () => {
+    expect([
+      docStep("ArrowDown", 0, 3), docStep("ArrowRight", 2, 3), docStep("ArrowUp", 0, 3),
+      docStep("ArrowLeft", 2, 3), docStep("Enter", 1, 3), docStep("ArrowDown", 0, 0),
+    ]).toEqual([1, 2, 0, 1, null, null]);
+  });
+
+  test("G3: zoneText", () => {
+    expect(zoneText({ label: "signature", box: { x: 52, y: 436, width: 236, height: 84 } })).toEqual({
+      title: "Signature found",
+      detail: "signature · x 52 y 436 · 236 × 84 px",
+    });
+  });
+
+  test("G4: a missing required document blocks the step", () => {
+    expect(docConsequence(missing, node("entry"), [])).toEqual({
+      tone: "bad",
+      title: "The step cannot close until ID card is attached.",
+      detail: "The process requires ID card at the step Application entry.",
+    });
+  });
+
+  test("G5: a missing document of another step", () => {
+    expect(docConsequence(missing, node("analysis"), [])).toEqual({
+      tone: "none",
+      title: "This document is missing.",
+      detail: "The step Credit analysis does not require it.",
+    });
+  });
+
+  test("G6: an unsigned step", () => {
+    expect(docConsequence({ name: "ID card", scan: idDoc }, node("decision"), [])).toEqual({
+      tone: "bad",
+      title: "The step cannot close until it is signed.",
+      detail:
+        "The process requires a signature at the step Credit decision. Sign a scan with a signature zone on the case screen.",
+    });
+  });
+
+  test("G7: a signed step passes", () => {
+    expect(docConsequence({ name: "ID card", scan: idDoc }, node("decision"), signed("decision"))).toEqual({
+      tone: "ok",
+      title: "This document passes the check.",
+      detail: "No blocker for the step Credit decision.",
+    });
+  });
+
+  test("G8: the signature of another step does not count", () => {
+    expect(docConsequence({ name: "ID card", scan: idDoc }, node("decision"), signed("entry")).tone).toBe("bad");
   });
 });
 

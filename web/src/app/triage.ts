@@ -3,7 +3,7 @@
 // their result text, and the key map.
 
 import type { CaseEvent, CaseState, CommandInput, runCommand } from "../studio/case-api";
-import type { DocumentDTO } from "../studio/doc-api";
+import type { DocumentDTO, ZoneDTO } from "../studio/doc-api";
 import type { ProcessDefinition, ProcessNode } from "../studio/types";
 import { documentProvides } from "../studio/StepDocuments";
 import { accessOf } from "../studio/StepScreen";
@@ -96,6 +96,11 @@ export function shareOfIncome(state: CaseState): number | null {
   return (loans + payment) / income;
 }
 
+export interface DocRow {
+  name: string;
+  scan: DocumentDTO | null;
+}
+
 // documentRows lists the required documents of the node path, each
 // with the first scan that provides it.
 export function documentRows(
@@ -103,10 +108,63 @@ export function documentRows(
   events: CaseEvent[],
   nodeId: string,
   docs: DocumentDTO[],
-): { name: string; scan: DocumentDTO | null }[] {
+): DocRow[] {
   const ids = [...events.filter((e) => e.type === "step_entered").map((e) => String(e.payload.node_id)), nodeId];
   const names = [...new Set(ids.flatMap((id) => def.nodes.find((n) => n.id === id)?.documents ?? []))];
   return names.map((name) => ({ name, scan: docs.find((d) => documentProvides(d.name, name)) ?? null }));
+}
+
+// firstDocIndex gives the row that D opens: the first missing
+// document, else the first row.
+export function firstDocIndex(rows: DocRow[]): number | null {
+  if (rows.length === 0) return null;
+  const missing = rows.findIndex((r) => r.scan === null);
+  return missing === -1 ? 0 : missing;
+}
+
+// docStep gives the new row of an arrow key in the document dialog.
+export function docStep(key: string, index: number, n: number): number | null {
+  if (n === 0) return null;
+  if (key === "ArrowUp" || key === "ArrowLeft") return Math.max(0, index - 1);
+  if (key === "ArrowDown" || key === "ArrowRight") return Math.min(n - 1, index + 1);
+  return null;
+}
+
+export function zoneText(z: ZoneDTO): { title: string; detail: string } {
+  const { x, y, width, height } = z.box;
+  return {
+    title: `${z.label.charAt(0).toUpperCase()}${z.label.slice(1)} found`,
+    detail: `${z.label} · x ${x} y ${y} · ${width} × ${height} px`,
+  };
+}
+
+// docConsequence gives what one document means for the step. It names
+// only the rules that exist: the required documents and the signature
+// of the node. The first match wins.
+export function docConsequence(
+  row: DocRow,
+  node: ProcessNode,
+  events: CaseEvent[],
+): { tone: "ok" | "bad" | "none"; title: string; detail: string } {
+  if (row.scan === null && node.documents.includes(row.name)) {
+    return {
+      tone: "bad",
+      title: `The step cannot close until ${row.name} is attached.`,
+      detail: `The process requires ${row.name} at the step ${node.name}.`,
+    };
+  }
+  if (row.scan === null) {
+    return { tone: "none", title: "This document is missing.", detail: `The step ${node.name} does not require it.` };
+  }
+  const signed = events.some((e) => e.type === "signature_added" && e.payload.node_id === node.id);
+  if (node.signature && !signed) {
+    return {
+      tone: "bad",
+      title: "The step cannot close until it is signed.",
+      detail: `The process requires a signature at the step ${node.name}. Sign a scan with a signature zone on the case screen.`,
+    };
+  }
+  return { tone: "ok", title: "This document passes the check.", detail: `No blocker for the step ${node.name}.` };
 }
 
 export function decisionLabel(decision: string): string {
@@ -201,13 +259,19 @@ export function sendResultText(answer: Answer, def: ProcessDefinition, label: st
   return { ok: false, text: `Check ${id} failed: ${message}` };
 }
 
-const KEYS: Record<string, "prev" | "next" | "first" | "second"> = { k: "prev", j: "next", f: "first", u: "second" };
+const KEYS: Record<string, "prev" | "next" | "first" | "second" | "docs"> = {
+  k: "prev",
+  j: "next",
+  f: "first",
+  u: "second",
+  d: "docs",
+};
 
 export function triageAction(
   key: string,
   modified: boolean,
   editable: boolean,
-): "prev" | "next" | "first" | "second" | "exit" | null {
+): "prev" | "next" | "first" | "second" | "docs" | "exit" | null {
   if (modified || editable) return null;
   if (key === "Escape") return "exit";
   return key.length === 1 ? (KEYS[key.toLowerCase()] ?? null) : null;

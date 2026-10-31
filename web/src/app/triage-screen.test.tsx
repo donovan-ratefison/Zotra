@@ -1,4 +1,4 @@
-// The triage screen test rows V1, V2 and D1 to D8, in order. The
+// The triage screen test rows V1, V2, D1 to D8 and T1 to T3, in order. The
 // environment is node: renderToString with pre-seeded caches.
 
 import { createElement } from "react";
@@ -205,5 +205,22 @@ describe("triage screen", () => {
     const html = render(seed(), [c4]);
     expect(html).toContain("No case waits for a decision.");
     expect(html).toContain("Back to the inbox");
+  });
+
+  test("T1: the document rows open the dialog", () => {
+    const html = render(seed());
+    for (const i of [0, 1, 2, 3]) expect(html).toContain(`data-doc="${i}"`);
+    expect(html).toContain("View");
+    expect(html.match(/<kbd[^>]*>D<\/kbd>/g)).toHaveLength(2);
+    expect(html).toMatch(/<button type="button" class="[^"]*"><kbd[^>]*>D<\/kbd>Documents<\/button>/);
+  });
+
+  test("T2: pending documents disable the Documents key", () => {
+    const html = render(seed({ c1Checks: null, noC1Docs: true }));
+    expect(html).toMatch(/<button type="button" class="[^"]*" disabled=""><kbd[^>]*>D<\/kbd>Documents<\/button>/);
+  });
+
+  test("T3: the dialog is closed at first render", () => {
+    expect(render(seed())).not.toContain("Back to the case");
   });
 });

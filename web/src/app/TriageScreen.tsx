@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CircleCheck, CircleX, Link, Lock, ShieldCheck } from "lucide-react";
+import { ChevronRight, CircleCheck, CircleX, Link, Lock, ShieldCheck } from "lucide-react";
 import { ApiError, getVersion } from "../studio/api";
 import {
   listEvents,
@@ -31,6 +31,7 @@ import {
   dueText,
   editableTarget,
   enteredAt,
+  firstDocIndex,
   keyFigures,
   lockReason,
   msLeft,
@@ -42,6 +43,7 @@ import {
   shareOfIncome,
   triageAction,
 } from "./triage";
+import { TriageDocuments } from "./TriageDocuments";
 
 // A sent case keeps the documents and checks of the send moment.
 interface Sent {
@@ -81,7 +83,7 @@ function inQueue(item: Item): boolean {
   return item.node !== null && item.node.type === "task" && item.node.decisions.length > 0;
 }
 
-function Kbd({ children, light = false }: { children: ReactNode; light?: boolean }) {
+export function Kbd({ children, light = false }: { children: ReactNode; light?: boolean }) {
   return (
     <kbd
       className={`inline-grid h-5 min-w-5 place-items-center rounded border border-b-2 px-[5px] font-sans text-[11px] font-semibold ${
@@ -226,6 +228,15 @@ function Deck({
   const queryClient = useQueryClient();
   const [index, setIndex] = useState(0);
   const [busy, setBusy] = useState(false);
+  // The open document row of the dialog (null: closed), and the last
+  // one, so the focus goes back to it after a close.
+  const [docIndex, setDocIndex] = useState<number | null>(null);
+  const [lastDoc, setLastDoc] = useState(0);
+  const docButtons = useRef<(HTMLButtonElement | null)[]>([]);
+  const openDoc = (i: number) => {
+    setLastDoc(i);
+    setDocIndex(i);
+  };
   // Blocks a second send before the busy state renders.
   const sending = useRef(false);
 
@@ -263,6 +274,7 @@ function Deck({
   });
   const sentDecision = snap?.decision;
   const canSend = lock === null && sentDecision === undefined && !busy;
+  const rows = docs === null ? null : documentRows(def, events, node.id, docs);
 
   async function send(decision: string) {
     if (sending.current) return;
@@ -296,12 +308,21 @@ function Deck({
   const onKey = useRef<(e: KeyboardEvent) => void>(() => {});
   useEffect(() => {
     onKey.current = (e) => {
+      if (docIndex !== null || e.defaultPrevented) return;
       const action = triageAction(
         e.key,
         e.ctrlKey || e.metaKey || e.altKey,
         editableTarget(e.target as HTMLElement | null),
       );
       if (action === null) return;
+      if (action === "docs") {
+        const first = rows === null ? null : firstDocIndex(rows);
+        if (first !== null) {
+          e.preventDefault();
+          openDoc(first);
+        }
+        return;
+      }
       e.preventDefault();
       if (action === "prev") setIndex((i) => Math.max(i - 1, 0));
       else if (action === "next") setIndex((i) => Math.min(i + 1, last));
@@ -337,7 +358,6 @@ function Deck({
   const share = shareOfIncome(state);
   const over = share !== null && share > SHARE_LIMIT;
   const passCount = (checks ?? []).filter((c) => c.passed && c.error === null).length;
-  const rows = docs === null ? null : documentRows(def, events, node.id, docs);
   const keyClass =
     "inline-flex h-[34px] items-center gap-2 rounded-lg border bg-white pr-3 pl-2 text-[13px] font-medium whitespace-nowrap text-zinc-700 shadow-sm hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-45";
 
@@ -481,8 +501,9 @@ function Deck({
                 <h3 className="mb-0.5 flex h-5 items-center justify-between text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase">
                   Documents
                   {rows !== null && rows.length > 0 && (
-                    <span className="font-medium normal-case tracking-normal">
+                    <span className="flex items-center gap-1.5 font-medium normal-case tracking-normal">
                       {`${rows.filter((r) => r.scan !== null).length} of ${rows.length} attached`}
+                      <Kbd>D</Kbd>
                     </span>
                   )}
                 </h3>
@@ -494,24 +515,41 @@ function Deck({
                   <p className="text-[12.5px] text-muted-foreground">No document on this case path.</p>
                 ) : (
                   <ul>
-                    {rows.map((r) => (
-                      <li
-                        key={r.name}
-                        className={`grid grid-cols-[16px_minmax(0,1fr)] gap-2 rounded-md border-b border-zinc-100 px-1.5 py-1 text-[12.5px] leading-snug last:border-b-transparent ${
-                          r.scan === null ? "bg-red-50" : ""
-                        }`}
-                      >
-                        {r.scan !== null ? (
-                          <CircleCheck className="mt-px size-4 text-green-600" />
-                        ) : (
-                          <CircleX className="mt-px size-4 text-red-600" />
-                        )}
-                        <div className="min-w-0">
-                          <b className="block font-medium">{r.name}</b>
-                          <small className={`block text-[11.5px] ${r.scan !== null ? "text-muted-foreground" : "text-red-700"}`}>
-                            {r.scan !== null ? `Attached: ${r.scan.name}` : "Missing"}
-                          </small>
-                        </div>
+                    {rows.map((r, i) => (
+                      <li key={r.name}>
+                        <button
+                          type="button"
+                          data-doc={i}
+                          ref={(el) => {
+                            docButtons.current[i] = el;
+                          }}
+                          onClick={() => openDoc(i)}
+                          className={`group grid w-full grid-cols-[16px_minmax(0,1fr)_auto] items-start gap-2 rounded-md border-b border-zinc-100 px-1.5 py-1 text-left text-[12.5px] leading-snug ${
+                            i === rows.length - 1 ? "border-b-transparent" : ""
+                          } ${r.scan === null ? "bg-red-50" : "hover:bg-stone-50"}`}
+                        >
+                          {r.scan !== null ? (
+                            <CircleCheck className="mt-px size-4 text-green-600" />
+                          ) : (
+                            <CircleX className="mt-px size-4 text-red-600" />
+                          )}
+                          <div className="min-w-0">
+                            <b className="block font-medium">{r.name}</b>
+                            <small className={`block text-[11.5px] ${r.scan !== null ? "text-muted-foreground" : "text-red-700"}`}>
+                              {r.scan !== null ? `Attached: ${r.scan.name}` : "Missing"}
+                            </small>
+                          </div>
+                          <span
+                            className={`flex items-center gap-0.5 self-center text-[11.5px] ${
+                              r.scan === null
+                                ? "text-red-700"
+                                : "text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+                            }`}
+                          >
+                            View
+                            <ChevronRight className="size-[13px]" />
+                          </span>
+                        </button>
                       </li>
                     ))}
                   </ul>
@@ -544,7 +582,36 @@ function Deck({
             {decisionLabel(d)}
           </button>
         ))}
+        <button
+          type="button"
+          className={keyClass}
+          disabled={rows === null || rows.length === 0}
+          onClick={() => {
+            const first = rows === null ? null : firstDocIndex(rows);
+            if (first !== null) openDoc(first);
+          }}
+        >
+          <Kbd>D</Kbd>
+          Documents
+        </button>
       </div>
+      {rows !== null && rows.length > 0 && (
+        <TriageDocuments
+          key={front.id}
+          reference={front.row.reference}
+          client={clientOf(front)}
+          node={node}
+          events={events}
+          rows={rows}
+          index={Math.min(docIndex ?? lastDoc, rows.length - 1)}
+          onIndex={openDoc}
+          open={docIndex !== null}
+          onOpenChange={(open) => {
+            if (!open) setDocIndex(null);
+          }}
+          onCloseFocus={() => docButtons.current[lastDoc]?.focus()}
+        />
+      )}
       <p
         role="status"
         className={`mt-2.5 flex min-h-[18px] items-center justify-center gap-1.5 text-[12.5px] ${
