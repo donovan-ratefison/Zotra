@@ -1,71 +1,139 @@
-# Zotra
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo/zotra-logo-dark.svg">
+    <img src="docs/logo/zotra-logo-light.svg" alt="Zotra, workflow studio for banks" width="420">
+  </picture>
+</p>
 
-From credit policy to a tested, branded approval app in minutes. The AI drafts and tests. Humans decide.
+<p align="center">
+  <b>From a credit policy PDF to a tested approval app.</b><br>
+  The AI drafts and tests. People decide.
+</p>
 
-![CI](https://github.com/donovan-ratefison/Zotra/actions/workflows/ci.yml/badge.svg)
+<p align="center">
+  <a href="https://github.com/donovan-ratefison/Zotra/actions/workflows/ci.yml"><img src="https://github.com/donovan-ratefison/Zotra/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/donovan-ratefison/Zotra/releases/latest"><img src="https://img.shields.io/github/v/release/donovan-ratefison/Zotra?color=820ad1" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/license-Apache%202.0-820ad1" alt="License: Apache 2.0">
+  <img src="https://img.shields.io/badge/Meta%20Global%20AI%20Developer%20Hackathon-2026-820ad1" alt="Meta Global AI Developer Hackathon 2026">
+</p>
 
-## Status
+## Try it in 2 minutes
 
-Work in progress for the Meta Global AI Developer Hackathon (October 26 to November 4, 2026).
+You need Docker with Compose v2.
 
-## What it does
+```sh
+git clone https://github.com/donovan-ratefison/Zotra.git && cd Zotra
+docker compose up -d
+```
 
-1. **Design.** New offers From a policy or From scratch: a scratch draft starts empty, and the designer adds the steps or asks the assistant. You import a credit policy as a PDF, and the AI drafts the steps, the roles, the data scope and the CEL rules, each with a link to its source paragraph. The import reads the text of the PDF: a scan or a photo with no text gets a clear message, and no AI call. When the text is not a credit policy, the AI says so with a short reason, in place of a proposal. The server keeps the imported PDF with the process, so the Policy panel shows it again after a reload. Every draft passes the JSON Schema, the CEL type check and the citation check before you see it. The proposal then waits for you: added steps draw as dashed ghosts, changed steps show the diff, and a click on a citation chip highlights its paragraph in the PDF. You accept or reject, and the studio edits each step in the side panel. Check rules open a guided builder by default: rows of field, operator and value, joined with and or or, with a preview of the generated CEL. A toggle switches to the raw CEL, and a rule changed there shows a notice with a one-click restore of the guided form. The Screen tab of a step previews the screen of its role in the brand colors and lists the form fields with their access: a drag changes their order. With no step selected, the side panel gives an overview of the process: structure problems, the shortest path to approval with its deadline total, the roles and the data fields. A hover on a role lights its steps; a hover on a step lights its links. The keyboard reaches every step: Tab, the arrow keys and Enter. Each external source of a step, for example a credit blacklist, draws as a small dashed card above the step, joined to it by a dotted link. On a draft, a toolbar on the diagram adds a start, a task, a gateway or an end, a drag from one step to another adds a link, and the side panel removes a link or deletes a step. The side panel also sets the condition of a gateway link and the default link, the decision of a link from a task, and the result of an end. Undo reverts each change. AI assistant: describe a change of the process in plain words, review the proposal on the diagram, accept or reject it. When the request is not clear, the assistant first asks up to three questions, with the usual choice of the bank ticked and its reason. You change the choices or type another answer, then the change uses them. When a step is selected on the diagram, the chat shows "About: <step name>" and reads "this step" or "here" as that step.
-2. **Test.** You create a test case, act as any role, and play the circuit step by step: the step screen builds its form from the data scope, you take the step, fill the values, then submit or decide. A decision button sends the values and the decision in one click, after a confirmation. The form fits on the screen: two columns, a short summary of the case data, help in tooltips, and the actions always visible at the bottom. The step also carries its documents: you attach one scan per required name, open each scan with the zones detected on it, read its fields into the form with one click, and sign when the step asks for a signature. A missing scan or a missing signature keeps the submit and decision buttons off. The diagram comes alive as the case runs: the taken links light up, the current step pulses with the actor token, and a failed check shakes its step. The timeline under the diagram shows one point per step, the steps still to come in grey, and player controls (start, back, play, forward, present, speed). A click on a past point replays the case from it: the inspector shows each field before and after, and the checks tab carries each result. From the replay bar, you copy the run up to that event into a new test case: you change one submitted value, the copy plays the same commands, and it stops where the engine refuses. When a check fails, you ask the AI why: it explains in plain language and proposes a rule fix, and you apply the fix to the draft or reject it. The coverage view shows the branches no case has taken, and one click asks the AI to write the missing test cases.
-3. **Version.** You freeze the draft, publish the frozen version for new cases, and start a new draft from any version. The version badge in the top bar is a selector: it lists every version and opens the one you pick, so you can return to a previous version at any time. The top bar shows the actions the status of the opened version allows, and the Export button downloads the process definition as a JSON file. The History panel shows every version on a vertical line, newest first, with its status, its parent and the actions its status allows. When it opens, the newest published version is in view. The studio home (`/`, also `/processes`) is the process library: it lists every process as cards with a diagram thumbnail, or as a table, with a search, a status filter and a sort; a click opens the process in the studio. Archive hides a process from the library and keeps its data; the Archived filter shows it again, with a Restore button. Each version also has a living policy text, generated from its process file at each request, also for a draft: `/api/versions/<id>/doc.html` is a printable page with the diagram in the layout of the studio and numbered articles (purpose and scope, roles, the procedure step by step with the responsible role, deadline, documents, rules, signature and decisions, case data, external sources and policy references), and `/api/versions/<id>/doc.md` is the same text in Markdown. The page carries the name, logo and colors of the bank, a table of contents, step cards and an A4 print layout with page numbers. The Documentation button of the top bar opens the page in a new tab or downloads the Markdown file. Its Update the policy item asks the AI for a draft of the policy text for the changes since version 1: each changed paragraph shows the old text struck and the new text highlighted, with a Markdown download and an HTML download in the name, logo and colors of the bank, with an A4 print layout. Nothing is stored. The Compare button of a History card opens the compare screen: the diagram marks the added and changed steps, and the right panel lists each difference, the open cases of the base version, and a changelog. The Summarize with AI button asks the AI for a short summary of the changes, in plain words.
-4. **Ship.** Each role gets a branded app at `/app`: an inbox of the cases that wait for its roles, a case screen with the step form, its documents and scans, and the name, logo and colors of the bank. The first taker owns a case. The triage page (`/app/triage`, key T) shows the queue as a deck of cards, most urgent first, with the key figures, the rules and the documents of each case; F and U send the decisions of the step and stay locked while a rule fails. D or a click on a document row opens the scans of the case, with the zones that the document model finds and what still blocks the step. O opens the case screen of the card for the fields, scans and signature; back returns to the same card, and a send there returns to the next card. Each triage card shows the case history as a strip of blocks, one for each step, with the short hash of its last event; V checks the hash chain and names the first event that changed. After a send, the decision events lock as a new signed block on the card, with a Signed stamp, and the toast names the block hash. Open full chain lists every event of the case with its actor, time, hash and previous hash, and V checks the chain from this list. A click on a case of the supervision step panel opens it in the triage deck, read only. Supervision shows four key figures (cases in progress, average lead time, cases late, return rate), the step where the flow blocks, who decided today, a case flow of the last 30 days from the start to the ends with the share above the amount limit, the decisions, the lead time per end and the returns, a live flow diagram with the open cases, the deadline halo of each step and the moving cases, and a step panel that says why a step blocks and lists its open cases, oldest first, with lateness and load per participant, and a live bar with the chain state and the last events, and the audit log lists every event of every case with a one-click hash chain check. The bank settings page (`/settings`, also the gear button of the studio top bar and of the library) sets the bank name, the logo (PNG or SVG, at most 1 MB) and the two brand colors, with a live preview of the delivered app.
+Open http://127.0.0.1:8080. No AI key is needed for the demo: the app
+replays recorded AI answers for the example policies. The steps are in
+[examples/ai-replay](examples/ai-replay/README.md).
 
-## Meta models
+## The problem
 
-| Model | Tasks |
-|-------|-------|
-| Muse Spark 1.3 | Policy to process, rules, test cases, explanations, document reading. |
-| SAM 3.1 | Signature, stamp and ID areas on scanned documents. |
+A bank writes its credit procedures in PDF policies. To turn one policy into a
+workflow, business and IT teams meet for weeks. After that, nobody can easily
+say which step comes from which rule of the text.
 
-The case scans can stay in your network: set `ZOTRA_AI_DOC_BASE_URL`, `ZOTRA_AI_DOC_API_KEY` and `ZOTRA_AI_READ_MODEL` to send the zone detection and the field reading to your own endpoint. The design tools keep the text endpoint.
+## How it works
+
+### 1. Read the policy
+
+Drop a PDF. The AI drafts the steps, roles, deadlines, documents and rules.
+Each step cites its paragraph. The draft stays in dashed violet until you
+accept it. You can also start from scratch and draw the process by hand.
+
+![The AI turns a loan policy into a process draft](docs/images/ai-proposal.png)
+
+### 2. Shape the process
+
+Add, link and delete steps on the diagram, or ask the AI assistant in plain
+words. When a request is not clear, the assistant asks you to pick from the
+roles and documents of the process. You see each change before it is saved.
+
+![The AI assistant proposes a new step](docs/images/ai-chat.png)
+
+### 3. Test it
+
+Play a case as any role. The diagram shows the path, and the timeline replays
+it from any step. When a check fails, ask the AI why. It can also write the
+test cases that cover the paths you missed.
+
+![A test case runs on the diagram](docs/images/test-mode.png)
+
+### 4. Ship it
+
+Freeze and publish. Each role gets an app in the bank colors. The triage deck
+shows the most urgent case first, with its figures, rules, documents and the
+hash chain of its events.
+
+![The triage deck of a credit analyst](docs/images/app-triage.png)
+
+The supervision shows where cases wait, which ones are late, and who decided
+what today.
+
+![The live supervision of the process](docs/images/app-supervision.png)
+
+### 5. Keep the policy up to date
+
+The documentation of each version is written as a policy, in the logo and
+colors of the bank. After a change, the AI rewrites the policy paragraphs that
+the change touches, for the bank to review.
+
+## Built for review, not blind trust
+
+- Every AI answer passes the JSON Schema, the CEL type check and the citation
+  check before you see it.
+- A click on a citation opens its paragraph in the PDF.
+- Nothing from the AI is saved until a person accepts it.
 
 ## The AI never decides
 
-Only CEL rules and people decide on a case. A manual mode works without AI.
+On a live case, only CEL rules and people decide. The AI helps to design and to
+test the process. Without an AI key, you can still design the process by hand.
+
+## Meta models
+
+| Model | Used for |
+|-------|----------|
+| Muse Spark 1.3 | Policy to process, process changes, rules, test cases, explanations, policy update |
+| SAM 3.1 | Signature, stamp and ID areas on scanned documents |
+
+## Install
+
+### Docker (recommended)
+
+See [Try it in 2 minutes](#try-it-in-2-minutes). To use another port:
+`ZOTRA_PORT=9090 docker compose up -d`.
+
+### Release binary
+
+1. Download the archive for your system from the
+   [releases page](https://github.com/donovan-ratefison/Zotra/releases) and
+   extract it.
+2. Start PostgreSQL 16.
+3. Set `ZOTRA_DATABASE_URL`, for example
+   `postgres://zotra:zotra@127.0.0.1:5432/zotra?sslmode=disable`.
+4. Run `./zotra`, then open http://127.0.0.1:8080.
+
+### From the sources
+
+You need Go, Node 22, pnpm 10 and Docker.
+
+```sh
+make setup   # dependencies and .env
+make db      # PostgreSQL in Docker
+make run     # build and start
+```
+
+Run `make` to see all the targets. `make demo` fills the database with a demo
+history. To use the live AI, set `ZOTRA_AI_API_KEY` in `.env`.
 
 ## Stack
 
-Go (net/http, cel-go, PostgreSQL), React (Vite, React Flow, Tailwind CSS, shadcn/ui). One single binary.
-
-## Run it
-
-You need Go 1.27, Node 22, pnpm, and PostgreSQL 16 (or Docker).
-
-Start a PostgreSQL that matches `.env.example`:
-
-```
-docker run -d --name zotra-postgres -e POSTGRES_USER=zotra -e POSTGRES_PASSWORD=zotra -e POSTGRES_DB=zotra -p 5432:5432 postgres:16
-```
-
-With your own PostgreSQL, set `ZOTRA_DATABASE_URL` in `.env`.
-
-Build and start the server:
-
-```
-cp .env.example .env
-make build
-set -a; . ./.env; set +a
-./zotra
-```
-
-The server reads its settings from the environment. The third line loads `.env` into the shell.
-The first start creates the tables and the example process.
-
-The app runs at http://localhost:8080.
-
-With no `ZOTRA_AI_API_KEY`, the AI buttons answer that the AI is not available (`ai: no API key`). The manual mode works.
-
-Before a real case of the example reaches the analysis step, start the demo core banking service on port 8097: `go run ./cmd/zotra-demo`.
-
-To fill an empty database with a demo history (60 cases of the example process over the last 30 days), run `go run ./cmd/zotra-history` with `ZOTRA_DATABASE_URL` set. It refuses a database that already holds real cases.
-
-To test from another machine on the same network, run `make serve`.
-It binds 0.0.0.0, picks a free port, and prints the URL.
+One Go binary: `net/http`, cel-go and PostgreSQL. The web app uses React,
+Vite, React Flow, Tailwind CSS and shadcn/ui.
 
 ## License
 
