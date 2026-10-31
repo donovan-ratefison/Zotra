@@ -144,6 +144,20 @@ export async function policyToProcess(
   );
 }
 
+// readPolicyScan sends the PNG page images of a scanned policy to the
+// AI and returns the paragraphs it read, with the dropped count.
+export async function readPolicyScan(
+  pages: string[],
+  signal?: AbortSignal,
+): Promise<{ paragraphs: Paragraph[]; dropped: number }> {
+  return requestJson<{ paragraphs: Paragraph[]; dropped: number }>(
+    "/api/ai/read-policy-scan",
+    "POST",
+    { pages },
+    signal,
+  );
+}
+
 // createProcess creates one process and returns its summary.
 export async function createProcess(name: string): Promise<ProcessSummary> {
   return requestJson<{ process: ProcessSummary }>("/api/processes", "POST", {

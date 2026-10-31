@@ -43,6 +43,7 @@ say which step comes from which rule of the text.
 ### 1. Read the policy
 
 Drop a PDF. The AI drafts the steps, roles, deadlines, documents and rules.
+A scanned PDF has no text layer: Muse Spark reads its page images first.
 Each step cites its paragraph. The draft stays in dashed violet until you
 accept it. You can also start from scratch and draw the process by hand.
 
@@ -99,7 +100,7 @@ test the process. Without an AI key, you can still design the process by hand.
 
 | Model | Used for |
 |-------|----------|
-| Muse Spark 1.3 | Policy to process, process changes, rules, test cases, explanations, policy update |
+| Muse Spark 1.3 | Policy to process, scanned policies, process changes, rules, test cases, explanations, policy update |
 | SAM 3.1 | Signature, stamp and ID areas on scanned documents |
 
 ## Install

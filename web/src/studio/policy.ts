@@ -164,6 +164,60 @@ export async function extractParagraphs(data: ArrayBuffer): Promise<{
   return { pages: doc.numPages, paragraphs };
 }
 
+// The scan import renders each page at the first width whose PNG
+// fits the cap of the scan route (3 MiB for each page).
+export const SCAN_WIDTHS = [1600, 1200, 900];
+export const MAX_SCAN_PAGES = 10;
+export const MAX_SCAN_PAGE_BYTES = 3 << 20;
+
+// dataUrlBytes gives the decoded byte count of the base64 text after
+// the first comma of a data URL. No comma gives 0.
+export function dataUrlBytes(url: string): number {
+  const comma = url.indexOf(",");
+  if (comma < 0) {
+    return 0;
+  }
+  const b64 = url.slice(comma + 1);
+  const pad = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+  return Math.floor((b64.length * 3) / 4) - pad;
+}
+
+// fitScanPage renders one page at each width of SCAN_WIDTHS in order,
+// and returns the first data URL that fits MAX_SCAN_PAGE_BYTES. A
+// render error passes through.
+export async function fitScanPage(
+  render: (width: number) => Promise<string>,
+): Promise<string> {
+  for (const width of SCAN_WIDTHS) {
+    const url = await render(width);
+    if (dataUrlBytes(url) <= MAX_SCAN_PAGE_BYTES) {
+      return url;
+    }
+  }
+  throw new ApiError(413, "too_large", "A page of the scan is too large.");
+}
+
+// renderScanPages renders the first MAX_SCAN_PAGES pages of a PDF to
+// PNG data URLs, in page order. It needs a DOM canvas.
+export async function renderScanPages(data: ArrayBuffer): Promise<string[]> {
+  const doc = await pdfjsLib.getDocument({ data: new Uint8Array(data) }).promise;
+  const urls: string[] = [];
+  for (let n = 1; n <= Math.min(MAX_SCAN_PAGES, doc.numPages); n++) {
+    const page = await doc.getPage(n);
+    urls.push(
+      await fitScanPage(async (width) => {
+        const viewport = page.getViewport({ scale: width / page.getViewport({ scale: 1 }).width });
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(viewport.width);
+        canvas.height = Math.round(viewport.height);
+        await page.render({ canvas, viewport }).promise;
+        return canvas.toDataURL("image/png");
+      }),
+    );
+  }
+  return urls;
+}
+
 // policyErrorText is the error line of the dialog for any failure of
 // the AI call. An ApiError gives its message, anything else gives the
 // generic line.

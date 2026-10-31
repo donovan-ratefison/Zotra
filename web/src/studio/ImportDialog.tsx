@@ -11,8 +11,13 @@ import { Button } from "@/ui/button";
 import { Dialog, DialogContent, focusContent } from "@/ui/dialog";
 import { Hint } from "@/ui/hint";
 import { Input } from "@/ui/input";
-import { ApiError, policyToProcess } from "./api";
-import { extractParagraphs, policyErrorText, type Paragraph } from "./policy";
+import { ApiError, policyToProcess, readPolicyScan } from "./api";
+import {
+  extractParagraphs,
+  policyErrorText,
+  renderScanPages,
+  type Paragraph,
+} from "./policy";
 import type { ProcessDefinition } from "./types";
 
 // Detail is one validation error of a 422 answer.
@@ -71,12 +76,54 @@ export function analyzeDisabled(hasFile: boolean, analyzing: boolean, paragraphs
   return !hasFile || analyzing || paragraphs === 0;
 }
 
-// NoTextNotice tells that the PDF has no text layer for the AI.
-export function NoTextNotice() {
+// readScan renders the pages of a scan to PNG and lets the AI read
+// them. The dialog ignores the dropped count.
+export async function readScan(
+  data: ArrayBuffer,
+  signal: AbortSignal,
+  render: (data: ArrayBuffer) => Promise<string[]> = renderScanPages,
+  read: (
+    pages: string[],
+    signal?: AbortSignal,
+  ) => Promise<{ paragraphs: Paragraph[]; dropped: number }> = readPolicyScan,
+): Promise<Paragraph[]> {
+  const pages = await render(data);
+  const { paragraphs } = await read(pages, signal);
+  return paragraphs;
+}
+
+// NoTextNotice tells that the PDF has no text layer, and offers to
+// read the page images with the AI.
+export function NoTextNotice({
+  reading,
+  error,
+  onRead,
+}: {
+  reading: boolean;
+  error: string | null;
+  onRead: () => void;
+}) {
   return (
-    <p role="alert" className="text-sm text-destructive">
-      This PDF has no readable text. It is a scan or a photo. Use a PDF that holds text.
-    </p>
+    <div className="flex flex-col gap-2">
+      <p role="alert" className="text-sm text-destructive">
+        This PDF has no readable text.
+      </p>
+      {reading ? (
+        <p className="text-sm text-muted-foreground">
+          <BrandLoader size={16} label="The AI reads the scan..." />
+        </p>
+      ) : (
+        <div className="flex items-center gap-1.5">
+          <Button variant="outline" size="sm" onClick={onRead}>
+            Read the scan with AI
+          </Button>
+          <Hint label="About Read the scan with AI">
+            The AI reads the page images and writes the paragraphs. It reads the first 10 pages.
+          </Hint>
+        </div>
+      )}
+      {error !== null && <p className="text-sm text-destructive">{error}</p>}
+    </div>
   );
 }
 
@@ -104,6 +151,8 @@ export function ImportDialogBody({
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [details, setDetails] = useState<Detail[] | null>(null);
   const [seconds, setSeconds] = useState(0);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   // Count the seconds of the analysis, from the click.
@@ -132,12 +181,16 @@ export function ImportDialogBody({
     setAnalyzing(false);
     setAnalysisError(null);
     setDetails(null);
+    setScanning(false);
+    setScanError(null);
   }
 
   // loadFile reads one picked or dropped file into paragraphs.
   async function loadFile(picked: File) {
     setReading(true);
     setLoadError(false);
+    setScanning(false);
+    setScanError(null);
     setAnalysisError(null);
     setDetails(null);
     try {
@@ -155,6 +208,36 @@ export function ImportDialogBody({
     } finally {
       setReading(false);
     }
+  }
+
+  // readScanClick lets the AI read the page images of a scan. On
+  // success, the paragraphs take the path of a text PDF.
+  async function readScanClick() {
+    if (!file || scanning) {
+      return;
+    }
+    setScanning(true);
+    setScanError(null);
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    let result: Paragraph[];
+    try {
+      // A new buffer at each click: pdf.js can take the old one.
+      result = await readScan(await file.arrayBuffer(), ctrl.signal);
+    } catch (err) {
+      if (isAbort(err) || ctrl.signal.aborted) {
+        return;
+      }
+      setScanError(policyErrorText(err));
+      setScanning(false);
+      return;
+    }
+    if (ctrl.signal.aborted) {
+      return;
+    }
+    abortRef.current = null;
+    setParagraphs(result);
+    setScanning(false);
   }
 
   // analyze sends the paragraphs and, on success, hands the proposal
@@ -214,7 +297,7 @@ export function ImportDialogBody({
         </Hint>
       </div>
       {analyzing && <AnalyzeProgress paragraphs={paragraphs.length} seconds={seconds} />}
-      {!analyzing && (
+      {!analyzing && !scanning && (
         <div
           role="button"
           tabIndex={0}
@@ -265,7 +348,11 @@ export function ImportDialogBody({
             {pages} pages, {paragraphs.length} paragraphs
           </p>
           {paragraphs.length === 0 ? (
-            <NoTextNotice />
+            <NoTextNotice
+              reading={scanning}
+              error={scanError}
+              onRead={() => void readScanClick()}
+            />
           ) : (
             <>
               <div className="flex flex-col gap-1 rounded-md border p-2 text-xs text-muted-foreground">

@@ -571,11 +571,15 @@ describe("PDF without text", () => {
   });
 
   test("121f: the notice is an alert with the exact text", () => {
-    const html = renderToString(createElement(NoTextNotice));
-    expect(html).toContain('role="alert"');
-    expect(html).toContain(
-      "This PDF has no readable text. It is a scan or a photo. Use a PDF that holds text.",
+    const html = renderToString(
+      createElement(NoTextNotice, { reading: false, error: null, onRead: () => {} }),
     );
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("This PDF has no readable text.");
+    expect(html).toContain("Read the scan with AI");
+    expect(html).toContain('aria-label="About Read the scan with AI"');
+    expect(html).not.toContain("Use a PDF that holds text");
+    expect(html).not.toContain("The AI reads the scan...");
   });
 
   test("121g: a PDF with no text layer gives 1 page and 0 paragraphs", async () => {

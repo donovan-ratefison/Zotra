@@ -35,6 +35,39 @@ export function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+// isScan is true when the text of the pages 1 to pageCount is read
+// and no item has a paragraph id. No read page gives false.
+export function isScan(
+  pageCount: number,
+  idPages: Record<number, (string | null)[]>,
+): boolean {
+  let read = false;
+  for (let n = 1; n <= pageCount; n++) {
+    const ids = idPages[n];
+    if (ids === undefined) {
+      continue;
+    }
+    read = true;
+    if (ids.some((id) => typeof id === "string")) {
+      return false;
+    }
+  }
+  return read;
+}
+
+// CitedParagraphs shows the text of the cited paragraphs. A scan has
+// no text layer to mark, so the panel shows this text above the pages.
+export function CitedParagraphs({ paragraphs }: { paragraphs: Paragraph[] }) {
+  return (
+    <section aria-label="Cited paragraphs" className="mb-3 flex flex-col gap-1 rounded-md border p-2">
+      <h3 className="text-[13px] font-semibold">Cited paragraphs</h3>
+      {paragraphs.map((p) => (
+        <p key={p.id} className="text-[12px]">{`${p.id}: ${p.text}`}</p>
+      ))}
+    </section>
+  );
+}
+
 export function PolicyPanel({
   file,
   highlight,
@@ -134,6 +167,9 @@ export function PolicyPanel({
         </p>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
+          {isScan(pageCount, idPages) && highlight.length > 0 && (
+            <CitedParagraphs paragraphs={highlight} />
+          )}
           <mod.Document
             file={file}
             suspense={false}
