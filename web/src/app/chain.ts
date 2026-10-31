@@ -103,3 +103,9 @@ export function appendBlock(blocks: ChainBlock[], nb: ChainBlock | null): ChainB
 export function blockText(b: ChainBlock): string {
   return `Block #${b.from}-${b.to} signed: ${b.hash}, previous ${b.prev}.`;
 }
+
+// sheetProgress gives the number of events that passed, and the bar width.
+export function sheetProgress(n: number, run: VerifyRun | null): { done: number; pct: number } {
+  const done = run === null ? 0 : run.bad !== 0 && run.upTo >= run.bad ? run.bad - 1 : run.upTo;
+  return { done, pct: n === 0 ? 0 : (done / n) * 100 };
+}

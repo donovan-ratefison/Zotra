@@ -47,7 +47,7 @@ import {
   type Answer,
 } from "./triage";
 import { TriageDocuments } from "./TriageDocuments";
-import { ChainStrip, SignedStamp, useChainVerify } from "./CaseChain";
+import { ChainSheet, ChainStrip, SignedStamp, useChainVerify } from "./CaseChain";
 import { appendBlock, blockText, chainBlocks, ghostLabels, newBlock } from "./chain";
 
 // The pause before the move to the next card, so the user sees the stamp.
@@ -249,6 +249,8 @@ function Deck({
   // one, so the focus goes back to it after a close.
   const [docIndex, setDocIndex] = useState<number | null>(null);
   const [lastDoc, setLastDoc] = useState(0);
+  // The case of the open chain sheet.
+  const [sheetId, setSheetId] = useState<string | null>(null);
   const docButtons = useRef<(HTMLButtonElement | null)[]>([]);
   const openDoc = (i: number) => {
     setLastDoc(i);
@@ -261,6 +263,8 @@ function Deck({
 
   const last = queue.length - 1;
   const front = queue[Math.min(index, last)]!;
+  // A move of the front case closes the sheet.
+  const sheetOpen = sheetId === front.id;
   // The front card first, then the cards after it.
   const openIds = () => queue.slice(Math.min(index, last)).map((it) => it.id);
   const snap = sent[front.id];
@@ -349,6 +353,8 @@ function Deck({
         editableTarget(e.target as HTMLElement | null),
       );
       if (action === null) return;
+      // Only V acts in the sheet. Escape goes to the Dialog.
+      if (sheetOpen && action !== "verify") return;
       if (action === "verify") {
         e.preventDefault();
         verifyFront();
@@ -609,6 +615,7 @@ function Deck({
             error={chain.errors[front.id] ?? null}
             busy={chain.busy !== null}
             onVerify={verifyFront}
+            onOpen={() => setSheetId(front.id)}
           />
         </article>
       </div>
@@ -679,6 +686,20 @@ function Deck({
           onCloseFocus={() => docButtons.current[lastDoc]?.focus()}
         />
       )}
+      <ChainSheet
+        open={sheetOpen}
+        onOpenChange={(open) => setSheetId(open ? front.id : null)}
+        reference={front.row.reference}
+        client={clientOf(front)}
+        def={def}
+        users={users}
+        events={[...events, ...extra]}
+        firstNew={extra[0]?.seq ?? null}
+        run={chain.runs[front.id] ?? null}
+        error={chain.errors[front.id] ?? null}
+        busy={chain.busy !== null}
+        onVerify={verifyFront}
+      />
       <p
         role="status"
         className={`mt-2.5 flex min-h-[18px] items-center justify-center gap-1.5 text-[12.5px] ${

@@ -11,7 +11,7 @@ import { dayTimeText } from "./InboxScreen";
 
 // actorOf gives the name of an actor: "System" for the system actor,
 // the raw actor when the users list does not hold it.
-function actorOf(users: UserDTO[], actor: string): string {
+export function actorOf(users: UserDTO[], actor: string): string {
   if (actor === "system") return "System";
   return users.find((user) => user.id === actor)?.name ?? actor;
 }

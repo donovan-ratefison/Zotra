@@ -1,5 +1,6 @@
 // The chain strip test rows B1 to B5, G1 to G3, T1, T2, C1, C2, S1 to
-// S6, N1 to N3, A1, A2, G5, G6, S7 to S10, P1 and P2. The environment is node: renderToString for the strip.
+// S6, N1 to N3, A1, A2, G5, G6, S7 to S10, P1 and P2 of the stamp, P1 to P3 of
+// the sheet progress, and H1 to H7. The environment is node: renderToString for the strip.
 
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
@@ -9,7 +10,7 @@ import { ApiError } from "../studio/api";
 import type { CaseEvent, CaseState } from "../studio/case-api";
 import type { ProcessDefinition } from "../studio/types";
 import { verifyCase } from "./app-api";
-import { ChainStrip, SignedStamp } from "./CaseChain";
+import { ChainSheetBody, ChainStrip, SignedStamp } from "./CaseChain";
 import {
   appendBlock,
   blockText,
@@ -18,6 +19,7 @@ import {
   ghostLabels,
   newBlock,
   seqTone,
+  sheetProgress,
   type VerifyRun,
 } from "./chain";
 
@@ -192,6 +194,7 @@ function strip(over: { run?: VerifyRun | null; error?: string | null; busy?: boo
       error: over.error ?? null,
       busy: over.busy ?? false,
       onVerify: () => {},
+      onOpen: () => {},
     }),
   );
 }
@@ -213,7 +216,8 @@ describe("chain strip", () => {
     }
     expect(count(html, ">No block<")).toBe(5);
     expect(count(html, 'data-tone="idle"')).toBe(4);
-    expect(html).not.toContain("Open full chain");
+    expect(html).toContain("Open full chain");
+    expect(html).toContain('aria-label="Open the full chain of CASE-2026-0001"');
   });
 
   test("S2: a verified chain", () => {
@@ -292,6 +296,7 @@ describe("new block", () => {
         error: null,
         busy: false,
         onVerify: () => {},
+        onOpen: () => {},
       }),
     );
   }
@@ -347,5 +352,140 @@ describe("signed stamp", () => {
     const html = renderToString(createElement(SignedStamp, { label: "Unfavorable", first: false }));
     expect(html).toContain("Signed · Unfavorable");
     expect(html).toContain("text-red-700");
+  });
+});
+
+describe("sheet progress", () => {
+  test("P1: the count and the width of a 12 event walk", () => {
+    const runs: (VerifyRun | null)[] = [
+      null,
+      { bad: 0, upTo: 0 },
+      { bad: 0, upTo: 6 },
+      { bad: 0, upTo: 12 },
+      { bad: 4, upTo: 3 },
+      { bad: 4, upTo: 4 },
+    ];
+    expect(runs.map((r) => sheetProgress(12, r))).toEqual([
+      { done: 0, pct: 0 },
+      { done: 0, pct: 0 },
+      { done: 6, pct: 50 },
+      { done: 12, pct: 100 },
+      { done: 3, pct: 25 },
+      { done: 3, pct: 25 },
+    ]);
+  });
+
+  test("P2: a bad event stops the count before it", () => {
+    const p = sheetProgress(12, { bad: 8, upTo: 8 });
+    expect(p.done).toBe(7);
+    expect(p.pct).toBeCloseTo(58.33, 2);
+  });
+
+  test("P3: no event gives a zero width", () => {
+    expect(sheetProgress(0, null)).toEqual({ done: 0, pct: 0 });
+    expect(sheetProgress(0, { bad: 0, upTo: 0 })).toEqual({ done: 0, pct: 0 });
+  });
+});
+
+const U = [{ id: "u-advisor", name: "Fara Rakoto", role_ids: [] }];
+const BUSY_V = /<button(?=[^>]*aria-keyshortcuts="V")(?=[^>]*disabled="")/;
+function sheet(
+  over: { events?: CaseEvent[]; firstNew?: number | null; run?: VerifyRun | null; error?: string | null; busy?: boolean } = {},
+): string {
+  return renderToString(
+    createElement(ChainSheetBody, {
+      reference: "CASE-2026-0001",
+      client: "Hery Rasolofo",
+      def,
+      users: U,
+      events: over.events ?? base,
+      firstNew: over.firstNew ?? null,
+      run: over.run ?? null,
+      error: over.error ?? null,
+      busy: over.busy ?? false,
+      onVerify: () => {},
+      onClose: () => {},
+    }),
+  );
+}
+
+describe("chain sheet", () => {
+  test("H1: the idle sheet", () => {
+    const html = sheet();
+    for (const text of [
+      "Case history",
+      "CASE-2026-0001 · Hery Rasolofo. Each event carries the hash of the event before it.",
+      "Ready to check 12 events",
+      "0 / 12",
+      "width:0%",
+      ">Esc<",
+      "Close",
+      "Verify chain",
+      ">Event<",
+      ">Actor<",
+      ">Previous<",
+      "Case created",
+      'title="case_created"',
+      "Assigned to Fara Rakoto",
+      "Check 1 passed",
+      "System",
+      ">00000012<",
+      ">00000000<",
+      "The log is append only. Nobody can edit an event in the app.",
+      "sha256(prev_hash + &quot;\\n&quot; + event)",
+    ]) {
+      expect(html).toContain(text);
+    }
+    expect(count(html, "31 Oct, 10:00:00")).toBe(12);
+    expect(count(html, 'data-tone="idle"')).toBe(12);
+    expect(html).not.toContain("data-new");
+    expect(html).not.toMatch(BUSY_V);
+  });
+
+  test("H2: a verified chain", () => {
+    const html = sheet({ run: { bad: 0, upTo: 12 } });
+    expect(html).toContain("Chain verified. 12 events.");
+    expect(html).toContain("12 / 12");
+    expect(html).toContain("width:100%");
+    expect(count(html, 'data-tone="ok"')).toBe(12);
+    expect(html).not.toContain('data-tone="idle"');
+  });
+
+  test("H3: the walk in progress", () => {
+    const html = sheet({ run: { bad: 0, upTo: 6 } });
+    expect(html).toContain("Checking event 7 of 12");
+    expect(html).toContain("6 / 12");
+    expect(html).toContain("width:50%");
+    expect(count(html, 'data-tone="ok"')).toBe(6);
+    expect(count(html, 'data-tone="idle"')).toBe(6);
+  });
+
+  test("H4: a changed event", () => {
+    const html = sheet({ run: { bad: 8, upTo: 8 } });
+    expect(html).toContain("Event 8 changed after it was written.");
+    expect(html).toContain("7 / 12");
+    expect(html).toContain("bg-red-600");
+    expect(count(html, 'data-tone="ok"')).toBe(7);
+    expect(count(html, 'data-tone="bad"')).toBe(5);
+  });
+
+  test("H5: a failed check", () => {
+    const html = sheet({ error: "no case c1" });
+    expect(html).toContain("The chain check did not run: no case c1");
+    expect(html).toContain("0 / 12");
+    expect(html).toContain("bg-red-600");
+  });
+
+  test("H6: the events of a send are new", () => {
+    const html = sheet({ events: [...base, ...answer], firstNew: 13 });
+    expect(html).toContain("Ready to check 22 events");
+    expect(html).toContain("0 / 22");
+    expect(count(html, 'data-new="true"')).toBe(10);
+    expect(html).toContain("Decision favorable");
+    expect(html).toContain("u-analyst");
+  });
+
+  test("H7: a busy sheet disables the button", () => {
+    expect(sheet({ busy: true })).toMatch(BUSY_V);
   });
 });
