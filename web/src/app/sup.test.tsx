@@ -20,11 +20,18 @@ import {
   mergeFlow,
   mergeSupervision,
 } from "./sup-api";
-import type { AuditEvent, AuditVerify, Flow, Supervision } from "./sup-api";
+import type { AuditEvent, AuditVerify, Flow, SupCase, Supervision } from "./sup-api";
 import {
   blockOf,
+  initials,
+  leftText,
+  listText,
+  stepCases,
   SupervisionScreen,
   tileFigures,
+  topHolder,
+  trackWidth,
+  whyText,
 } from "./SupervisionScreen";
 import { AuditScreen } from "./AuditScreen";
 import { AppShell, viewSearch } from "./AppShell";
@@ -339,7 +346,6 @@ describe("supervision screen", () => {
     expect(html).toContain("Drawing the diagram.");
     expect(html).toContain("Case goes back");
     expect(html).toContain("Application entry");
-    expect(html).toContain("Select a step to see its cases.");
     expect(html).toContain("Load per participant");
     expect(html).toContain("Demo Advisor");
     expect(html).toContain("aria-hidden");
@@ -347,21 +353,6 @@ describe("supervision screen", () => {
 
   test("14.2 row W2c: no late case shows no block card", () => {
     expect(renderSupervision(noLate)).not.toContain("Where it blocks");
-  });
-
-  test("6.3 row W2b: the selected step shows its case rows", () => {
-    const html = renderSupervision(supAnswer, "entry");
-    expect(html).toContain("Application entry");
-    expect(html).toContain("2 open, 2 late");
-    expect(html).not.toContain("Select a step to see its cases.");
-    expect(html).toContain("CASE-2026-0001");
-    expect(html).toContain("Hanta Rakotobe");
-    expect(html).toContain("€240,000.00");
-    expect(html).toContain("Demo Advisor");
-    expect(html).toContain("25 h");
-    expect(html).toContain("Yes");
-    expect(html).toContain("CASE-2026-0002");
-    expect(html).toContain("26 h");
   });
 });
 
@@ -876,5 +867,157 @@ describe("key figures and block card", () => {
 
   test("14.2 row B4: a tie takes the first step of the definition", () => {
     expect(blockOf(defFixture, twoLate, usersFixture)?.nodeId).toBe("entry");
+  });
+});
+
+// mk builds one case of the step panel rows from the base case.
+function mk(over: Partial<SupCase>): SupCase {
+  return { ...supCase, ...over };
+}
+
+// withCases gives the fixture answer with other entry cases.
+function withCases(cases: SupCase[]): Supervision {
+  return { ...supAnswer, cases };
+}
+
+describe("step panel", () => {
+  test("14.3 row Y1: the why text of the fixture step", () => {
+    expect(whyText(supAnswer.cases, usersFixture)).toBe(
+      "2 cases are late: CASE-2026-0002 and CASE-2026-0001. Demo Advisor holds 1 of the 2 cases. 1 case has no assignee.",
+    );
+  });
+
+  test("14.3 row Y2: no case", () => {
+    expect(whyText([], usersFixture)).toBe("No case waits at this step.");
+  });
+
+  test("14.3 row Y3: one free returned case, not late", () => {
+    expect(
+      whyText([mk({ late: false, assignee: "", returned: true })], usersFixture),
+    ).toBe(
+      "No case is late. 1 case has no assignee. 1 case came back to this step.",
+    );
+  });
+
+  test("14.3 row Y4: three late cases, two returned", () => {
+    const cases = [
+      mk({ case_id: "c3", reference: "CASE-2026-0003", age_hours: 10, returned: true }),
+      mk({ case_id: "c4", reference: "CASE-2026-0004", age_hours: 30, returned: true }),
+      mk({ case_id: "c5", reference: "CASE-2026-0005", age_hours: 20 }),
+    ];
+    expect(whyText(cases, usersFixture)).toBe(
+      "3 cases are late: CASE-2026-0004, CASE-2026-0005 and CASE-2026-0003. Demo Advisor holds 3 of the 3 cases. 2 cases came back to this step.",
+    );
+  });
+
+  test("14.3 row Y5: an unknown holder stays raw", () => {
+    expect(whyText([mk({ assignee: "u-ghost" })], usersFixture)).toBe(
+      "1 case is late: CASE-2026-0001. u-ghost holds the case.",
+    );
+  });
+
+  test("14.3 row O1: the cases of a step, oldest first, tie by reference", () => {
+    const sup = withCases([
+      supCase,
+      supCase2,
+      mk({ case_id: "c3", reference: "CASE-2026-0000", age_hours: 26 }),
+    ]);
+    expect(stepCases(sup, "entry").map((c) => c.case_id)).toEqual(["c3", "c2", "c1"]);
+    expect(stepCases(sup, "review")).toEqual([]);
+  });
+
+  test("14.3 row H1: the holder with the most cases, tie the first", () => {
+    const of = (ids: string[]) => ids.map((assignee) => mk({ assignee }));
+    expect(topHolder(of(["u-a", "u-b", "u-b", ""]))).toEqual({ userId: "u-b", count: 2 });
+    expect(topHolder(of(["u-a", "u-b"]))).toEqual({ userId: "u-a", count: 1 });
+    expect(topHolder(of([""]))).toBeNull();
+  });
+
+  test("14.3 row L1: the list text", () => {
+    expect(listText(["A"])).toBe("A");
+    expect(listText(["A", "B"])).toBe("A and B");
+    expect(listText(["A", "B", "C"])).toBe("A, B and C");
+  });
+
+  test("14.3 row T1: the time left", () => {
+    expect(leftText(mk({ age_hours: 25, late: true }), 24)).toBe("Late by 2 h");
+    expect(leftText(mk({ age_hours: 24, late: true }), 24)).toBe("Late by 1 h");
+    expect(leftText(mk({ age_hours: 10, late: false }), 24)).toBe("13 h left");
+    expect(leftText(mk({ age_hours: 23, late: false }), 24)).toBe("0 h left");
+    expect(leftText(mk({ age_hours: 24, late: false }), 24)).toBe("0 h left");
+    expect(leftText(mk({ age_hours: 5 }), null)).toBe("No deadline");
+  });
+
+  test("14.3 row T2: the track width", () => {
+    expect(trackWidth(36, 48)).toBe(50);
+    expect(trackWidth(72, 48)).toBe(100);
+    expect(trackWidth(100, 48)).toBe(100);
+    expect(trackWidth(5, null)).toBe(0);
+    expect(trackWidth(24, 24)).toBeCloseTo(66.67, 2);
+  });
+
+  test("14.3 row I1: the initials", () => {
+    expect(initials("Demo Advisor")).toBe("DA");
+    expect(initials("u-ghost")).toBe("U");
+  });
+
+  test("14.3 row P1: the panel of the selected step", () => {
+    const html = renderSupervision(supAnswer, "entry");
+    for (const text of [
+      "Step detail",
+      "Advisor · Branch",
+      "Waiting",
+      "Median age",
+      ">25 h<",
+      ">24 h<",
+      "2 cases are late: CASE-2026-0002 and CASE-2026-0001. Demo Advisor holds 1 of the 2 cases. 1 case has no assignee.",
+      "Computed from the case data. No AI writes this text.",
+      "Cases at this step, oldest first",
+      "Deadline 24 h",
+      "Time left",
+      "Hanta Rakotobe · €240,000.00",
+      "Late by 3 h",
+      "Late by 2 h",
+      'title="Demo Advisor"',
+      ">DA<",
+      'title="No assignee"',
+      'aria-label="Close the step detail"',
+    ]) {
+      expect(html).toContain(text);
+    }
+    expect(html.indexOf("CASE-2026-0002")).toBeLessThan(html.indexOf("CASE-2026-0001"));
+    expect(html).not.toContain("Time on step");
+    expect(html).not.toContain("Select a step to see its cases.");
+  });
+
+  test("14.3 row P2: a returned case shows its chip", () => {
+    const html = renderSupervision(
+      withCases([{ ...supCase, returned: true }, supCase2]),
+      "entry",
+    );
+    expect(html).toContain("Returned");
+  });
+
+  test("14.3 row P3: no selection shows no panel, the block card links to it", () => {
+    const html = renderSupervision(supAnswer);
+    expect(html).not.toContain("Step detail");
+    expect(html).toContain("Open the step");
+  });
+
+  test("14.3 row P4: a step with no case and no deadline", () => {
+    const html = renderSupervision(supAnswer, "review");
+    expect(html).toContain("No case waits at this step.");
+    expect(html).toContain("None");
+    expect(html).toContain("ghost");
+    expect(html).not.toContain("Deadline 24 h");
+  });
+
+  test("14.3 row P5: a case at 60 percent of the deadline has the near tone", () => {
+    const html = renderSupervision(
+      withCases([{ ...supCase, age_hours: 15, late: false }, supCase2]),
+      "entry",
+    );
+    const last = html.slice(html.lastIndexOf("CASE-2026-0001"));
+    expect(last).toContain("bg-[#d97706]");
   });
 });

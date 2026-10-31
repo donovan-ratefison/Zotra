@@ -25,7 +25,7 @@ import {
 import { AuditScreen } from "./AuditScreen";
 import { CaseScreen } from "./CaseScreen";
 import { InboxScreen } from "./InboxScreen";
-import { SupervisionScreen } from "./SupervisionScreen";
+import { initials, SupervisionScreen } from "./SupervisionScreen";
 import { TriageScreen } from "./TriageScreen";
 import { editableTarget } from "./triage";
 import {
@@ -161,17 +161,6 @@ function roleNamesOf(roleIds: string[], def: ProcessDefinition): string {
   return roleIds
     .map((id) => def.roles.find((role) => role.id === id)?.name ?? id)
     .join(", ");
-}
-
-// initials gives the two initials of a user name: the first
-// character of each of the first two words, upper case.
-function initials(name: string): string {
-  return name
-    .split(" ")
-    .filter((word) => word.length > 0)
-    .slice(0, 2)
-    .map((word) => word.charAt(0).toUpperCase())
-    .join("");
 }
 
 // Loading centers one muted line. The shell stages pass "Loading the

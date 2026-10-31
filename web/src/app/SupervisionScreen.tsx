@@ -1,13 +1,13 @@
 // The supervision screen: the key figures and the flow of the
 // published versions, the live flow diagram of their open cases, the
-// cases of the selected step and the load per participant. The view
+// panel of the selected step and the load per participant. The view
 // is read only. AppShell owns the supervision answer and passes it
 // down with the users list.
 
 import { useEffect, useState } from "react";
-import { Activity, Split, TriangleAlert } from "lucide-react";
+import { Activity, ChevronRight, Split, TriangleAlert, X } from "lucide-react";
 import { moneyText, pickField } from "./InboxScreen";
-import { FlowLegend, LiveDiagram } from "./LiveFlow";
+import { FlowLegend, haloOf, LiveDiagram } from "./LiveFlow";
 import { weightedLead } from "./sup-api";
 import type { Flow, SupCase, Supervision } from "./sup-api";
 import type { UserDTO } from "../studio/case-api";
@@ -100,6 +100,26 @@ export function tileFigures(
   ];
 }
 
+// topHolder gives the assignee with the most cases (tie: the first in
+// the given order), null when no case has an assignee.
+export function topHolder(
+  cases: SupCase[],
+): { userId: string; count: number } | null {
+  const load = new Map<string, number>();
+  for (const c of cases) {
+    if (c.assignee !== "") {
+      load.set(c.assignee, (load.get(c.assignee) ?? 0) + 1);
+    }
+  }
+  let top: { userId: string; count: number } | null = null;
+  for (const [userId, count] of load) {
+    if (count > (top?.count ?? 0)) {
+      top = { userId, count };
+    }
+  }
+  return top;
+}
+
 // blockOf gives the step with the most late cases (tie: the first in
 // the definition order) and the text of its card. It gives null when
 // no step has a late case.
@@ -120,26 +140,15 @@ export function blockOf(
   }
   const cases = sup.cases.filter((c) => c.node_id === row.node_id);
   const free = cases.filter((c) => c.assignee === "").length;
-  const load = new Map<string, number>();
-  for (const c of cases) {
-    if (c.assignee !== "") {
-      load.set(c.assignee, (load.get(c.assignee) ?? 0) + 1);
-    }
-  }
-  let top: [string, number] | undefined;
-  for (const entry of load) {
-    if (entry[1] > (top?.[1] ?? 0)) {
-      top = entry;
-    }
-  }
+  const top = topHolder(cases);
   const wait = row.open === 1 ? "1 case waits." : `${row.open} cases wait.`;
   const late = row.late === 1 ? "1 is late." : `${row.late} are late.`;
   const freeText =
     free === 0 ? "" : ` ${free} ${free === 1 ? "has" : "have"} no assignee.`;
   const holder =
-    top === undefined
+    top === null
       ? ""
-      : ` ${userNameOf(users, top[0])} holds ${top[1]} of them.`;
+      : ` ${userNameOf(users, top.userId)} holds ${top.count} of them.`;
   return {
     nodeId: row.node_id,
     name: nodeNameOf(def, row.node_id),
@@ -187,81 +196,243 @@ function userNameOf(users: UserDTO[], id: string): string {
   return users.find((user) => user.id === id)?.name ?? id;
 }
 
-// StepTable is the card under the flow: the open cases of the
-// selected step. With no selection it asks for one.
-function StepTable({ def, users, supervision, selected }: {
-  def: ProcessDefinition;
-  users: UserDTO[];
-  supervision: Supervision;
-  selected: string | null;
-}) {
-  if (selected === null) {
-    return (
-      <div className="rounded-lg border bg-card px-4 py-4">
-        <p className="text-sm text-muted-foreground">
-          Select a step to see its cases.
-        </p>
-      </div>
+// byAge sorts the cases oldest first, tie: the reference.
+export function byAge(a: SupCase, b: SupCase): number {
+  return b.age_hours - a.age_hours || a.reference.localeCompare(b.reference);
+}
+
+// stepCases gives the open cases of one node, oldest first.
+export function stepCases(sup: Supervision, nodeId: string): SupCase[] {
+  return sup.cases.filter((c) => c.node_id === nodeId).sort(byAge);
+}
+
+// listText joins the items with commas and "and" before the last one.
+export function listText(items: string[]): string {
+  return items.length < 2
+    ? items.join("")
+    : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
+}
+
+// whyText gives the "Why it blocks" text of one step from the cases
+// of the step: the late cases, the holder, the cases with no assignee
+// and the returned cases.
+export function whyText(cases: SupCase[], users: UserDTO[]): string {
+  const n = cases.length;
+  if (n === 0) {
+    return "No case waits at this step.";
+  }
+  const refs = cases.filter((c) => c.late).sort(byAge).map((c) => c.reference);
+  const parts = [
+    refs.length === 0
+      ? "No case is late."
+      : refs.length === 1
+        ? `1 case is late: ${refs[0]}.`
+        : `${refs.length} cases are late: ${listText(refs)}.`,
+  ];
+  const top = topHolder(cases);
+  if (top !== null) {
+    const name = userNameOf(users, top.userId);
+    parts.push(
+      n === 1
+        ? `${name} holds the case.`
+        : `${name} holds ${top.count} of the ${n} cases.`,
     );
   }
-  const node = def.nodes.find((n) => n.id === selected);
-  const row = supervision.nodes.find((n) => n.node_id === selected);
-  const rows = supervision.cases.filter(
-    (c: SupCase) => c.node_id === selected,
-  );
+  const free = cases.filter((c) => c.assignee === "").length;
+  if (free > 0) {
+    parts.push(
+      free === 1
+        ? "1 case has no assignee."
+        : `${free} cases have no assignee.`,
+    );
+  }
+  const back = cases.filter((c) => c.returned).length;
+  if (back > 0) {
+    parts.push(
+      back === 1
+        ? "1 case came back to this step."
+        : `${back} cases came back to this step.`,
+    );
+  }
+  return parts.join(" ");
+}
+
+// leftText gives the time left before the deadline, or the delay.
+export function leftText(c: SupCase, deadline: number | null): string {
+  if (deadline === null) {
+    return "No deadline";
+  }
+  // age_hours is floored, so +1 and -1 give the ceil and floor of
+  // dueText in triage.ts (the deck shows the same text).
+  return c.late
+    ? `Late by ${c.age_hours - deadline + 1} h`
+    : `${Math.max(0, deadline - c.age_hours - 1)} h left`;
+}
+
+// trackWidth gives the width of the age bar, in percent: the deadline
+// mark sits at two thirds of the track.
+export function trackWidth(ageHours: number, deadline: number | null): number {
+  return deadline === null
+    ? 0
+    : Math.min(100, (ageHours / (deadline * 1.5)) * 100);
+}
+
+// initials gives the two initials of a user name: the first
+// character of each of the first two words, upper case.
+export function initials(name: string): string {
+  return name
+    .split(" ")
+    .filter((word) => word.length > 0)
+    .slice(0, 2)
+    .map((word) => word.charAt(0).toUpperCase())
+    .join("");
+}
+
+const FILL_CLASS = { ok: "bg-primary", near: "bg-[#d97706]", late: "bg-[#dc2626]" };
+const LEFT_CLASS = { ok: "", near: "text-[#d97706]", late: "text-[#dc2626]" };
+const LIST_GRID = "grid grid-cols-[170px_minmax(0,1fr)_72px_24px] items-center gap-2.5";
+
+// StepPanel is the side panel of the selected step: its figures, the
+// "Why it blocks" text and its open cases, oldest first.
+function StepPanel({ def, users, sup, nodeId, onClose }: {
+  def: ProcessDefinition;
+  users: UserDTO[];
+  sup: Supervision;
+  nodeId: string;
+  onClose: () => void;
+}) {
+  const node = def.nodes.find((n) => n.id === nodeId);
+  const row = sup.nodes.find((n) => n.node_id === nodeId);
+  const deadline = node?.deadline_hours ?? null;
+  const roleId = node?.role ?? null;
+  const role = def.roles.find((r) => r.id === roleId);
+  const roleText =
+    roleId === null
+      ? "No role"
+      : role === undefined
+        ? roleId
+        : `${role.name} · ${role.department}`;
+  const late = row?.late ?? 0;
+  const figures = [
+    { label: "Waiting", value: `${row?.open ?? 0}` },
+    { label: "Median age", value: `${row?.median_hours ?? 0} h` },
+    { label: "Deadline", value: deadline === null ? "None" : `${deadline} h` },
+    { label: "Late", value: `${late}`, bad: late > 0 },
+  ];
   return (
-    <div className="rounded-lg border bg-card">
-      <div className="border-b px-4 py-3">
-        <h2 className="text-sm font-semibold">{node?.name ?? selected}</h2>
-        <p className="text-[13px] text-muted-foreground">
-          {`${row?.open ?? 0} open, ${row?.late ?? 0} late`}
+    <aside
+      aria-label="Step detail"
+      className="fixed top-0 right-0 bottom-0 z-20 flex w-[468px] flex-col border-l bg-white shadow-[-18px_0_40px_rgba(12,10,9,.12)]"
+    >
+      <div className="flex items-start justify-between gap-3 px-[18px] pt-3.5 pb-2.5">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[.05em] text-muted-foreground">
+            Step detail
+          </div>
+          <h2 className="mt-0.5 text-[18px] font-semibold tracking-tight">
+            {node?.name ?? nodeId}
+          </h2>
+          <p className="text-xs text-muted-foreground">{roleText}</p>
+        </div>
+        <button
+          type="button"
+          aria-label="Close the step detail"
+          onClick={onClose}
+          className="grid size-[30px] place-items-center rounded-md border text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <X aria-hidden className="size-4" />
+        </button>
+      </div>
+      <div className="mx-[18px] grid grid-cols-4 rounded-lg border">
+        {figures.map((f, i) => (
+          <div key={f.label} className={i === 0 ? "px-3 py-[7px]" : "border-l px-3 py-[7px]"}>
+            <span className="block text-[11px] text-muted-foreground">{f.label}</span>
+            <b className={f.bad ? "text-[17px] font-semibold text-[#dc2626]" : "text-[17px] font-semibold"}>
+              {f.value}
+            </b>
+          </div>
+        ))}
+      </div>
+      <div className="mx-[18px] mt-3 rounded-lg border border-[#fde68a] bg-[#fffbeb] px-3.5 py-2.5">
+        <h3 className="mb-1 flex items-center gap-[7px] text-[12.5px] font-semibold text-[#d97706]">
+          <TriangleAlert aria-hidden className="size-3.5" />
+          Why it blocks
+        </h3>
+        <p className="text-[12.5px] leading-normal text-[#3f3f46]">
+          {whyText(sup.cases.filter((c) => c.node_id === nodeId), users)}
         </p>
+        <small className="mt-[5px] block text-[11px] text-muted-foreground">
+          Computed from the case data. No AI writes this text.
+        </small>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <th className="px-4 py-2.5 font-medium">Case</th>
-              <th className="px-4 py-2.5 font-medium">Client</th>
-              <th className="px-4 py-2.5 text-right font-medium">Amount</th>
-              <th className="px-4 py-2.5 font-medium">With</th>
-              <th className="px-4 py-2.5 text-right font-medium">
-                Time on step
-              </th>
-              <th className="px-4 py-2.5 font-medium">Late</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((c) => (
-              <tr key={c.case_id} className="border-b last:border-b-0">
-                <td className="px-4 py-3 font-mono text-[13px]">
-                  {c.reference}
-                </td>
-                <td className="px-4 py-3 text-sm">
-                  {clientOf(def, c.data)}
-                </td>
-                <td className="px-4 py-3 text-right text-sm">
-                  {amountOf(def, c.data)}
-                </td>
-                <td className="px-4 py-3 text-sm">
-                  {c.assignee === "" ? "-" : userNameOf(users, c.assignee)}
-                </td>
-                <td className="px-4 py-3 text-right text-sm">
-                  {`${c.age_hours} h`}
-                </td>
-                <td className="px-4 py-3 text-sm">
-                  {c.late ? (
-                    <span className="text-destructive">Yes</span>
-                  ) : (
-                    "No"
+      <div className={`mx-[18px] mt-3 border-b pb-1.5 text-[11px] text-muted-foreground ${LIST_GRID}`}>
+        <span>Cases at this step, oldest first</span>
+        <div className="relative h-3.5">
+          <span className="absolute top-0 left-0 whitespace-nowrap">0 h</span>
+          {deadline !== null && (
+            <span className="absolute top-0 left-[66.67%] -translate-x-1/2 whitespace-nowrap font-semibold text-foreground">
+              {`Deadline ${deadline} h`}
+            </span>
+          )}
+        </div>
+        <span className="text-right">Time left</span>
+        <span />
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-[18px] pb-2">
+        {stepCases(sup, nodeId).map((c) => {
+          const tone = node === undefined ? "ok" : haloOf(node, [c]).state;
+          const name = c.assignee === "" ? "" : userNameOf(users, c.assignee);
+          return (
+            <div
+              key={c.case_id}
+              data-case={c.case_id}
+              className={`h-[41px] border-b border-[#f4f4f5] last:border-b-0 ${LIST_GRID}`}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono text-[11.5px]">{c.reference}</span>
+                  {c.returned && (
+                    <span className="rounded border border-[#fcd34d] px-1 text-[9.5px] font-semibold leading-[15px] text-[#b45309]">
+                      Returned
+                    </span>
                   )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </div>
+                <span className="block truncate text-[11px] text-muted-foreground">
+                  {`${clientOf(def, c.data)} · ${amountOf(def, c.data)}`}
+                </span>
+              </div>
+              <div className="relative h-2 rounded bg-[#f0f0f1]">
+                <i
+                  className={`absolute inset-y-0 left-0 rounded ${FILL_CLASS[tone]}`}
+                  style={{ width: `${trackWidth(c.age_hours, deadline)}%` }}
+                />
+                {deadline !== null && (
+                  <i className="absolute -inset-y-1 left-[66.67%] w-px bg-[#3f3f46] opacity-70" />
+                )}
+              </div>
+              <span className={`whitespace-nowrap text-right text-xs font-semibold ${LEFT_CLASS[tone]}`}>
+                {leftText(c, deadline)}
+              </span>
+              {name === "" ? (
+                <span
+                  title="No assignee"
+                  className="grid size-6 place-items-center rounded-full border border-dashed border-zinc-300 text-[10px] font-semibold text-zinc-400"
+                >
+                  ?
+                </span>
+              ) : (
+                <span
+                  title={name}
+                  className="grid size-6 place-items-center rounded-full bg-[#e7efed] text-[10px] font-semibold text-[#0f4c45]"
+                >
+                  {initials(name)}
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
-    </div>
+    </aside>
   );
 }
 
@@ -361,6 +532,14 @@ export function SupervisionScreen({
             </div>
             <h2 className="mt-0.5 text-[15px] font-semibold">{block.name}</h2>
             <p className="text-[12.5px] text-[#3f3f46]">{block.text}</p>
+            <button
+              type="button"
+              onClick={() => setSelected(block.nodeId)}
+              className="mt-1.5 inline-flex items-center gap-1 text-[12.5px] font-medium text-[#b91c1c] hover:underline"
+            >
+              Open the step
+              <ChevronRight aria-hidden className="size-3.5" />
+            </button>
           </div>
         )}
         <div className="col-start-2 rounded-lg border bg-[#fafaf9] px-3.5 py-2.5">
@@ -425,53 +604,55 @@ export function SupervisionScreen({
         </div>
       </div>
 
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <StepTable
+      <div className="max-w-[480px] rounded-lg border bg-card">
+        <div className="border-b px-4 py-3">
+          <h2 className="text-sm font-semibold">Load per participant</h2>
+        </div>
+        {supervision.people.length === 0 ? (
+          <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+            No case is assigned.
+          </p>
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <th className="px-4 py-2.5 font-medium">Participant</th>
+                <th className="px-4 py-2.5 text-right font-medium">Open</th>
+                <th className="px-4 py-2.5 text-right font-medium">Late</th>
+              </tr>
+            </thead>
+            <tbody>
+              {supervision.people.map((person) => (
+                <tr key={person.user_id} className="border-b last:border-b-0">
+                  <td className="px-4 py-3 text-sm">
+                    {userNameOf(users, person.user_id)}
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm">
+                    {person.open}
+                  </td>
+                  <td className="px-4 py-3 text-right text-sm">
+                    {person.late > 0 ? (
+                      <span className="text-destructive">{person.late}</span>
+                    ) : (
+                      person.late
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {selected !== null && (
+        <StepPanel
           def={def}
           users={users}
-          supervision={supervision}
-          selected={selected}
+          sup={supervision}
+          nodeId={selected}
+          onClose={() => setSelected(null)}
         />
-        <div className="rounded-lg border bg-card">
-          <div className="border-b px-4 py-3">
-            <h2 className="text-sm font-semibold">Load per participant</h2>
-          </div>
-          {supervision.people.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-              No case is assigned.
-            </p>
-          ) : (
-            <table className="w-full">
-              <thead>
-                <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-2.5 font-medium">Participant</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Open</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Late</th>
-                </tr>
-              </thead>
-              <tbody>
-                {supervision.people.map((person) => (
-                  <tr key={person.user_id} className="border-b last:border-b-0">
-                    <td className="px-4 py-3 text-sm">
-                      {userNameOf(users, person.user_id)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm">
-                      {person.open}
-                    </td>
-                    <td className="px-4 py-3 text-right text-sm">
-                      {person.late > 0 ? (
-                        <span className="text-destructive">{person.late}</span>
-                      ) : (
-                        person.late
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+      )}
     </div>
   );
 }
