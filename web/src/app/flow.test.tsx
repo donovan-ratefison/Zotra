@@ -5,7 +5,8 @@ import { readFileSync } from "node:fs";
 import { renderToString } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 import {
-  caseFlow, CaseFlowCard, leadRows, limitPath, placeBandLabels, rateText, returnsText, spaceLabels,
+  bandTitle, caseFlow, CaseFlowCard, flowLayout, leadRows, limitPath, placeBandLabels, rateText,
+  returnsText, spaceLabels, textWidth,
 } from "./CaseFlow";
 import type { Flow } from "./sup-api";
 import type { ProcessDefinition } from "../studio/types";
@@ -28,6 +29,24 @@ const seedFlow: Flow = {
   ],
   edges: Object.entries(PASSES).map(([edge_id, passes]) => ({ edge_id, passes })),
   returns: 6,
+  today: { people: 0, rules: 0 },
+};
+
+// The demo history of the review server (GET /api/versions/.../flow?days=30).
+const DEMO: Record<string, number> = {
+  e01: 60, e02: 57, e03: 57, e04: 0, e05: 58, e06: 3, e07: 45,
+  e08: 13, e09: 32, e10: 3, e11: 7, e12: 43, e13: 41, e14: 39,
+};
+
+const demoFlow: Flow = {
+  days: 30,
+  closed: 45,
+  ends: [
+    { node_id: "released", cases: 39, avg_lead_hours: 225.9 },
+    { node_id: "refused", cases: 6, avg_lead_hours: 79.6 },
+  ],
+  edges: Object.entries(DEMO).map(([edge_id, passes]) => ({ edge_id, passes })),
+  returns: 7,
   today: { people: 0, rules: 0 },
 };
 
@@ -61,10 +80,10 @@ describe("case flow", () => {
     expect(bands.filter((b) => b.refused).map((b) => b.edgeId)).toEqual(["e06", "e10"]);
     const label = (id: string) => bands.find((b) => b.edgeId === id)!.label;
     expect(label("e01")).toBeNull();
-    expect(label("e03")).toBe("File complete? Yes: 18");
+    expect(label("e03")).toBe("Complete: 18");
     expect(label("e06")).toBe("Unfavorable: 4");
-    expect(label("e07")).toBe("Amount above EUR 100,000? Yes: 6");
-    expect(label("e08")).toBe("Amount above EUR 100,000? No: 6");
+    expect(label("e07")).toBe("Above limit: 6");
+    expect(label("e08")).toBe("Within limit: 6");
     expect(label("e09")).toBe("Approve: 3");
     expect(label("e10")).toBe("Refuse: 1");
     expect(label("e12")).toBeNull();
@@ -113,6 +132,7 @@ describe("case flow", () => {
       "13 cases closed in 30 days. The band width shows the passes on each link.",
       "Application received",
       "Outcome",
+      "Complete: 18",
       "File complete? Yes: 18",
       "Loan released",
       "8 cases, 62%",
@@ -142,13 +162,13 @@ describe("case flow", () => {
   });
 
   test("14.4 row P2: a long label loses the end of its name, not its count", () => {
-    // Room: (100 - 6 - 0) / 6.2 gives 15 characters.
+    // Room: 100 - 3 - 0 gives 97 units.
     const [l] = placeBandLabels(
       [{ id: "a", x: 0, y: 50, text: "Amount above EUR 100,000 or more: 18" }],
       100,
     );
     expect(l!.text).toBe("Amount abo…: 18");
-    expect(l!.text.length).toBeLessThanOrEqual(15);
+    expect(textWidth(l!.text)).toBeLessThanOrEqual(97);
   });
 
   test("14.4 row P3: labels 20 apart stay in place", () => {
@@ -184,29 +204,9 @@ describe("case flow", () => {
     edges: seed.edges.map((e) => (e.id === "e07" ? { ...e, condition: "size(documents) > 1" } : e)),
   };
 
-  test("14.4b row P4: a gateway label keeps its answer and cuts the question", () => {
-    // Room: (99 - 6 - 0) / 6.2 gives 15 characters.
-    const [l] = placeBandLabels(
-      [{ id: "a", x: 0, y: 50, text: "Amount above EUR 100,000? Yes: 6" }],
-      99,
-    );
-    expect(l!.text).toBe("Amount…? Yes: 6");
-    expect(l!.text.startsWith("Amount")).toBe(true);
-    expect(l!.text.endsWith("? Yes: 6")).toBe(true);
-  });
-
   test("14.4b row P5: a text with no question mark keeps the rule of P2", () => {
     const [l] = placeBandLabels([{ id: "a", x: 0, y: 50, text: "Unfavorable decision of the bank: 4" }], 100);
     expect(l!.text).toBe("Unfavorable…: 4");
-  });
-
-  test("14.4b row P6: a gateway answer that does not fit is cut too", () => {
-    // Room: (62 - 6 - 0) / 6.2 gives 9 characters, "…? Yes: 18" has 10.
-    const [l] = placeBandLabels(
-      [{ id: "a", x: 0, y: 50, text: "Amount above EUR 100,000? Yes: 18" }],
-      62,
-    );
-    expect(l!.text).toBe("Amou…: 18");
   });
 
   test("14.4b row S1: the limit path of the seed", () => {
@@ -291,5 +291,201 @@ describe("case flow", () => {
     const html = renderToString(CaseFlowCard({ def: s2, flow: seedFlow }));
     expect(html).not.toContain("Cases that go to");
     expect(html).not.toContain('fill="#2563eb"');
+  });
+
+  // The 14.6 layout: lanes for skipped columns, bar order and band order.
+  type Layout = ReturnType<typeof flowLayout>;
+  const seedLayout = flowLayout(caseFlow(seed, seedFlow));
+  const demoLayout = flowLayout(caseFlow(seed, demoFlow));
+  const column = (l: Layout, c: number) => l.items.filter((i) => i.column === c);
+  const seg = (l: Layout, edgeId: string, from: string) =>
+    l.segments.find((s) => s.edgeId === edgeId && s.from === from)!;
+  const segTo = (l: Layout, edgeId: string, to: string) =>
+    l.segments.find((s) => s.edgeId === edgeId && s.to === to)!;
+
+  test("14.6 row L1: the layout of the demo history", () => {
+    const expected: [string, number][][] = [
+      [["start", 44]],
+      [["entry", 44]],
+      [["analysis", 44]],
+      [["e08@3", 44], ["decision", 143.1], ["e06@3", 432.2]],
+      [["offer", 44], ["e10@4", 333.0], ["e06@4", 372.9]],
+      [["signing", 44], ["e10@5", 321.2], ["e06@5", 361.0]],
+      [["release", 44], ["e10@6", 309.3], ["e06@6", 349.1]],
+      [["released", 44], ["refused", 297.4]],
+    ];
+    expect(demoLayout.K).toBeCloseTo(362 / 61, 4);
+    expect(demoLayout.items.map((i) => i.id)).toEqual(expected.flat().map(([id]) => id));
+    expected.forEach((list, c) => {
+      const got = column(demoLayout, c);
+      list.forEach(([id, y], k) => {
+        expect(got[k]!.id).toBe(id);
+        expect(got[k]!.y).toBeCloseTo(y, 1);
+      });
+    });
+  });
+
+  test("14.6 row L2: a lane never overlaps a bar of its column", () => {
+    for (const l of [seedLayout, demoLayout]) {
+      for (let c = 0; c < 8; c++) {
+        const bars = column(l, c).filter((i) => !i.lane);
+        for (const lane of column(l, c).filter((i) => i.lane)) {
+          const above = lane.y + lane.h <= bars[0]!.y;
+          const below = lane.y >= bars.at(-1)!.y + bars.at(-1)!.h;
+          expect(above || below).toBe(true);
+        }
+      }
+    }
+  });
+
+  test("14.6 row L3: the ports follow the other end, and no two bands cross", () => {
+    for (const l of [seedLayout, demoLayout]) {
+      const item = new Map(l.items.map((i) => [i.id, i]));
+      const mid = (id: string) => item.get(id)!.y + item.get(id)!.h / 2;
+      const after = (a: { edgeId: string }, ma: number, b: { edgeId: string }, mb: number) =>
+        ma < mb || (ma === mb && a.edgeId < b.edgeId);
+      for (const it of l.items) {
+        const outs = l.segments.filter((s) => s.from === it.id).sort((a, b) => a.y0 - b.y0);
+        const ins = l.segments.filter((s) => s.to === it.id).sort((a, b) => a.y1 - b.y1);
+        let t = it.y;
+        outs.forEach((s, k) => {
+          expect(s.y0).toBeCloseTo(t, 6);
+          t += s.h;
+          if (k > 0) expect(after(outs[k - 1]!, mid(outs[k - 1]!.to), s, mid(s.to))).toBe(true);
+        });
+        t = it.y;
+        ins.forEach((s, k) => {
+          expect(s.y1).toBeCloseTo(t, 6);
+          t += s.h;
+          if (k > 0) expect(after(ins[k - 1]!, mid(ins[k - 1]!.from), s, mid(s.from))).toBe(true);
+        });
+      }
+      for (const a of l.segments) {
+        for (const b of l.segments) {
+          if (item.get(a.from)!.column === item.get(b.from)!.column && a.y0 < b.y0) {
+            expect(a.y1).toBeLessThanOrEqual(b.y1);
+          }
+        }
+      }
+    }
+  });
+
+  test("14.6 row L4: the layout of the seed flow", () => {
+    expect(seedLayout.K).toBe(6);
+    expect(["e08", "e07", "e06"].map((e) => seg(seedLayout, e, "analysis").y0)).toEqual([44, 80, 116]);
+    expect(["e10", "e06"].map((e) => segTo(seedLayout, e, "refused").y1)).toEqual([114, 120]);
+    const y = (id: string) => seedLayout.items.find((i) => i.id === id)!.y;
+    expect([y("e08@3"), y("decision")]).toEqual([44, 102]);
+  });
+
+  test("14.6 row L5: the end bars sort by y, not by node order", () => {
+    const nodes = [...seed.nodes];
+    const r = nodes.findIndex((n) => n.id === "refused");
+    nodes.splice(nodes.findIndex((n) => n.id === "released"), 0, ...nodes.splice(r, 1));
+    expect(nodes.findIndex((n) => n.id === "refused")).toBeLessThan(nodes.findIndex((n) => n.id === "released"));
+    const l = flowLayout(caseFlow({ ...seed, nodes }, demoFlow));
+    expect(column(l, 7).map((i) => i.id)).toEqual(["released", "refused"]);
+  });
+
+  test("14.6 row L6: a bar with no incoming band goes last", () => {
+    const flow: Flow = {
+      ...demoFlow,
+      edges: demoFlow.edges.map((e) => (["e06", "e10"].includes(e.edge_id) ? { ...e, passes: 0 } : e)),
+    };
+    const l = flowLayout(caseFlow(seed, flow));
+    expect(l.segments.filter((s) => s.to === "refused")).toEqual([]);
+    expect(column(l, 7).map((i) => i.id)).toEqual(["released", "refused"]);
+    expect(column(l, 7)[1]!.h).toBe(0);
+  });
+
+  test("14.6 row L7: the band paths of the seed card", () => {
+    const html = renderToString(CaseFlowCard({ def: seed, flow: seedFlow }));
+    expect(html).toContain('d="M32,44 C78,44 78,44 124,44 L124,164 C78,164 78,164 32,164 Z"');
+    expect(html).toContain(
+      'd="M240,44 C286,44 286,44 332,44 L344,44 C390,44 390,44 436,44 L436,80 C390,80 390,80 344,80 L332,80 C286,80 286,80 240,80 Z"',
+    );
+  });
+
+  // The 14.6 gateway labels: a short answer, and the full question in the title.
+  const texts = (def: ProcessDefinition, flow: Flow = seedFlow) =>
+    Object.fromEntries(caseFlow(def, flow).bands.map((b) => [b.edgeId, [b.label, b.title]]));
+  const withThreshold = (name: string, e07: string): ProcessDefinition => ({
+    ...seed,
+    nodes: seed.nodes.map((n) => (n.id === "threshold" ? { ...n, name } : n)),
+    edges: seed.edges.map((e) => (e.id === "e07" ? { ...e, condition: e07 } : e)),
+  });
+
+  test("14.6 row B1: the labels and titles of the seed", () => {
+    const t = texts(seed);
+    expect(t.e03).toEqual(["Complete: 18", "File complete? Yes: 18"]);
+    expect(t.e07).toEqual(["Above limit: 6", "Amount above EUR 100,000? Yes: 6"]);
+    expect(t.e08).toEqual(["Within limit: 6", "Amount above EUR 100,000? No: 6"]);
+    expect(t.e06).toEqual(["Unfavorable: 4", "Unfavorable: 4"]);
+    expect(t.e01).toEqual([null, "20"]);
+  });
+
+  test("14.6 row B2: an edge label wins", () => {
+    const def: ProcessDefinition = {
+      ...seed,
+      edges: seed.edges.map((e) => (e.id === "e03" ? { ...e, label: "Full file" } : e)),
+    };
+    expect(texts(def).e03).toEqual(["Full file: 18", "File complete? Full file: 18"]);
+    expect(bandTitle(def, def.edges.find((e) => e.id === "e03")!, 18)).toBe("File complete? Full file: 18");
+  });
+
+  test("14.6 row B3: the last word of the question", () => {
+    const t = texts(withThreshold("Risk high?", "size(documents) > 1"));
+    expect([t.e07![0], t.e08![0]]).toEqual(["High: 6", "Not high: 6"]);
+  });
+
+  test("14.6 row B4: a limit with >=", () => {
+    expect(texts(withThreshold("Amount above EUR 100,000?", "amount >= 100000.0")).e07![0]).toBe("Above limit: 6");
+  });
+
+  test("14.6 row B5: a money condition with < is not a limit", () => {
+    const t = texts(withThreshold("Amount small?", "amount < 100000.0"));
+    expect([t.e07![0], t.e08![0]]).toEqual(["Small: 6", "Not small: 6"]);
+  });
+
+  test("14.6 row B6: a gateway with three branches keeps the condition", () => {
+    const def: ProcessDefinition = {
+      ...seed,
+      edges: [
+        ...seed.edges,
+        { id: "e15", from: "threshold", to: "refused", label: null, decision: null, condition: "amount > 500000.0", is_default: false },
+      ],
+    };
+    const t = texts(def);
+    expect([t.e07![0], t.e08![0]]).toEqual(["amount > 100000.0: 6", "Otherwise: 6"]);
+  });
+
+  test("14.6 row T1: the width estimate", () => {
+    expect(["Above limit: 45", "Within limit: 13", "Complete: 57"].map(textWidth)).toEqual([82, 80, 73]);
+  });
+
+  test("14.6 row P7: a label that fits exactly stays, one unit less cuts it", () => {
+    const at = (gapRight: number) =>
+      placeBandLabels([{ id: "a", x: 0, y: 50, text: "Within limit: 13" }], gapRight)[0]!.text;
+    expect([at(83), at(82)]).toEqual(["Within limit: 13", "Within li…: 13"]);
+  });
+
+  test("14.6 row P8: no room for the name keeps the count", () => {
+    const [l] = placeBandLabels([{ id: "a", x: 0, y: 50, text: "Approve: 12345" }], 40);
+    expect(l!.text).toBe("…: 12345");
+  });
+
+  test("14.6 row R6: the card of the demo history", () => {
+    const html = renderToString(CaseFlowCard({ def: seed, flow: demoFlow }));
+    for (const text of [
+      "Complete: 57",
+      "Above limit: 45",
+      "Within limit: 13",
+      "Unfavorable: 3",
+      "<title>File complete? Yes: 57</title>",
+    ]) {
+      expect(html).toContain(text);
+    }
+    expect(html).not.toMatch(/<text[^>]*>[^<]*…/);
+    expect(html.match(/<path[^>]*opacity="0.42"/g)).toHaveLength(10);
   });
 });

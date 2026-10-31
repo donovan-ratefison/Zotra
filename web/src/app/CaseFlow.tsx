@@ -9,27 +9,58 @@ import type { Flow } from "./sup-api";
 import { decisionLabel } from "./triage";
 
 export interface FlowBar { nodeId: string; name: string; column: number; value: number }
-export interface FlowBand { edgeId: string; from: string; to: string; value: number; refused: boolean; label: string | null }
+export interface FlowBand { edgeId: string; from: string; to: string; value: number; refused: boolean; label: string | null; title: string }
 
-// bandLabel gives the text of one band: the decision, the gateway
-// question with its answer, or the edge text, with the passes. It
-// gives null when the edge has no text.
-export function bandLabel(
+// bandText gives the visible label and the tooltip of one band. A
+// gateway band shows its answer in a short form (the edge label, the
+// limit of a money field, or the last word of the question), and the
+// tooltip keeps the full question.
+function bandText(
   def: ProcessDefinition,
   edge: ProcessEdge,
   value: number,
-): string | null {
+): { label: string | null; title: string } {
   if (edge.decision !== null) {
-    return `${decisionLabel(edge.decision)}: ${value}`;
+    const s = `${decisionLabel(edge.decision)}: ${value}`;
+    return { label: s, title: s };
   }
   const t = diagramEdgeText(edge, def);
   if (t === null) {
-    return null;
+    return { label: null, title: `${value}` };
   }
   const source = def.nodes.find((n) => n.id === edge.from);
-  return source?.type === "gateway"
-    ? `${source.name} ${t}: ${value}`
-    : `${t}: ${value}`;
+  if (source?.type !== "gateway") {
+    return { label: `${t}: ${value}`, title: `${t}: ${value}` };
+  }
+  return { label: `${shortAnswer(def, edge, t, source.name)}: ${value}`, title: `${source.name} ${t}: ${value}` };
+}
+
+function shortAnswer(def: ProcessDefinition, edge: ProcessEdge, t: string, question: string): string {
+  if (edge.label !== null || (t !== "Yes" && t !== "No")) {
+    return t;
+  }
+  const condition = def.edges.find((e) => e.from === edge.from && !e.is_default)?.condition ?? "";
+  const limit = def.fields.some(
+    (f) => f.type === "money" && new RegExp(`^\\s*${f.name}\\s*>=?\\s*[0-9.]+\\s*$`).test(condition),
+  );
+  if (limit) {
+    return t === "Yes" ? "Above limit" : "Within limit";
+  }
+  const word = (question.trim().split(/\s+/).pop() ?? "").replace(/\?$/, "");
+  return t === "Yes"
+    ? word.charAt(0).toUpperCase() + word.slice(1)
+    : `Not ${word.charAt(0).toLowerCase()}${word.slice(1)}`;
+}
+
+// bandLabel gives the visible text of one band, or null when the edge
+// has no text.
+export function bandLabel(def: ProcessDefinition, edge: ProcessEdge, value: number): string | null {
+  return bandText(def, edge, value).label;
+}
+
+// bandTitle gives the tooltip of one band.
+export function bandTitle(def: ProcessDefinition, edge: ProcessEdge, value: number): string {
+  return bandText(def, edge, value).title;
 }
 
 // graph gives the walk of the definition: the back links, the forward
@@ -181,7 +212,7 @@ export function caseFlow(
         to: l.to,
         value: l.value,
         refused: to?.type === "end" && to.end_result === "refused",
-        label: bandLabel(def, l.edge, l.value),
+        ...bandText(def, l.edge, l.value),
       };
     });
   const sum = (list: FlowBand[]) => list.reduce((s, b) => s + b.value, 0);
@@ -208,30 +239,39 @@ export function spaceLabels<T extends { y: number }>(labels: T[], gap: number): 
   return out;
 }
 
+// textWidth estimates the width of a band label (font size 11, weight
+// 500) in viewBox units, from the classes of the Inter widths.
+export function textWidth(s: string): number {
+  let w = 0;
+  for (const ch of s) {
+    w += " !',.:;Iijl|".includes(ch) ? 3
+      : "()/[]frt".includes(ch) ? 4
+      : "mwMW%@…".includes(ch) ? 10
+      : /[A-Z]/.test(ch) ? 8
+      : 7;
+  }
+  return w;
+}
+
 // placeBandLabels places the band labels of one column gap: 14 units
-// apart at least, and each ends 6 units before gapRight (the left
-// edge of the next column of bars). The width is an estimate, 6.2
-// units for each character. A long label loses the end of its name,
-// never its count. A gateway label "<question>? <answer>" loses the
-// end of its question first, and keeps its answer when it can.
+// apart at least, and each ends 3 units before gapRight (the left
+// edge of the next column of bars). A long label loses the end of its
+// name, never its count.
 export function placeBandLabels(
   labels: { id: string; x: number; y: number; text: string }[],
   gapRight: number,
 ): { id: string; x: number; y: number; text: string }[] {
   return spaceLabels(labels, 14).map((l) => {
-    const room = Math.floor((gapRight - 6 - l.x) / 6.2);
-    if (l.text.length <= room) {
+    const room = gapRight - 3 - l.x;
+    if (textWidth(l.text) <= room) {
       return l;
     }
     const cut = l.text.lastIndexOf(": ");
     const count = l.text.slice(cut);
-    const full = l.text.slice(0, cut);
-    const q = full.indexOf("? ");
-    const tail = `…${full.slice(q)}${count}`;
-    if (q >= 0 && tail.length <= room) {
-      return { ...l, text: `${full.slice(0, room - tail.length).trimEnd()}${tail}` };
+    let name = l.text.slice(0, cut);
+    while (name.length > 0 && textWidth(`${name.trimEnd()}…${count}`) > room) {
+      name = name.slice(0, -1);
     }
-    const name = full.slice(0, Math.max(0, room - count.length - 1));
     return { ...l, text: `${name.trimEnd()}…${count}` };
   });
 }
@@ -244,52 +284,130 @@ const GAP = 22;
 const LEFT = 20;
 const RIGHT = 170;
 
+export interface FlowItem { id: string; column: number; lane: boolean; y: number; h: number }
+export interface FlowSegment { edgeId: string; from: string; to: string; y0: number; y1: number; h: number }
+
+const by = (a: number, b: number) => (a < b ? -1 : a > b ? 1 : 0);
+
+// flowLayout places the bars, and one lane item in each column that a
+// band skips, so that no band passes through a bar. The bars of a
+// column sort by the mean y of their sources (one pass from left to
+// right), and the bands at each item sort by the y of the other end,
+// so that two bands of the same gap do not cross.
+export function flowLayout(m: ReturnType<typeof caseFlow>): {
+  K: number;
+  items: FlowItem[];
+  segments: FlowSegment[];
+} {
+  const colOf = new Map(m.bars.map((b) => [b.nodeId, b.column]));
+  const last = m.columns - 1;
+  const all = m.bars.map((b, rank) => ({
+    id: b.nodeId, column: b.column, lane: false, value: b.value, rank, edgeId: "", target: 0,
+  }));
+  const segs: (FlowSegment & { value: number })[] = [];
+  for (const b of m.bands) {
+    const target = colOf.get(b.to)!;
+    let prev = b.from;
+    for (let c = colOf.get(b.from)! + 1; c < target; c++) {
+      const id = `${b.edgeId}@${c}`;
+      all.push({ id, column: c, lane: true, value: b.value, rank: 0, edgeId: b.edgeId, target });
+      segs.push({ edgeId: b.edgeId, from: prev, to: id, y0: 0, y1: 0, h: 0, value: b.value });
+      prev = id;
+    }
+    segs.push({ edgeId: b.edgeId, from: prev, to: b.to, y0: 0, y1: 0, h: 0, value: b.value });
+  }
+  const load = (list: { value: number }[]) => list.reduce((s, x) => s + x.value, 0);
+  const cols = Array.from({ length: m.columns }, (_, c) => all.filter((i) => i.column === c));
+  const K = Math.min(6, ...cols.map((l) => (H - TOP - 10 - GAP * (l.length - 1)) / Math.max(1, load(l))));
+
+  const y = new Map<string, number>();
+  const valueOf = new Map(all.map((i) => [i.id, i.value]));
+  const mid = (id: string) => y.get(id)! + (valueOf.get(id)! * K) / 2;
+  const items: FlowItem[] = [];
+  cols.forEach((list, c) => {
+    let ordered = list;
+    if (c > 0) {
+      const key = new Map(
+        list.map((it) => {
+          const ins = segs.filter((s) => s.to === it.id);
+          const w = load(ins);
+          return [it.id, w === 0 ? Infinity : ins.reduce((s, x) => s + mid(x.from) * x.value, 0) / w];
+        }),
+      );
+      const lanes = list
+        .filter((i) => i.lane)
+        .sort((a, b) => by(key.get(a.id)!, key.get(b.id)!) || a.target - b.target || a.edgeId.localeCompare(b.edgeId));
+      const bars = list
+        .filter((i) => !i.lane)
+        .sort((a, b) => by(key.get(a.id)!, key.get(b.id)!) || a.rank - b.rank);
+      ordered = [...lanes.filter((l) => l.target !== last), ...bars, ...lanes.filter((l) => l.target === last)];
+    }
+    let t = TOP;
+    for (const it of ordered) {
+      y.set(it.id, t);
+      items.push({ id: it.id, column: c, lane: it.lane, y: t, h: it.value * K });
+      t += it.value * K + GAP;
+    }
+  });
+
+  for (const it of items) {
+    let t = it.y;
+    for (const s of segs.filter((x) => x.from === it.id).sort((a, b) => by(mid(a.to), mid(b.to)) || a.edgeId.localeCompare(b.edgeId))) {
+      s.y0 = t;
+      t += s.value * K;
+    }
+    t = it.y;
+    for (const s of segs.filter((x) => x.to === it.id).sort((a, b) => by(mid(a.from), mid(b.from)) || a.edgeId.localeCompare(b.edgeId))) {
+      s.y1 = t;
+      t += s.value * K;
+    }
+  }
+  return { K, items, segments: segs.map(({ value, ...s }) => ({ ...s, h: value * K })) };
+}
+
+// bandPath gives the closed path of one band through its segments:
+// along the top edge from left to right, then back along the bottom.
+function bandPath(s: { y0: number; y1: number; h: number; xa: number; xb: number; mx: number }[]): string {
+  const top = s.map((p, i) => `${i === 0 ? "M" : "L"}${p.xa},${p.y0} C${p.mx},${p.y0} ${p.mx},${p.y1} ${p.xb},${p.y1}`);
+  const bottom = s.map(
+    (p) => `L${p.xb},${p.y1 + p.h} C${p.mx},${p.y1 + p.h} ${p.mx},${p.y0 + p.h} ${p.xa},${p.y0 + p.h}`,
+  );
+  return `${top.join(" ")} ${bottom.reverse().join(" ")} Z`;
+}
+
 const END_FILL: Record<string, string> = { approved: "#0f766e", refused: "#b91c1c" };
 
 // CaseFlowCard is the card of the "Case flow" tab: the head and the
 // flow diagram, and the side column that explains the flow.
 export function CaseFlowCard({ def, flow }: { def: ProcessDefinition; flow: Flow }) {
-  const { columns, bars, bands } = caseFlow(def, flow);
+  const m = caseFlow(def, flow);
+  const { columns, bars, bands } = m;
+  const { items, segments } = flowLayout(m);
+  const item = new Map(items.map((i) => [i.id, i]));
   const limit = limitPath(def, flow);
   const bandFill = (b: FlowBand) =>
     b.refused ? "#ef4444" : limit && (b.from === limit.targetId || b.to === limit.targetId) ? "#2563eb" : "#0f766e";
   const step = (W - LEFT - RIGHT - BW) / Math.max(1, columns - 1);
   const X = (c: number) => LEFT + c * step;
   const cols = Array.from({ length: columns }, (_, c) => bars.filter((b) => b.column === c));
-  const maxBars = Math.max(...cols.map((list) => list.length));
-  const maxSum = Math.max(...cols.map((list) => list.reduce((s, b) => s + b.value, 0)));
-  const K = maxSum === 0 ? 6 : Math.min(6, (H - TOP - 10 - GAP * (maxBars - 1)) / maxSum);
-
-  const barY = new Map<string, number>();
-  for (const list of cols) {
-    let y = TOP;
-    for (const b of list) {
-      barY.set(b.nodeId, y);
-      y += b.value * K + GAP;
-    }
-  }
-  // The bands out of a bar, and into a bar, stack from the bar top.
-  const outY = new Map(barY);
-  const inY = new Map(barY);
   const paths = bands.map((b) => {
-    const y0 = outY.get(b.from)!;
-    const y1 = inY.get(b.to)!;
-    const h = b.value * K;
-    outY.set(b.from, y0 + h);
-    inY.set(b.to, y1 + h);
-    const col = bars.find((r) => r.nodeId === b.from)!.column;
-    const xa = X(col) + BW;
-    const xb = X(bars.find((r) => r.nodeId === b.to)!.column);
-    return { b, col, y0, y1, h, xa, xb, mx: (xa + xb) / 2 };
+    const s = segments
+      .filter((x) => x.edgeId === b.edgeId)
+      .map((x) => {
+        const xa = X(item.get(x.from)!.column) + BW;
+        const xb = X(item.get(x.to)!.column);
+        return { ...x, xa, xb, mx: (xa + xb) / 2 };
+      });
+    return { b, first: s[0]!, col: item.get(s[0]!.from)!.column, d: bandPath(s) };
   });
   const last = columns - 1;
   // One call for each column gap: the labels of the bands that leave
-  // the bars of column c.
+  // column c.
   const labels = Array.from({ length: columns }, (_, c) =>
     placeBandLabels(
       paths
         .filter((p) => p.b.label !== null && p.col === c)
-        .map((p) => ({ id: p.b.edgeId, x: p.xa + 6, y: p.y0 + p.h / 2 + 4, text: p.b.label! })),
+        .map(({ b, first: f }) => ({ id: b.edgeId, x: f.xa + 4, y: f.y0 + f.h / 2 + 4, text: b.label! })),
       X(c + 1),
     ),
   ).flat();
@@ -325,23 +443,18 @@ export function CaseFlowCard({ def, flow }: { def: ProcessDefinition; flow: Flow
                   </div>
                 </foreignObject>
               ))}
-              {paths.map(({ b, y0, y1, h, xa, xb, mx }) => (
-                <path
-                  key={b.edgeId}
-                  d={`M${xa},${y0} C${mx},${y0} ${mx},${y1} ${xb},${y1} L${xb},${y1 + h} C${mx},${y1 + h} ${mx},${y0 + h} ${xa},${y0 + h} Z`}
-                  fill={bandFill(b)}
-                  opacity={0.42}
-                >
-                  <title>{b.label ?? `${b.value}`}</title>
+              {paths.map(({ b, d }) => (
+                <path key={b.edgeId} d={d} fill={bandFill(b)} opacity={0.42}>
+                  <title>{b.title}</title>
                 </path>
               ))}
               {bars.map((b) => (
                 <rect
                   key={b.nodeId}
                   x={X(b.column)}
-                  y={barY.get(b.nodeId)}
+                  y={item.get(b.nodeId)!.y}
                   width={BW}
-                  height={Math.max(2, b.value * K)}
+                  height={Math.max(2, item.get(b.nodeId)!.h)}
                   rx={2}
                   fill="#71717a"
                 />
@@ -366,7 +479,7 @@ export function CaseFlowCard({ def, flow }: { def: ProcessDefinition; flow: Flow
               {spaceLabels(
                 bars
                   .filter((b) => endOf(b.nodeId)?.type === "end")
-                  .map((b) => ({ b, y: barY.get(b.nodeId)! + Math.max(2, b.value * K) / 2 - 6 })),
+                  .map((b) => ({ b, y: item.get(b.nodeId)!.y + Math.max(2, item.get(b.nodeId)!.h) / 2 - 6 })),
                 30,
               ).map(({ b, y }) => {
                 const x = X(last) + BW + 10;
