@@ -16,17 +16,36 @@ export interface Paragraph {
   text: string;
 }
 
-// One text item of a PDF page, with its position in points.
+// One text item of a PDF page, with its position and width in points.
 export interface PdfItem {
   str: string;
   x: number;
   y: number;
+  width: number;
 }
 
-// One line of text: the y of its first item, and its text.
+// pdfItemsOf gives one PdfItem for each pdf.js content item, at the
+// same index. A marked content item has no text: it becomes an empty
+// item.
+export function pdfItemsOf(
+  items: ReadonlyArray<
+    { str: string; transform: number[]; width: number } | { type: string }
+  >,
+): PdfItem[] {
+  return items.map((it) =>
+    "str" in it
+      ? { str: it.str, x: it.transform[4], y: it.transform[5], width: it.width }
+      : { str: "", x: 0, y: 0, width: 0 },
+  );
+}
+
+// One line of text: the y of its first item, its text, the right edge
+// of its last item, and the indexes of its items.
 interface TextLine {
   y: number;
   text: string;
+  end: number;
+  members: number[];
 }
 
 // paragraphsOfItems turns the items of one page into paragraphs:
@@ -37,15 +56,38 @@ export function paragraphsOfItems(
   page: number,
   items: readonly PdfItem[],
 ): Paragraph[] {
-  const kept = items.filter((it) => it.str.trim() !== "");
-  const sorted = [...kept].sort((a, b) => b.y - a.y || a.x - b.x);
+  return cut(page, items).paragraphs;
+}
+
+// paragraphIdsOfItems gives the paragraph id of each item, at its
+// index, with the same cut as paragraphsOfItems. A blank item gets null.
+export function paragraphIdsOfItems(
+  page: number,
+  items: readonly PdfItem[],
+): (string | null)[] {
+  return cut(page, items).ids;
+}
+
+function cut(
+  page: number,
+  items: readonly PdfItem[],
+): { paragraphs: Paragraph[]; ids: (string | null)[] } {
+  const ids: (string | null)[] = items.map(() => null);
+  const kept = items
+    .map((it, i) => ({ it, i }))
+    .filter(({ it }) => it.str.trim() !== "");
+  const sorted = [...kept].sort((a, b) => b.it.y - a.it.y || a.it.x - b.it.x);
   const lines: TextLine[] = [];
-  for (const it of sorted) {
+  for (const { it, i } of sorted) {
     const line = lines[lines.length - 1];
     if (line && Math.abs(it.y - line.y) <= 2) {
-      line.text = `${line.text} ${it.str}`.trim();
+      // pdf.js splits a word at a ligature ("o", "ff", "icer"): the
+      // pieces touch, so they join with no space.
+      line.text += (it.x - line.end > 1 ? " " : "") + it.str;
+      line.end = it.x + it.width;
+      line.members.push(i);
     } else {
-      lines.push({ y: it.y, text: it.str.trim() });
+      lines.push({ y: it.y, text: it.str, end: it.x + it.width, members: [i] });
     }
   }
   // The gaps between consecutive lines decide the paragraph cuts.
@@ -63,14 +105,18 @@ export function paragraphsOfItems(
   const paragraphs: Paragraph[] = [];
   let index = 0;
   for (let k = 0; k < lines.length; k++) {
+    const text = lines[k].text.replace(/\s+/g, " ").trim();
     if (k === 0 || gaps[k - 1] > threshold) {
       index++;
-      paragraphs.push({ id: `p${page}-${index}`, text: lines[k].text });
+      paragraphs.push({ id: `p${page}-${index}`, text });
     } else {
-      paragraphs[paragraphs.length - 1].text += ` ${lines[k].text}`;
+      paragraphs[paragraphs.length - 1].text += ` ${text}`;
+    }
+    for (const i of lines[k].members) {
+      ids[i] = `p${page}-${index}`;
     }
   }
-  return paragraphs;
+  return { paragraphs, ids };
 }
 
 // extractParagraphs reads one PDF and returns the page count and the
@@ -87,13 +133,7 @@ export async function extractParagraphs(data: ArrayBuffer): Promise<{
   for (let page = 1; page <= doc.numPages; page++) {
     const pdfPage = await doc.getPage(page);
     const content = await pdfPage.getTextContent();
-    const items: PdfItem[] = [];
-    for (const it of content.items) {
-      if ("str" in it) {
-        items.push({ str: it.str, x: it.transform[4], y: it.transform[5] });
-      }
-    }
-    paragraphs.push(...paragraphsOfItems(page, items));
+    paragraphs.push(...paragraphsOfItems(page, pdfItemsOf(content.items)));
   }
   return { pages: doc.numPages, paragraphs };
 }

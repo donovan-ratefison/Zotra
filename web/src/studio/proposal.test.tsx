@@ -399,18 +399,17 @@ describe("citation chips", () => {
 });
 
 describe("isHighlighted", () => {
-  test("17: a paragraph text matches its own item string", () => {
-    expect(
-      isHighlighted("The advisor collects the file.", [
-        { id: "p1-1", text: "The advisor collects the file." },
-      ]),
-    ).toBe(true);
+  const hl = [{ id: "p1-1", text: "The advisor collects the file." }];
+
+  test("17: an item id equal to a cited paragraph id matches", () => {
+    expect(isHighlighted("p1-1", hl)).toBe(true);
   });
 
-  test("18: another text and a blank item give no match", () => {
-    const highlight = [{ id: "p1-1", text: "The advisor collects the file." }];
-    expect(isHighlighted("The director decides.", highlight)).toBe(false);
-    expect(isHighlighted("   ", highlight)).toBe(false);
+  test("18: another id, no id and no citation give no match", () => {
+    expect(isHighlighted("p1-2", hl)).toBe(false);
+    expect(isHighlighted(null, hl)).toBe(false);
+    expect(isHighlighted(undefined, hl)).toBe(false);
+    expect(isHighlighted("p1-1", [])).toBe(false);
   });
 });
 

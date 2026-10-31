@@ -6,13 +6,24 @@
 import { useEffect, useState } from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+// The text layer style puts the transparent text over the page canvas,
+// so a highlight mark covers its words on the page.
+import "react-pdf/dist/Page/TextLayer.css";
 import { Button } from "@/ui/button";
-import type { Paragraph, PolicyStatus } from "./policy";
+import {
+  paragraphIdsOfItems,
+  pdfItemsOf,
+  type Paragraph,
+  type PolicyStatus,
+} from "./policy";
 
-export function isHighlighted(str: string, highlight: Paragraph[]): boolean {
-  return (
-    highlight.some((p) => p.text.includes(str.trim())) && str.trim() !== ""
-  );
+// isHighlighted is true when the item has a paragraph id and one
+// paragraph of highlight has this id.
+export function isHighlighted(
+  id: string | null | undefined,
+  highlight: Paragraph[],
+): boolean {
+  return typeof id === "string" && highlight.some((p) => p.id === id);
 }
 
 function escapeHtml(s: string): string {
@@ -41,6 +52,14 @@ export function PolicyPanel({
   // shows the document view again with no reset effect.
   const [failedFile, setFailedFile] = useState<File | null>(null);
   const [pageCount, setPageCount] = useState(0);
+  // The paragraph id of each text item, by page number. The ids of
+  // another file count as none, so a new file marks nothing until its
+  // text is read.
+  const [itemIds, setItemIds] = useState<{
+    file: File | null;
+    pages: Record<number, (string | null)[]>;
+  }>({ file: null, pages: {} });
+  const idPages = itemIds.file === file ? itemIds.pages : {};
 
   // No file, no module load. The boolean dependency keeps a new file
   // object from re-running the import.
@@ -126,8 +145,18 @@ export function PolicyPanel({
                 pageNumber={i + 1}
                 width={520}
                 renderTextLayer
-                customTextRenderer={({ str }) =>
-                  isHighlighted(str, highlight)
+                onGetTextSuccess={(content) => {
+                  const ids = paragraphIdsOfItems(i + 1, pdfItemsOf(content.items));
+                  setItemIds((prev) => ({
+                    file,
+                    pages: {
+                      ...(prev.file === file ? prev.pages : {}),
+                      [i + 1]: ids,
+                    },
+                  }));
+                }}
+                customTextRenderer={({ str, pageNumber, itemIndex }) =>
+                  isHighlighted(idPages[pageNumber]?.[itemIndex], highlight)
                     ? `<mark class="rounded-sm bg-yellow-200 px-0.5">${escapeHtml(str)}</mark>`
                     : escapeHtml(str)
                 }

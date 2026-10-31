@@ -25,11 +25,14 @@ import {
   elapsedText,
   isAbort,
 } from "./ImportDialog";
-import { PolicyPanel } from "./PolicyPanel";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import { isHighlighted, PolicyPanel } from "./PolicyPanel";
 import {
   extractParagraphs,
   loadStoredPolicy,
+  paragraphIdsOfItems,
   paragraphsOfItems,
+  pdfItemsOf,
   policyErrorText,
   policySource,
   type PdfItem,
@@ -93,8 +96,10 @@ const miniDefinition: ProcessDefinition = {
 };
 
 // item builds one text item at a position.
-function item(str: string, x: number, y: number): PdfItem {
-  return { str, x, y };
+// The default width 0 keeps a gap over 1 between the items of rows 16
+// to 21, so they join with a space.
+function item(str: string, x: number, y: number, width = 0): PdfItem {
+  return { str, x, y, width };
 }
 
 // The fetch stubs need only ok, status and json, the surface that the
@@ -165,6 +170,73 @@ describe("paragraph rules", () => {
 
   test("21: an item of spaces only gives no paragraph", () => {
     expect(paragraphsOfItems(1, [item("   ", 72, 720)])).toEqual([]);
+  });
+});
+
+describe("split ligatures", () => {
+  test("P1: the pieces of a word at a ligature join", () => {
+    const rows = paragraphsOfItems(1, [
+      item("head o", 56.25, 648.63, 217.6),
+      item("ff", 273.85, 648.63, 7.81),
+      item("ice grants.", 281.66, 648.63, 60),
+    ]);
+    expect(rows).toEqual([{ id: "p1-1", text: "head office grants." }]);
+  });
+
+  test("P2: a space item keeps the word space", () => {
+    const rows = paragraphsOfItems(1, [
+      item("This policy", 56.25, 679.38, 60.12),
+      item(" ", 116.37, 679.38, 4.66),
+      item("fi", 119.86, 679.38, 7.33),
+      item("xes the rules.", 127.19, 679.38, 80),
+    ]);
+    expect(rows).toEqual([{ id: "p1-1", text: "This policy fixes the rules." }]);
+  });
+
+  test("P3: a gap of 1 joins, a gap over 1 gives a space", () => {
+    expect(
+      paragraphsOfItems(1, [item("A", 0, 720, 10), item("B", 11, 720, 5)])[0].text,
+    ).toBe("AB");
+    expect(
+      paragraphsOfItems(1, [item("A", 0, 720, 10), item("B", 11.5, 720, 5)])[0].text,
+    ).toBe("A B");
+  });
+
+  test("P4: each item gets the id of its paragraph, a blank item null", () => {
+    const ids = paragraphIdsOfItems(1, [
+      item("A.", 72, 720, 10),
+      item(" ", 90, 720, 4),
+      item("B.", 72, 706, 10),
+      item("C.", 72, 670, 10),
+    ]);
+    expect(ids).toEqual(["p1-1", null, "p1-1", "p1-2"]);
+  });
+
+  test("P5: pdfItemsOf keeps the index of a marked content item", () => {
+    expect(
+      pdfItemsOf([
+        { str: "a", transform: [1, 0, 0, 1, 5, 6], width: 3 },
+        { type: "beginMarkedContent" },
+      ]),
+    ).toEqual([
+      { str: "a", x: 5, y: 6, width: 3 },
+      { str: "", x: 0, y: 0, width: 0 },
+    ]);
+  });
+
+  test("P7 and P8: the example page 1 marks only the items of the cited paragraph", async () => {
+    const bytes = readFileSync(
+      new URL("../../../examples/home-loan/policy.pdf", import.meta.url),
+    );
+    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(bytes) }).promise;
+    const content = await (await doc.getPage(1)).getTextContent();
+    const ids = paragraphIdsOfItems(1, pdfItemsOf(content.items));
+    expect(ids[12]).toBe("p1-3");
+    expect(ids[39]).toBe("p1-4");
+    expect(ids[7]).toBeNull();
+    const hl = [{ id: "p1-3", text: "x" }];
+    expect(isHighlighted(ids[12], hl)).toBe(true);
+    expect(isHighlighted(ids[39], hl)).toBe(false);
   });
 });
 
@@ -493,6 +565,14 @@ describe("stored policy api", () => {
       id: "p1-1",
       text: "Banque Ravina, Credit Policy",
     });
+    // P6: the ligature pieces join, the paragraph count stays.
+    expect(result?.paragraphs[2]).toEqual({
+      id: "p1-3",
+      text: "1. Purpose and scope This policy fixes the rules for the payment of a home loan. The bank pays each home loan in one payment to the notary of the buyer. The policy applies to each home loan of 50,000 EUR or more that the head office or a branch grants. It runs from the signature of the loan agreement to the payment of the funds to the notary.",
+    });
+    for (const p of result?.paragraphs ?? []) {
+      expect(p.text).not.toMatch(/\b(fi|ff|fl) | (fi|ff|fl)\b/);
+    }
   });
 
   test("B9: loadStoredPolicy on a 404 gives null", async () => {
