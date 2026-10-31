@@ -68,6 +68,64 @@ export async function fetchSupervision(
   throw await apiError(res);
 }
 
+// mergeSupervision merges the answers of several versions into one.
+// The counts add up per step and per person, in first-seen order. The
+// median of a step is the lower median of the merged case ages, the
+// same rule as the server.
+export function mergeSupervision(answers: Supervision[]): Supervision {
+  const nodes = new Map<string, SupNode>();
+  const people = new Map<string, SupPerson>();
+  const merged: Supervision = {
+    version_id: answers.at(-1)?.version_id ?? "",
+    total_open: 0,
+    total_late: 0,
+    nodes: [],
+    people: [],
+    cases: [],
+  };
+  for (const a of answers) {
+    merged.total_open += a.total_open;
+    merged.total_late += a.total_late;
+    merged.cases.push(...a.cases);
+    for (const n of a.nodes) {
+      const row = nodes.get(n.node_id);
+      if (row) {
+        row.open += n.open;
+        row.late += n.late;
+      } else {
+        nodes.set(n.node_id, { ...n });
+      }
+    }
+    for (const p of a.people) {
+      const row = people.get(p.user_id);
+      if (row) {
+        row.open += p.open;
+        row.late += p.late;
+      } else {
+        people.set(p.user_id, { ...p });
+      }
+    }
+  }
+  for (const row of nodes.values()) {
+    const ages = merged.cases
+      .filter((c) => c.node_id === row.node_id)
+      .map((c) => c.age_hours)
+      .sort((x, y) => x - y);
+    row.median_hours = ages.length === 0 ? 0 : ages[Math.floor((ages.length - 1) / 2)]!;
+  }
+  merged.nodes = [...nodes.values()];
+  merged.people = [...people.values()];
+  return merged;
+}
+
+// fetchSupervisionAll reads the supervision of each version and
+// merges the answers. One failed read rejects with its ApiError.
+export async function fetchSupervisionAll(
+  versionIds: string[],
+): Promise<Supervision> {
+  return mergeSupervision(await Promise.all(versionIds.map(fetchSupervision)));
+}
+
 export interface AuditEvent {
   case_id: string;
   seq: number;

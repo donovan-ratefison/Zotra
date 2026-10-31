@@ -10,7 +10,13 @@ import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApiError } from "../studio/api";
-import { fetchSupervision, fetchAudit, fetchAuditVerify } from "./sup-api";
+import {
+  fetchSupervision,
+  fetchSupervisionAll,
+  fetchAudit,
+  fetchAuditVerify,
+  mergeSupervision,
+} from "./sup-api";
 import type { AuditEvent, AuditVerify, Supervision } from "./sup-api";
 import { heatColor, SupervisionScreen } from "./SupervisionScreen";
 import { AuditScreen } from "./AuditScreen";
@@ -231,7 +237,6 @@ function renderSupervision(
   return renderToString(
     createElement(SupervisionScreen, {
       def: defFixture,
-      version: versionRow(1, "published"),
       users: usersFixture,
       supervision: sup,
       selectedNodeId,
@@ -275,7 +280,7 @@ describe("supervision screen", () => {
   test("6.3 row W2: the head, the tiles, the flow and the load card render", () => {
     const html = renderSupervision(supAnswer);
     expect(html).toContain("Supervision");
-    expect(html).toContain("Read only view of the open cases of v1.");
+    expect(html).toContain("Read only view of the open cases of every published version.");
     expect(html).toContain("Open cases");
     // The tile value, as one whole span text (the Open cases tile; the
     // class names the tile value span, the chips carry their own).
@@ -500,5 +505,137 @@ describe("view search", () => {
 
   test("fb-018 row F4: no user yet gives an empty user", () => {
     expect(viewSearch("", "inbox")).toBe("?user=");
+  });
+});
+
+// The fixtures of lot pol-2: two answers of two published versions.
+// Node rows are open, late, median.
+const mc1 = {
+  case_id: "c1",
+  reference: "CASE-2026-0001",
+  node_id: "entry",
+  assignee: "u-advisor",
+  age_hours: 30,
+  late: true,
+  data: {},
+};
+const mc2 = { ...mc1, case_id: "c2", reference: "CASE-2026-0002", assignee: "", age_hours: 10, late: false };
+const mc3 = { ...mc1, case_id: "c3", reference: "CASE-2026-0003", age_hours: 5, late: false };
+
+const answerA: Supervision = {
+  version_id: "v1",
+  total_open: 2,
+  total_late: 1,
+  nodes: [
+    { node_id: "entry", open: 2, late: 1, median_hours: 10 },
+    { node_id: "review", open: 0, late: 0, median_hours: 0 },
+  ],
+  people: [{ user_id: "u-advisor", open: 1, late: 1 }],
+  cases: [mc1, mc2],
+};
+
+const answerB: Supervision = {
+  version_id: "v2",
+  total_open: 1,
+  total_late: 0,
+  nodes: [
+    { node_id: "entry", open: 1, late: 0, median_hours: 5 },
+    { node_id: "review", open: 0, late: 0, median_hours: 0 },
+    { node_id: "released", open: 0, late: 0, median_hours: 0 },
+  ],
+  people: [{ user_id: "u-advisor", open: 1, late: 0 }],
+  cases: [mc3],
+};
+
+const mergedAB: Supervision = {
+  version_id: "v2",
+  total_open: 3,
+  total_late: 1,
+  nodes: [
+    { node_id: "entry", open: 3, late: 1, median_hours: 10 },
+    { node_id: "review", open: 0, late: 0, median_hours: 0 },
+    { node_id: "released", open: 0, late: 0, median_hours: 0 },
+  ],
+  people: [{ user_id: "u-advisor", open: 2, late: 1 }],
+  cases: [mc1, mc2, mc3],
+};
+
+// stubFetchByUrl answers each URL with its own status and body, and
+// records the call.
+function stubFetchByUrl(answers: Record<string, [number, unknown]>) {
+  vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
+    seen.push({ url, init });
+    const [status, body] = answers[url]!;
+    return Promise.resolve({ ok: status < 400, status, json: async () => body });
+  });
+}
+
+describe("supervision of every published version", () => {
+  test("pol-2 row S1: one answer merges to itself", () => {
+    expect(mergeSupervision([answerA])).toEqual(answerA);
+  });
+
+  test("pol-2 row S2: two answers add up, the median is the lower one", () => {
+    expect(mergeSupervision([answerA, answerB])).toEqual(mergedAB);
+  });
+
+  test("pol-2 row S3: no answer gives an empty supervision", () => {
+    expect(mergeSupervision([])).toEqual({
+      version_id: "",
+      total_open: 0,
+      total_late: 0,
+      nodes: [],
+      people: [],
+      cases: [],
+    });
+  });
+
+  test("pol-2 row S4: fetchSupervisionAll reads each version and merges", async () => {
+    stubFetchByUrl({
+      "/api/versions/v1/supervision": [200, answerA],
+      "/api/versions/v2/supervision": [200, answerB],
+    });
+    await expect(fetchSupervisionAll(["v1", "v2"])).resolves.toEqual(mergedAB);
+    expect(seen.map((s) => s.url)).toEqual([
+      "/api/versions/v1/supervision",
+      "/api/versions/v2/supervision",
+    ]);
+  });
+
+  test("pol-2 row S5: one failed read rejects with its ApiError", async () => {
+    stubFetchByUrl({
+      "/api/versions/v1/supervision": [200, answerA],
+      "/api/versions/v2/supervision": [
+        404,
+        { error: { code: "not_found", message: "version not found" } },
+      ],
+    });
+    const err = await fetchSupervisionAll(["v1", "v2"]).then(
+      () => null,
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.code).toBe("not_found");
+  });
+
+  test("pol-2 row S6: the shell counts the cases of both published versions", () => {
+    vi.stubGlobal("location", {
+      pathname: "/app",
+      search: "?user=u-advisor&view=supervision",
+    });
+    const client = newClient();
+    seedShell(client);
+    client.setQueryData(["versions", "p1"], [
+      versionRow(1, "published"),
+      versionRow(2, "published"),
+    ]);
+    client.setQueryData(["version", "v2"], {
+      ...versionRow(2, "published"),
+      definition: defFixture,
+    });
+    client.setQueryData(["supervision", "v1,v2"], mergedAB);
+    const html = renderApp(client);
+    expect(html).toContain("Open cases");
+    expect(html).toContain('class="text-2xl font-semibold">3</span>');
   });
 });

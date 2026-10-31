@@ -15,7 +15,7 @@ import {
 } from "../studio/api";
 import { listUsers } from "../studio/case-api";
 import { fetchInbox } from "./app-api";
-import { fetchAudit, fetchAuditVerify, fetchSupervision, type AuditVerify } from "./sup-api";
+import { fetchAudit, fetchAuditVerify, fetchSupervisionAll, type AuditVerify } from "./sup-api";
 import { AuditScreen } from "./AuditScreen";
 import { CaseScreen } from "./CaseScreen";
 import { InboxScreen } from "./InboxScreen";
@@ -116,6 +116,15 @@ function publishedVersion(
   return published.reduce((best, row) =>
     row.number > best.number ? row : best,
   );
+}
+
+// publishedIds gives the ids of the published rows, by number
+// ascending.
+function publishedIds(rows: VersionSummary[] | undefined): string[] {
+  return (rows ?? [])
+    .filter((row) => row.status === "published")
+    .sort((a, b) => a.number - b.number)
+    .map((row) => row.id);
 }
 
 // roleNamesOf joins the role names of the ids; an unknown id stays
@@ -223,8 +232,8 @@ export function AppShell() {
   // The two supervisor queries, gated on the view: the inbox rows run
   // no new fetch. The verify state holds the last chain check.
   const supervisionQuery = useQuery({
-    queryKey: ["supervision", versionQuery.data?.id],
-    queryFn: () => fetchSupervision(versionQuery.data!.id),
+    queryKey: ["supervision", publishedIds(versionsQuery.data).join(",")],
+    queryFn: () => fetchSupervisionAll(publishedIds(versionsQuery.data)),
     enabled: view === "supervision" && versionQuery.data !== undefined,
   });
   const auditQuery = useQuery({
@@ -396,7 +405,6 @@ export function AppShell() {
       main = (
         <SupervisionScreen
           def={def}
-          version={versionRow}
           users={users}
           supervision={supervisionQuery.data}
         />

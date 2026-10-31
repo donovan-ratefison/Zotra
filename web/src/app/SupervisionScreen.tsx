@@ -1,4 +1,4 @@
-// The supervision screen: the open cases of the published version per
+// The supervision screen: the open cases of the published versions per
 // step, with the counts, the heat per step and the load per
 // participant. The view is read only. AppShell owns the supervision
 // answer and passes it down with the users list.
@@ -7,11 +7,7 @@ import { useState } from "react";
 import { moneyText, pickField } from "./InboxScreen";
 import type { SupCase, Supervision } from "./sup-api";
 import type { UserDTO } from "../studio/case-api";
-import type {
-  ProcessDefinition,
-  ProcessNode,
-  VersionSummary,
-} from "../studio/types";
+import type { ProcessDefinition, ProcessNode } from "../studio/types";
 
 // heatColor gives the heat color of one step: the ratio of the median
 // time on the step to its deadline. A step with no deadline stays
@@ -182,13 +178,11 @@ function StepTable({ def, users, supervision, selected }: {
 
 export function SupervisionScreen({
   def,
-  version,
   users,
   supervision,
   selectedNodeId,
 }: {
   def: ProcessDefinition;
-  version: VersionSummary;
   users: UserDTO[];
   supervision: Supervision;
   selectedNodeId?: string | null;
@@ -206,7 +200,7 @@ export function SupervisionScreen({
           Supervision
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {`Read only view of the open cases of v${version.number}.`}
+          Read only view of the open cases of every published version.
         </p>
       </div>
 
