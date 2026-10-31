@@ -44,12 +44,6 @@ const GenerateTestsRepair = `Your previous answer failed. Errors:
 Answer again with one JSON object that matches the schema and fixes
 every error.`
 
-// SamZonesPrompt is the instruction of the zone detection.
-const SamZonesPrompt = `Find the zones of this document scan. Answer
-with one JSON object: {"zones":[{"label":"signature|stamp|id","box":
-{"x":0,"y":0,"width":0,"height":0},"mask":[]}]} in image pixels. Use
-one zone per area you find. The mask field can stay empty.`
-
 // ExplainCheckSystem is the system prompt of the check explanation.
 const ExplainCheckSystem = `You explain a failed check of a bank credit process.
 You receive the check (its CEL expression and its message), the data of the case, and the plain values the expression used.

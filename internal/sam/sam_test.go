@@ -34,7 +34,7 @@ func envelope(parts ...string) []byte {
 // wantZoneError asserts the exact error text of one refused answer.
 func wantZoneError(t *testing.T, body []byte, want string) {
 	t.Helper()
-	_, err := ParseZones(body)
+	_, err := ParseZones(body, "id")
 	if err == nil {
 		t.Fatal("ParseZones gave no error")
 	}
@@ -43,25 +43,40 @@ func wantZoneError(t *testing.T, body []byte, want string) {
 	}
 }
 
-// 1.
-func TestOneZoneWithMask(t *testing.T) {
-	body := envelope(`{"zones":[{"label":"signature","box":{"x":10,"y":20,` +
-		`"width":30,"height":40},"mask":[[1,2],[3,4]]}]}`)
-	zones, err := ParseZones(body)
+// wantZones asserts the zones of one accepted answer.
+func wantZones(t *testing.T, body []byte, label string, want ...Zone) {
+	t.Helper()
+	zones, err := ParseZones(body, label)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if len(zones) != 1 {
-		t.Fatalf("zones = %d, want 1", len(zones))
+	if zones == nil {
+		t.Fatal("zones is nil, want a non-nil slice")
 	}
-	if zones[0].Label != "signature" {
-		t.Errorf("label = %q, want signature", zones[0].Label)
+	if len(zones) != len(want) {
+		t.Fatalf("zones = %+v, want %+v", zones, want)
 	}
-	if zones[0].Box != (Box{X: 10, Y: 20, Width: 30, Height: 40}) {
-		t.Errorf("box = %+v, want {10 20 30 40}", zones[0].Box)
+	for i, z := range want {
+		if zones[i] != z {
+			t.Errorf("zone %d = %+v, want %+v", i, zones[i], z)
+		}
 	}
+}
+
+const (
+	realRecord = `<0f>0<|box;x1=454;y1=835;x2=719;y2=908;w=806;h=1131|><|mask;x=0;y=0;data=AAA|>`
+	noValid    = "cannot parse the zones: no valid box record in the answer"
+)
+
+var realBox = Box{X: 454, Y: 835, Width: 266, Height: 74}
+
+// S1.
+func TestParseRealRecord(t *testing.T) {
+	body := envelope(realRecord)
+	wantZones(t, body, "signature", Zone{Label: "signature", Box: realBox})
 	// The result type holds no mask, so the marshalled text holds no
 	// mask key.
+	zones, _ := ParseZones(body, "signature")
 	text, err := json.Marshal(zones)
 	if err != nil {
 		t.Fatalf("marshal zones: %v", err)
@@ -71,115 +86,73 @@ func TestOneZoneWithMask(t *testing.T) {
 	}
 }
 
-// 2.
-func TestThreeZonesInOrder(t *testing.T) {
-	body := envelope(`{"zones":[` +
-		`{"label":"signature","box":{"x":1,"y":2,"width":3,"height":4},"mask":[]},` +
-		`{"label":"stamp","box":{"x":5,"y":6,"width":7,"height":8},"mask":[]},` +
-		`{"label":"id","box":{"x":9,"y":10,"width":11,"height":12},"mask":[]}]}`)
-	zones, err := ParseZones(body)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
+// S2.
+func TestParseTwoRecordsInOrder(t *testing.T) {
+	wantZones(t, envelope(`<|box;x1=1;y1=2;x2=3;y2=4|>,<|box;x1=5;y1=6;x2=7;y2=8;c=0.91|>`),
+		"stamp",
+		Zone{Label: "stamp", Box: Box{X: 1, Y: 2, Width: 3, Height: 3}},
+		Zone{Label: "stamp", Box: Box{X: 5, Y: 6, Width: 3, Height: 3}})
+}
+
+// S3.
+func TestParseEmptyText(t *testing.T) {
+	wantZones(t, envelope(""), "id")
+}
+
+// S4.
+func TestParseNoOutput(t *testing.T) {
+	wantZones(t, []byte(`{"output":[]}`), "id")
+}
+
+// S5.
+func TestParseBadInteger(t *testing.T) {
+	wantZoneError(t, envelope(`<|box;x1=1;y1=2;x2=oops;y2=4|>`), noValid)
+}
+
+// S6.
+func TestParseMissingKey(t *testing.T) {
+	wantZoneError(t, envelope(`<|box;x1=1;y1=2;y2=4|>`), noValid)
+}
+
+// S7.
+func TestParseReversedCorners(t *testing.T) {
+	wantZoneError(t, envelope(`<|box;x1=9;y1=2;x2=3;y2=4|>`), noValid)
+}
+
+// S8.
+func TestParseSkipsBrokenRecord(t *testing.T) {
+	wantZones(t, envelope(`<|box;x1=1;y1=2;x2=3;y2=4|><|box;x1=1;y1=2;x2=oops;y2=4|>`),
+		"id", Zone{Label: "id", Box: Box{X: 1, Y: 2, Width: 3, Height: 3}})
+}
+
+// S9.
+func TestParseNoRecord(t *testing.T) {
+	wantZoneError(t, envelope("hello"), noValid)
+}
+
+// S10.
+func TestParseBadEnvelope(t *testing.T) {
+	_, err := ParseZones([]byte(`{oops`), "id")
+	if err == nil || !strings.HasPrefix(err.Error(), "cannot parse the zones: invalid character") {
+		t.Errorf("error = %v, want the JSON error", err)
 	}
-	want := []Zone{
-		{Label: "signature", Box: Box{X: 1, Y: 2, Width: 3, Height: 4}},
-		{Label: "stamp", Box: Box{X: 5, Y: 6, Width: 7, Height: 8}},
-		{Label: "id", Box: Box{X: 9, Y: 10, Width: 11, Height: 12}},
+}
+
+// S11.
+func TestParseTextSplit(t *testing.T) {
+	wantZones(t, envelope(realRecord[:20], realRecord[20:]), "id",
+		Zone{Label: "id", Box: realBox})
+}
+
+// S12.
+func TestPhrases(t *testing.T) {
+	want := []Phrase{{"signature", "signature"}, {"stamp", "stamp"}, {"ID card", "id"}}
+	if len(Phrases) != len(want) {
+		t.Fatalf("Phrases = %+v, want %+v", Phrases, want)
 	}
-	if len(zones) != len(want) {
-		t.Fatalf("zones = %d, want %d", len(zones), len(want))
-	}
-	for i, z := range want {
-		if zones[i] != z {
-			t.Errorf("zone %d = %+v, want %+v", i, zones[i], z)
+	for i, p := range want {
+		if Phrases[i] != p {
+			t.Errorf("phrase %d = %+v, want %+v", i, Phrases[i], p)
 		}
 	}
-}
-
-// 3.
-func TestTextSplit(t *testing.T) {
-	body := envelope(`{"zones":[{"la`, `bel":"signature","box":`+
-		`{"x":10,"y":20,"width":30,"height":40}}]}`)
-	zones, err := ParseZones(body)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	if len(zones) != 1 {
-		t.Fatalf("zones = %d, want 1", len(zones))
-	}
-	if zones[0].Label != "signature" {
-		t.Errorf("label = %q, want signature", zones[0].Label)
-	}
-	if zones[0].Box != (Box{X: 10, Y: 20, Width: 30, Height: 40}) {
-		t.Errorf("box = %+v, want {10 20 30 40}", zones[0].Box)
-	}
-}
-
-// 4.
-func TestNoOutput(t *testing.T) {
-	want := "cannot parse the zones: no text in the answer"
-	for name, body := range map[string][]byte{
-		"empty output":  []byte(`{"output":[]}`),
-		"no output key": []byte(`{}`),
-	} {
-		t.Run(name, func(t *testing.T) {
-			wantZoneError(t, body, want)
-		})
-	}
-}
-
-// 5.
-func TestBadJSON(t *testing.T) {
-	wantZoneError(t, envelope(`{oops`),
-		"cannot parse the zones: invalid character 'o' "+
-			"looking for beginning of object key string")
-}
-
-// 6.
-func TestNoZonesKey(t *testing.T) {
-	wantZoneError(t, envelope(`{"boxes":[]}`),
-		"cannot parse the zones: no zones in the answer")
-}
-
-// 7.
-func TestZoneWithoutLabel(t *testing.T) {
-	wantZoneError(t,
-		envelope(`{"zones":[{"box":{"x":1,"y":2,"width":3,"height":4}}]}`),
-		"cannot parse the zones: zone 0 has no label")
-}
-
-// 8.
-func TestZoneWithoutBox(t *testing.T) {
-	wantZoneError(t, envelope(`{"zones":[{"label":"signature"}]}`),
-		"cannot parse the zones: zone 0 has no box")
-}
-
-// 9.
-func TestPartialBox(t *testing.T) {
-	wantZoneError(t,
-		envelope(`{"zones":[{"label":"signature","box":{"x":1,"y":2,"width":3}}]}`),
-		"cannot parse the zones: zone 0 has no box")
-}
-
-// 10.
-func TestZeroCoordinates(t *testing.T) {
-	body := envelope(`{"zones":[{"label":"signature",` +
-		`"box":{"x":0,"y":0,"width":30,"height":40}}]}`)
-	zones, err := ParseZones(body)
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	if len(zones) != 1 {
-		t.Fatalf("zones = %d, want 1", len(zones))
-	}
-	if zones[0].Box != (Box{X: 0, Y: 0, Width: 30, Height: 40}) {
-		t.Errorf("box = %+v, want {0 0 30 40}", zones[0].Box)
-	}
-}
-
-// 11.
-func TestBlankLabel(t *testing.T) {
-	wantZoneError(t,
-		envelope(`{"zones":[{"label":" ","box":{"x":1,"y":2,"width":3,"height":4}}]}`),
-		"cannot parse the zones: zone 0 has no label")
 }

@@ -86,15 +86,15 @@ type samPart struct {
 }
 
 // primeSAM writes one cache file for the Responses request the
-// handler sends for one scan: <dir>/<ai.CacheKey("POST",
-// "/v1/responses", sam.Request("sam-3.1", ai.SamZonesPrompt, mime,
+// handler sends for one noun phrase of one scan: <dir>/<ai.CacheKey(
+// "POST", "/v1/responses", sam.Request("sam-3.1", phrase, mime,
 // image))>.json. The body holds the cache entry shape with the
-// Responses envelope of answer: the zone JSON sits in the text of
+// Responses envelope of answer: the box records sit in the text of
 // one output_text part. The model is the default SAMModel: no test
 // sets ZOTRA_AI_SAM_MODEL.
-func primeSAM(t *testing.T, dir, mime string, image []byte, answer string) {
+func primeSAM(t *testing.T, dir, phrase, mime string, image []byte, answer string) {
 	t.Helper()
-	payload := sam.Request("sam-3.1", ai.SamZonesPrompt, mime, image)
+	payload := sam.Request("sam-3.1", phrase, mime, image)
 	env := samEnvelope{Output: []samItem{{
 		Type:    "message",
 		Content: []samPart{{Type: "output_text", Text: answer}},
@@ -129,6 +129,32 @@ func uploadForZones(t *testing.T, h http.Handler) string {
 		t.Fatalf("upload: status %d: %s", rec.Code, rec.Body.String())
 	}
 	return decode(t, rec)["document"].(map[string]any)["id"].(string)
+}
+
+// samRecord is the real SAM 3.1 answer text of one signature: one box
+// record and one mask record.
+const samRecord = `<0f>0<|box;x1=454;y1=835;x2=719;y2=908;w=806;h=1131|><|mask;x=0;y=0;data=AAA|>`
+
+// primeAll primes the three noun phrases of one scan, in the order of
+// sam.Phrases, with one answer text each.
+func primeAll(t *testing.T, dir string, image []byte, signature, stamp, idCard string) {
+	t.Helper()
+	primeSAM(t, dir, "signature", "image/png", image, signature)
+	primeSAM(t, dir, "stamp", "image/png", image, stamp)
+	primeSAM(t, dir, "ID card", "image/png", image, idCard)
+}
+
+// wantBox asserts the label and the box of one decoded zone.
+func wantBox(t *testing.T, zone any, label string, x, y, width, height float64) {
+	t.Helper()
+	z := zone.(map[string]any)
+	if z["label"] != label {
+		t.Errorf("label = %v, want %s", z["label"], label)
+	}
+	box := z["box"].(map[string]any)
+	if box["x"] != x || box["y"] != y || box["width"] != width || box["height"] != height {
+		t.Errorf("box = %v, want {%v %v %v %v}", box, x, y, width, height)
+	}
 }
 
 // postZones runs POST /api/documents/{id}/zones for one document.
@@ -267,11 +293,7 @@ func TestDocumentZones(t *testing.T) {
 	dir := aiEnv(t)
 	h := newTestAPI(t)
 	id := uploadForZones(t, h)
-	png := pngBytes(t)
-
-	primeSAM(t, dir, "image/png", png,
-		`{"zones":[{"label":"signature","box":{"x":10,"y":20,`+
-			`"width":30,"height":40},"mask":[[1,2],[3,4]]}]}`)
+	primeAll(t, dir, pngBytes(t), samRecord, "", "")
 
 	rec := postZones(t, id)
 	if rec.Code != http.StatusOK {
@@ -281,18 +303,31 @@ func TestDocumentZones(t *testing.T) {
 	if len(zones) != 1 {
 		t.Fatalf("zones = %d, want 1", len(zones))
 	}
-	z := zones[0].(map[string]any)
-	if z["label"] != "signature" {
-		t.Errorf("label = %v, want signature", z["label"])
-	}
-	box := z["box"].(map[string]any)
-	if box["x"].(float64) != 10 || box["y"].(float64) != 20 ||
-		box["width"].(float64) != 30 || box["height"].(float64) != 40 {
-		t.Errorf("box = %v, want {10 20 30 40}", box)
-	}
+	wantBox(t, zones[0], "signature", 454, 835, 266, 74)
 	if strings.Contains(rec.Body.String(), "mask") {
 		t.Errorf("the answer holds a mask key: %s", rec.Body.String())
 	}
+}
+
+// 15b.
+func TestDocumentZonesThreePhrases(t *testing.T) {
+	dir := aiEnv(t)
+	h := newTestAPI(t)
+	id := uploadForZones(t, h)
+	other := `<|box;x1=10;y1=20;x2=39;y2=59|>`
+	primeAll(t, dir, pngBytes(t), samRecord, other, other)
+
+	rec := postZones(t, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("zones: status %d: %s", rec.Code, rec.Body.String())
+	}
+	zones := decode(t, rec)["zones"].([]any)
+	if len(zones) != 3 {
+		t.Fatalf("zones = %d, want 3: %s", len(zones), rec.Body.String())
+	}
+	wantBox(t, zones[0], "signature", 454, 835, 266, 74)
+	wantBox(t, zones[1], "stamp", 10, 20, 30, 40)
+	wantBox(t, zones[2], "id", 10, 20, 30, 40)
 }
 
 // 16.
@@ -300,8 +335,7 @@ func TestDocumentZonesEmpty(t *testing.T) {
 	dir := aiEnv(t)
 	h := newTestAPI(t)
 	id := uploadForZones(t, h)
-
-	primeSAM(t, dir, "image/png", pngBytes(t), `{"zones":[]}`)
+	primeAll(t, dir, pngBytes(t), "", "", "")
 
 	rec := postZones(t, id)
 	if rec.Code != http.StatusOK {
@@ -335,12 +369,11 @@ func TestDocumentZonesBadOutput(t *testing.T) {
 	h := newTestAPI(t)
 	id := uploadForZones(t, h)
 
-	primeSAM(t, dir, "image/png", pngBytes(t), `{oops`)
+	primeSAM(t, dir, "signature", "image/png", pngBytes(t), "hello")
 
 	rec := postZones(t, id)
 	checkError(t, rec, http.StatusBadGateway, "bad_ai_output",
-		"cannot parse the zones: invalid character 'o' "+
-			"looking for beginning of object key string")
+		"cannot parse the zones: no valid box record in the answer")
 }
 
 // 19.
@@ -526,13 +559,14 @@ func TestDocumentReadRefusals(t *testing.T) {
 }
 
 // fakeAI is one httptest AI server. It counts its requests and keeps
-// the last path, Authorization header and body.
+// the last path, Authorization header and body, and every body.
 type fakeAI struct {
-	srv   *httptest.Server
-	count int
-	path  string
-	auth  string
-	body  string
+	srv    *httptest.Server
+	count  int
+	path   string
+	auth   string
+	body   string
+	bodies []string
 }
 
 func newFakeAI(t *testing.T, answer string) *fakeAI {
@@ -542,6 +576,7 @@ func newFakeAI(t *testing.T, answer string) *fakeAI {
 		b, _ := io.ReadAll(r.Body)
 		f.count++
 		f.path, f.auth, f.body = r.URL.Path, r.Header.Get("Authorization"), string(b)
+		f.bodies = append(f.bodies, string(b))
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, answer)
 	}))
@@ -549,13 +584,12 @@ func newFakeAI(t *testing.T, answer string) *fakeAI {
 	return f
 }
 
-// samAnswer is the Responses envelope of the zone of TestDocumentZones.
+// samAnswer is the Responses envelope of samRecord.
 func samAnswer(t *testing.T) string {
 	t.Helper()
 	b, err := json.Marshal(samEnvelope{Output: []samItem{{
-		Type: "message",
-		Content: []samPart{{Type: "output_text", Text: `{"zones":[{"label":"signature",` +
-			`"box":{"x":10,"y":20,"width":30,"height":40},"mask":[[1,2],[3,4]]}]}`}},
+		Type:    "message",
+		Content: []samPart{{Type: "output_text", Text: samRecord}},
 	}}})
 	if err != nil {
 		t.Fatalf("marshal envelope: %v", err)
@@ -586,11 +620,30 @@ func TestDocumentEndpoint(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("zones: status %d: %s", rec.Code, rec.Body.String())
 		}
-		if n := len(decode(t, rec)["zones"].([]any)); n != 1 {
-			t.Errorf("zones = %d, want 1", n)
+		zones := decode(t, rec)["zones"].([]any)
+		if len(zones) != 3 {
+			t.Fatalf("zones = %d, want 3", len(zones))
 		}
-		if doc.count != 1 || doc.path != "/responses" || doc.auth != "Bearer doc-key" {
+		for i, label := range []string{"signature", "stamp", "id"} {
+			wantBox(t, zones[i], label, 454, 835, 266, 74)
+		}
+		if doc.count != 3 || doc.path != "/responses" || doc.auth != "Bearer doc-key" {
 			t.Errorf("doc saw count %d, path %q, auth %q", doc.count, doc.path, doc.auth)
+		}
+		var phrases []string
+		for _, body := range doc.bodies {
+			var req struct {
+				Input []struct {
+					Content []struct{ Type, Text string } `json:"content"`
+				} `json:"input"`
+			}
+			if err := json.Unmarshal([]byte(body), &req); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			phrases = append(phrases, req.Input[0].Content[0].Text)
+		}
+		if strings.Join(phrases, "|") != "signature|stamp|ID card" {
+			t.Errorf("input_text = %q, want signature, stamp, ID card", phrases)
 		}
 		if text.count != 0 {
 			t.Errorf("text saw %d requests, want 0", text.count)

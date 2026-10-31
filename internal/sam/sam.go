@@ -1,6 +1,6 @@
-// Package sam builds the SAM 3.1 request of one scan and parses the
-// zone answer. The request goes through the Responses API, so the
-// cache holds the whole flow under one key.
+// Package sam builds the SAM 3.1 requests of one scan and parses the
+// zone answers. Each request goes through the Responses API, so the
+// cache holds each request under its own key.
 package sam
 
 import (
@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -24,6 +26,12 @@ type Zone struct {
 	Label string `json:"label"`
 	Box   Box    `json:"box"`
 }
+
+// Phrase is one SAM 3.1 request: the noun phrase and the zone label.
+type Phrase struct{ Text, Label string }
+
+// Phrases are the requests of one scan, in answer order.
+var Phrases = []Phrase{{"signature", "signature"}, {"stamp", "stamp"}, {"ID card", "id"}}
 
 // requestPayload is the Responses API request of one scan.
 type requestPayload struct {
@@ -45,7 +53,7 @@ type contentPart struct {
 }
 
 // Request builds the Responses API payload of one scan: the SAM
-// model, the zone prompt, and the image as a data URL. The client
+// model, the noun phrase, and the image as a data URL. The client
 // posts the payload as is.
 func Request(model string, prompt string, mime string, imageData []byte) []byte {
 	payload := requestPayload{
@@ -76,29 +84,16 @@ type answerEnvelope struct {
 	} `json:"output"`
 }
 
-// zoneShape decodes one zone of the answer text. Every field is a
-// pointer: a present 0 and a present empty string count as present,
-// and only a missing key is absent. The mask key has no field, so
-// the parser ignores it whatever it holds.
-type zoneShape struct {
-	Label *string `json:"label"`
-	Box   *struct {
-		X      *int `json:"x"`
-		Y      *int `json:"y"`
-		Width  *int `json:"width"`
-		Height *int `json:"height"`
-	} `json:"box"`
-}
+// boxRecord finds one box record of the SAM 3.1 answer text, for
+// example <|box;x1=454;y1=835;x2=719;y2=908;w=806;h=1131|>.
+var boxRecord = regexp.MustCompile(`<\|box;([^|]*)\|>`)
 
-// zonesShape is the JSON object of the answer text.
-type zonesShape struct {
-	Zones []zoneShape `json:"zones"`
-}
-
-// ParseZones reads a Responses API answer and returns the zones. The
-// text output holds one JSON object with a zones array. The parser
-// keeps label and box, drops the mask.
-func ParseZones(body []byte) ([]Zone, error) {
+// ParseZones reads a Responses API answer of one noun phrase and
+// returns its zones, each with the given label. The text holds box
+// records with inclusive pixel corners x1, y1, x2, y2. The parser
+// ignores the other keys and the mask records. An empty text gives
+// no zone.
+func ParseZones(body []byte, label string) ([]Zone, error) {
 	var env answerEnvelope
 	if err := json.Unmarshal(body, &env); err != nil {
 		return nil, fmt.Errorf("cannot parse the zones: %v", err)
@@ -114,34 +109,44 @@ func ParseZones(body []byte) ([]Zone, error) {
 			}
 		}
 	}
-	if joined.Len() == 0 {
-		return nil, errors.New("cannot parse the zones: no text in the answer")
+	text := joined.String()
+	out := []Zone{}
+	if strings.TrimSpace(text) == "" {
+		return out, nil
 	}
-	var zones zonesShape
-	if err := json.Unmarshal([]byte(joined.String()), &zones); err != nil {
-		return nil, fmt.Errorf("cannot parse the zones: %v", err)
-	}
-	if zones.Zones == nil {
-		return nil, errors.New("cannot parse the zones: no zones in the answer")
-	}
-	out := make([]Zone, 0, len(zones.Zones))
-	for i, z := range zones.Zones {
-		if z.Label == nil || strings.TrimSpace(*z.Label) == "" {
-			return nil, fmt.Errorf("cannot parse the zones: zone %d has no label", i)
+	for _, m := range boxRecord.FindAllStringSubmatch(text, -1) {
+		if b, ok := parseBox(m[1]); ok {
+			out = append(out, Zone{Label: label, Box: b})
 		}
-		if z.Box == nil || z.Box.X == nil || z.Box.Y == nil ||
-			z.Box.Width == nil || z.Box.Height == nil {
-			return nil, fmt.Errorf("cannot parse the zones: zone %d has no box", i)
-		}
-		out = append(out, Zone{
-			Label: *z.Label,
-			Box: Box{
-				X:      *z.Box.X,
-				Y:      *z.Box.Y,
-				Width:  *z.Box.Width,
-				Height: *z.Box.Height,
-			},
-		})
+	}
+	if len(out) == 0 {
+		return nil, errors.New("cannot parse the zones: no valid box record in the answer")
 	}
 	return out, nil
+}
+
+// parseBox reads the keys of one box record. It gives false when a
+// corner key is missing, is not an integer, or when x2 < x1 or y2 < y1.
+func parseBox(record string) (Box, bool) {
+	kv := map[string]string{}
+	for _, p := range strings.Split(record, ";") {
+		k, v, _ := strings.Cut(p, "=")
+		kv[k] = v
+	}
+	var c [4]int
+	for i, k := range []string{"x1", "y1", "x2", "y2"} {
+		v, ok := kv[k]
+		if !ok {
+			return Box{}, false
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return Box{}, false
+		}
+		c[i] = n
+	}
+	if c[2] < c[0] || c[3] < c[1] {
+		return Box{}, false
+	}
+	return Box{X: c[0], Y: c[1], Width: c[2] - c[0] + 1, Height: c[3] - c[1] + 1}, true
 }

@@ -242,9 +242,9 @@ func (d apiDeps) documentRead(w http.ResponseWriter, r *http.Request) {
 	}{values})
 }
 
-// documentZones asks SAM 3.1 for the zones of one scan. The AI flow
-// goes through the Responses API, so the cache holds it as one
-// block.
+// documentZones asks SAM 3.1 for the zones of one scan. It sends one
+// Responses request for each noun phrase of sam.Phrases, so the cache
+// holds each request under its own key, and joins the zones in order.
 func (d apiDeps) documentZones(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	doc, err := d.st.GetDocument(r.Context(), id)
@@ -258,17 +258,22 @@ func (d apiDeps) documentZones(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg := ai.LoadConfig()
-	payload := sam.Request(cfg.SAMModel, ai.SamZonesPrompt, doc.MIME, data)
-	body, err := ai.New(cfg.Document()).Responses(r.Context(), payload)
-	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "ai_unavailable",
-			fmt.Sprintf("the AI layer is not available: %v", err))
-		return
-	}
-	zones, err := sam.ParseZones(body)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, "bad_ai_output", err.Error())
-		return
+	client := ai.New(cfg.Document())
+	zones := []sam.Zone{}
+	for _, p := range sam.Phrases {
+		payload := sam.Request(cfg.SAMModel, p.Text, doc.MIME, data)
+		body, err := client.Responses(r.Context(), payload)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "ai_unavailable",
+				fmt.Sprintf("the AI layer is not available: %v", err))
+			return
+		}
+		found, err := sam.ParseZones(body, p.Label)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "bad_ai_output", err.Error())
+			return
+		}
+		zones = append(zones, found...)
 	}
 	writeJSON(w, http.StatusOK, struct {
 		Zones []sam.Zone `json:"zones"`
