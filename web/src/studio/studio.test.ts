@@ -1482,9 +1482,8 @@ describe("shell states", () => {
 });
 
 describe("undo", () => {
-  // A button whose content closes before the match, so the Policy
-  // button cannot leak in.
-  const undoButton = /<button[^>]*>(?:(?!<\/button>)[\s\S])*Undo<\/button>/;
+  // The Undo button is an icon button: its name is the aria-label.
+  const undoButton = /<button[^>]*aria-label="Undo"[^>]*>/;
 
   test("55: the Undo button renders enabled, disabled, or not at all", () => {
     const enabled = renderToString(
@@ -1497,7 +1496,8 @@ describe("undo", () => {
     );
     const matches = enabled.match(new RegExp(undoButton.source, "g")) ?? [];
     expect(matches).toHaveLength(1);
-    expect(matches[0]!.match(/<button[^>]*>/)![0]).not.toContain('disabled=""');
+    expect(matches[0]).not.toContain('disabled=""');
+    expect(enabled).not.toContain(">Undo<");
 
     const disabled = renderToString(
       createElement(TopBar, {
@@ -1508,9 +1508,8 @@ describe("undo", () => {
       }),
     );
     expect(disabled).toMatch(undoButton);
-    expect(disabled.match(undoButton)![0].match(/<button[^>]*>/)![0]).toContain(
-      'disabled=""',
-    );
+    expect(disabled.match(undoButton)![0]).toContain('disabled=""');
+    expect(disabled).not.toContain(">Undo<");
 
     const absent = renderToString(
       createElement(TopBar, {
@@ -1519,6 +1518,7 @@ describe("undo", () => {
       }),
     );
     expect(absent).not.toMatch(undoButton);
+    expect(absent).not.toContain(">Undo<");
   });
 
   test("56: pushUndo keeps at most 20 entries", () => {

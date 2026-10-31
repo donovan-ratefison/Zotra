@@ -5,7 +5,7 @@
 // the invalidation callback (the pattern of lot 3.1: queries in the
 // screen, props down).
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, FileText, GitBranch, GitCompareArrows, History, Lock, Sparkles, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError, freezeVersion, forkVersion, publishVersion } from "./api";
@@ -182,6 +182,16 @@ export function dateText(iso: string): string {
   });
 }
 
+// newestPublished gives the number of the version that new cases run:
+// the highest published number, or null before the first publish.
+export function newestPublished(versions: VersionSummary[]): number | null {
+  let best: number | null = null;
+  for (const row of versions) {
+    if (row.status === "published" && (best === null || row.number > best)) best = row.number;
+  }
+  return best;
+}
+
 // HistoryBody is the version history: one card per version, newest
 // first, on a vertical line. Each card carries the actions its status
 // allows. The opened version carries the Shown badge.
@@ -194,6 +204,13 @@ export function HistoryBody({ def, version, versions, onOpen, onCompare, onActio
   onAction: (kind: "freeze" | "publish" | "newdraft", target: VersionSummary) => void;
 }) {
   const rows = [...versions].sort((a, b) => b.number - a.number);
+  // The newest published version is in view when the panel opens,
+  // also when the versions arrive after the open.
+  const published = newestPublished(versions);
+  const publishedRow = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    publishedRow.current?.scrollIntoView({ block: "nearest" });
+  }, [published]);
   const numberOf = (id: string | null) =>
     id === null ? null : (versions.find((v) => v.id === id)?.number ?? null);
   const drafts = rows.filter((v) => v.status === "draft").length;
@@ -212,7 +229,11 @@ export function HistoryBody({ def, version, versions, onOpen, onCompare, onActio
           const [badge, badgeCls] = STATUS_BADGE[row.status];
           const parent = numberOf(row.parent_id);
           return (
-            <li key={row.id} className="relative mb-3 flex gap-3">
+            <li
+              key={row.id}
+              ref={row.number === published ? publishedRow : undefined}
+              className="relative mb-3 flex gap-3"
+            >
               <span
                 aria-hidden
                 className={`relative z-10 mt-4 size-3 shrink-0 rounded-full border-2 bg-background ${
@@ -318,10 +339,7 @@ export function VersionActions({ def, version, versions,
     "freeze" | "publish" | "newdraft" | null
   >(null);
   // The version that new cases run, or null before the first publish.
-  const publishedNumber = versions.reduce<number | null>(
-    (best, row) => (row.status === "published" && (best === null || row.number > best) ? row.number : best),
-    null,
-  );
+  const publishedNumber = newestPublished(versions);
 
   // onExport downloads the definition as one JSON file. The anchor
   // lives in the handler: no row can cover a click under
@@ -457,14 +475,14 @@ export function VersionActions({ def, version, versions,
             <Button size="sm" onClick={() => act("publish", version)}>
               Publish
             </Button>
-            <Button variant="outline" size="sm" onClick={() => act("newdraft", version)}>
-              New draft from this version
+            <Button variant="outline" size="sm" aria-label="New draft from this version" onClick={() => act("newdraft", version)}>
+              New draft
             </Button>
           </>
         )}
         {version.status === "published" && (
-          <Button size="sm" onClick={() => act("newdraft", version)}>
-            New draft from this version
+          <Button size="sm" aria-label="New draft from this version" onClick={() => act("newdraft", version)}>
+            New draft
           </Button>
         )}
       </div>

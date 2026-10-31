@@ -1083,14 +1083,14 @@ export function TopBar({
         <Button
           type="button"
           variant="outline"
-          size="sm"
+          size="icon-sm"
           className="shrink-0"
           disabled={!canUndo}
+          aria-label="Undo"
           title="Undo the last save (Ctrl+Z)"
           onClick={() => onUndo()}
         >
           <Undo2 aria-hidden="true" />
-          Undo
         </Button>
       )}
       <span className="flex-1" />

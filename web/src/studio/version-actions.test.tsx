@@ -17,6 +17,7 @@ import {
   definitionFile,
   docLinks,
   labelValid,
+  newestPublished,
 } from "./version-actions";
 import { TopBar } from "./StudioShell";
 import { useStudioStore } from "./store";
@@ -319,6 +320,56 @@ describe("status buttons", () => {
     );
     expect(html.indexOf("Documentation")).toBeGreaterThan(-1);
     expect(html.indexOf("Documentation")).toBeLessThan(html.indexOf('aria-label="Export"'));
+  });
+});
+
+describe("newest published version", () => {
+  test("P1: an empty list has no published version", () => {
+    expect(newestPublished([])).toBe(null);
+  });
+
+  test("P2: an unknown status is not published", () => {
+    expect(
+      newestPublished([versionRow(1, "draft"), versionRow(2, "frozen"), versionRow(3, "archived")]),
+    ).toBe(null);
+  });
+
+  test("P3: the highest published number wins", () => {
+    expect(
+      newestPublished([
+        versionRow(1, "published"),
+        versionRow(2, "frozen"),
+        versionRow(4, "published"),
+        versionRow(5, "draft"),
+      ]),
+    ).toBe(4);
+  });
+
+  test("P4: the order of the list does not change the result", () => {
+    expect(newestPublished([versionRow(4, "published"), versionRow(1, "published")])).toBe(4);
+  });
+});
+
+describe("short new draft label", () => {
+  const actionsProps = (version: VersionSummary) => ({
+    def: miniDefinition,
+    version,
+    versions: [version],
+    versionsPending: false,
+    onVersionsChanged: () => {},
+  });
+
+  test("T1: a published version shows New draft, with the full name in the aria-label", () => {
+    const html = renderToString(createElement(VersionActions, actionsProps(versionRow(1, "published"))));
+    expect(html).toContain(">New draft<");
+    expect(html).toContain('aria-label="New draft from this version"');
+    expect(html).not.toContain(">New draft from this version<");
+  });
+
+  test("T2: a frozen version shows Publish and New draft", () => {
+    const html = renderToString(createElement(VersionActions, actionsProps(versionRow(2, "frozen"))));
+    expect(html).toContain(">Publish<");
+    expect(html).toContain(">New draft<");
   });
 });
 
