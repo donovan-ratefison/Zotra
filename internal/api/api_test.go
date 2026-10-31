@@ -25,6 +25,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/donovan-ratefison/zotra/internal/engine"
+	"github.com/donovan-ratefison/zotra/internal/process"
+	"github.com/donovan-ratefison/zotra/internal/sources"
 	"github.com/donovan-ratefison/zotra/internal/store"
 )
 
@@ -208,10 +210,65 @@ func analysisCase(t *testing.T) string {
 	return analysisCaseOf(t, false)
 }
 
-// analysisCaseOf is analysisCase for a real case or a test case.
+// realVersion copies the seeded definition to a new version whose
+// sources point to an httptest server, so that a real case does not
+// depend on the demo service. The server answers each source with its
+// simulated values.
+func realVersion(t *testing.T) string {
+	t.Helper()
+	rec := do(t, "GET", "/api/versions/"+seedVersionID, "", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("read seed version: status %d: %s", rec.Code, rec.Body.String())
+	}
+	var ans struct {
+		Version struct {
+			Definition json.RawMessage `json:"definition"`
+		} `json:"version"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &ans); err != nil {
+		t.Fatalf("decode seed version: %v", err)
+	}
+	var def struct {
+		Sources []process.Source `json:"sources"`
+	}
+	if err := json.Unmarshal(ans.Version.Definition, &def); err != nil {
+		t.Fatalf("decode seed sources: %v", err)
+	}
+	values := make(map[string]map[string]any, len(def.Sources))
+	for _, src := range def.Sources {
+		values["/api/"+src.ID] = sources.Simulated(src)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		v, ok := values[r.URL.Path]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(v)
+	}))
+	t.Cleanup(srv.Close)
+
+	var doc map[string]any
+	if err := json.Unmarshal(ans.Version.Definition, &doc); err != nil {
+		t.Fatalf("decode seed definition: %v", err)
+	}
+	setURLs(srv.URL)(doc)
+	out, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("marshal definition: %v", err)
+	}
+	return createProcessVersion(t, out, "Real sources")
+}
+
+// analysisCaseOf is analysisCase for a real case or a test case. A
+// real case runs on realVersion, a test case on the seeded version.
 func analysisCaseOf(t *testing.T, isTest bool) string {
 	t.Helper()
-	caseID := createCase(t, seedVersionID, isTest)
+	versionID := seedVersionID
+	if !isTest {
+		versionID = realVersion(t)
+	}
+	caseID := createCase(t, versionID, isTest)
 	for _, cmd := range []struct{ body, user string }{
 		{`{"type":"start","data":{}}`, "u-advisor"},
 		{`{"type":"submit","values":` + entryValues() + `}`, "u-advisor"},
