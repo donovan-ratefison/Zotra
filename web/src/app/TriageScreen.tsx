@@ -45,6 +45,8 @@ import {
   triageAction,
 } from "./triage";
 import { TriageDocuments } from "./TriageDocuments";
+import { ChainStrip, useChainVerify } from "./CaseChain";
+import { chainBlocks, ghostLabels } from "./chain";
 
 // A sent case keeps the documents and checks of the send moment.
 interface Sent {
@@ -285,6 +287,12 @@ function Deck({
   const sentDecision = snap?.decision;
   const canSend = lock === null && sentDecision === undefined && !busy;
   const rows = docs === null ? null : documentRows(def, events, node.id, docs);
+  // A sent card keeps its snapshot: the strip shows front.events as they are.
+  const chain = useChainVerify();
+  const blocks = chainBlocks(def, events, state);
+  const ghosts = ghostLabels(def, state, blocks.length);
+  const n = events.length;
+  const verifyFront = () => chain.verify(front.id, n);
 
   async function send(decision: string) {
     if (sending.current) return;
@@ -325,6 +333,11 @@ function Deck({
         editableTarget(e.target as HTMLElement | null),
       );
       if (action === null) return;
+      if (action === "verify") {
+        e.preventDefault();
+        verifyFront();
+        return;
+      }
       if (action === "docs") {
         const first = rows === null ? null : firstDocIndex(rows);
         if (first !== null) {
@@ -568,6 +581,16 @@ function Deck({
               </section>
             </div>
           </div>
+          <ChainStrip
+            reference={front.row.reference}
+            blocks={blocks}
+            ghosts={ghosts}
+            run={chain.runs[front.id] ?? null}
+            n={n}
+            error={chain.errors[front.id] ?? null}
+            busy={chain.busy !== null}
+            onVerify={verifyFront}
+          />
         </article>
       </div>
 
@@ -608,6 +631,16 @@ function Deck({
         <button type="button" aria-keyshortcuts="O" className={keyClass} onClick={() => onOpenCase(openIds())}>
           <Kbd>O</Kbd>
           Open the case
+        </button>
+        <button
+          type="button"
+          aria-keyshortcuts="V"
+          className={keyClass}
+          disabled={chain.busy !== null}
+          onClick={verifyFront}
+        >
+          <Kbd>V</Kbd>
+          Verify chain
         </button>
       </div>
       {rows !== null && rows.length > 0 && (

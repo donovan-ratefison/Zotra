@@ -295,11 +295,13 @@ describe("send", () => {
 
 describe("keys", () => {
   test("K1: the key map", () => {
-    expect(["k", "K", "j", "J", "f", "F", "u", "U", "Escape", "d", "D", "t"].map((k) => triageAction(k, false, false))).toEqual([
-      "prev", "prev", "next", "next", "first", "first", "second", "second", "exit", "docs", "docs", null,
+    expect(["k", "K", "j", "J", "f", "F", "u", "U", "Escape", "d", "D", "v", "V", "t"].map((k) => triageAction(k, false, false))).toEqual([
+      "prev", "prev", "next", "next", "first", "first", "second", "second", "exit", "docs", "docs", "verify", "verify", null,
     ]);
     expect(triageAction("d", true, false)).toBeNull();
     expect(triageAction("d", false, true)).toBeNull();
+    expect(triageAction("v", true, false)).toBeNull();
+    expect(triageAction("v", false, true)).toBeNull();
   });
 
   test("K2: a modifier or an editable target gives null", () => {

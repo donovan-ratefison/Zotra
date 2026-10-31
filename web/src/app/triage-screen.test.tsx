@@ -1,4 +1,4 @@
-// The triage screen test rows V1, V2, D1 to D8 and T1 to T3, in order. The
+// The triage screen test rows V1, V2, D1 to D8, CV1, CV2 and T1 to T7, in order. The
 // environment is node: renderToString with pre-seeded caches.
 
 import { createElement } from "react";
@@ -205,6 +205,16 @@ describe("triage screen", () => {
     const html = render(seed(), [c4]);
     expect(html).toContain("No case waits for a decision.");
     expect(html).toContain("Back to the inbox");
+  });
+
+  test("CV1: the front card has the chain strip", () => {
+    const html = render(seed());
+    expect(html).toContain('aria-label="Case history"');
+    expect(html.split("Verify chain").length - 1).toBe(2);
+  });
+
+  test("CV2: an empty queue has no chain strip", () => {
+    expect(render(seed(), [c4])).not.toContain("Case history");
   });
 
   test("T1: the document rows open the dialog", () => {

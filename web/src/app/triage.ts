@@ -259,20 +259,21 @@ export function sendResultText(answer: Answer, def: ProcessDefinition, label: st
   return { ok: false, text: `Check ${id} failed: ${message}` };
 }
 
-const KEYS: Record<string, "prev" | "next" | "first" | "second" | "docs" | "open"> = {
+const KEYS: Record<string, "prev" | "next" | "first" | "second" | "docs" | "open" | "verify"> = {
   k: "prev",
   j: "next",
   f: "first",
   u: "second",
   d: "docs",
   o: "open",
+  v: "verify",
 };
 
 export function triageAction(
   key: string,
   modified: boolean,
   editable: boolean,
-): "prev" | "next" | "first" | "second" | "docs" | "open" | "exit" | null {
+): "prev" | "next" | "first" | "second" | "docs" | "open" | "verify" | "exit" | null {
   if (modified || editable) return null;
   if (key === "Escape") return "exit";
   return key.length === 1 ? (KEYS[key.toLowerCase()] ?? null) : null;

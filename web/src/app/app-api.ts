@@ -76,3 +76,14 @@ export async function fetchChecks(caseId: string): Promise<CheckPreview> {
   }
   throw await apiError(res);
 }
+
+// verifyCase reads GET /api/cases/{id}/verify, with the same access as
+// the case read: no user header. It gives 0 when the chain is intact,
+// else the first bad seq.
+export async function verifyCase(caseId: string): Promise<number> {
+  const res = await fetch(`/api/cases/${encodeURIComponent(caseId)}/verify`);
+  if (res.ok) {
+    return ((await res.json()) as { verify: number }).verify;
+  }
+  throw await apiError(res);
+}
