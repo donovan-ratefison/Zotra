@@ -34,15 +34,31 @@ Go (net/http, cel-go, PostgreSQL), React (Vite, React Flow, Tailwind CSS, shadcn
 
 ## Run it
 
-You need Go 1.27, Node 22 and pnpm.
+You need Go 1.27, Node 22, pnpm, and PostgreSQL 16 (or Docker).
+
+Start a PostgreSQL that matches `.env.example`:
+
+```
+docker run -d --name zotra-postgres -e POSTGRES_USER=zotra -e POSTGRES_PASSWORD=zotra -e POSTGRES_DB=zotra -p 5432:5432 postgres:16
+```
+
+With your own PostgreSQL, set `ZOTRA_DATABASE_URL` in `.env`.
+
+Build and start the server:
 
 ```
 cp .env.example .env
 make build
+set -a; . ./.env; set +a
 ./zotra
 ```
 
+The server reads its settings from the environment. The third line loads `.env` into the shell.
+The first start creates the tables and the example process.
+
 The app runs at http://localhost:8080.
+
+With no `ZOTRA_AI_API_KEY`, the AI buttons answer that the AI is not available (`ai: no API key`). The manual mode works.
 
 Before a real case of the example reaches the analysis step, start the demo core banking service on port 8097: `go run ./cmd/zotra-demo`.
 
