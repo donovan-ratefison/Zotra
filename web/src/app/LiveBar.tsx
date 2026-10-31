@@ -6,6 +6,7 @@ import type { CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ShieldAlert, ShieldCheck } from "lucide-react";
 import { ApiError } from "../studio/api";
+import { BrandLoader } from "@/components/BrandLoader";
 import type { UserDTO } from "../studio/case-api";
 import type { ProcessDefinition } from "../studio/types";
 import { actorOf } from "./AuditScreen";
@@ -162,7 +163,7 @@ export function LiveBar({
 
   let view;
   if (audit.isPending) {
-    view = <span className={statusClass}>Loading the events.</span>;
+    view = <span className={statusClass}><BrandLoader size={14} label="Loading the events." /></span>;
   } else if (audit.isError) {
     view = (
       <span className={statusClass}>

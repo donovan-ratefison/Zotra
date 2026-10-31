@@ -27,6 +27,7 @@ import { updatePolicy } from "./ai-api";
 import { PolicyDraftDialog } from "./PolicyDraft";
 import { readCase, type CaseDTO, type CaseState } from "./case-api";
 import { Button } from "@/ui/button";
+import { BrandLoader } from "@/components/BrandLoader";
 import { cn } from "@/lib/utils";
 import { compareUrl } from "./compare";
 import { CompareScreen } from "./CompareScreen";
@@ -119,7 +120,7 @@ function pickVersion(rows: VersionSummary[] | undefined): VersionSummary | null 
 function Loading() {
   return (
     <div className="flex h-screen items-center justify-center text-muted-foreground">
-      Loading the studio
+      <BrandLoader size={32} label="Loading the studio" />
     </div>
   );
 }

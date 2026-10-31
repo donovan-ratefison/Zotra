@@ -505,6 +505,7 @@ describe("app shell", () => {
     client.setQueryData(["version", "v1"], versionSeed);
     const html = renderApp(client);
     expect(html).toContain("Loading");
+    expect(html).toContain('src="/zotra-loader-light.svg"');
     expect(html).toContain("Banque Ravina");
     expect(html).toContain("Inbox");
     expect(html).toContain("Home loan v1");
@@ -598,5 +599,7 @@ describe("case screen", () => {
   test("6.2 row 23: a pending case query shows the loading line", () => {
     const html = renderCase(stateFixture, { withCase: false });
     expect(html).toContain("Loading the case.");
+    expect(html.indexOf("Loading the case.")).toBeGreaterThan(html.indexOf('src="/zotra-loader-light.svg"'));
+    expect(html).toContain('src="/zotra-loader-light.svg"');
   });
 });

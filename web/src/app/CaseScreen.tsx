@@ -27,6 +27,7 @@ import {
 } from "../studio/doc-api";
 import { CaseSummary, StepScreen } from "../studio/StepScreen";
 import { Button } from "@/ui/button";
+import { BrandLoader } from "@/components/BrandLoader";
 import { dayTimeText, moneyText, pickField } from "./InboxScreen";
 import { fetchChecks } from "./app-api";
 import { documentRows, leftStep, sendDecision, shareOfIncome } from "./triage";
@@ -37,7 +38,7 @@ import { deadlineOf, stepperOf, type StepperItem } from "./case-header";
 function Loading() {
   return (
     <div className="flex flex-1 items-center justify-center text-muted-foreground">
-      Loading the case.
+      <BrandLoader size={32} label="Loading the case." />
     </div>
   );
 }
@@ -356,7 +357,7 @@ export function CaseScreen({
                   {`The documents did not load: ${messageOf(documentsQuery.error)}`}
                 </p>
               ) : rows === null ? (
-                <p className="border-t px-4 py-2.5 text-sm text-muted-foreground">Loading the documents.</p>
+                <p className="border-t px-4 py-2.5 text-sm text-muted-foreground"><BrandLoader size={16} label="Loading the documents." /></p>
               ) : (
                 <ul>
                   {rows.map((r) => (

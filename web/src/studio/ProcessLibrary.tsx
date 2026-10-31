@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from "@/ui/select";
 import { cn } from "@/lib/utils";
+import { BrandLoader } from "@/components/BrandLoader";
 
 type LibraryViewMode = "table" | "cards";
 
@@ -73,7 +74,7 @@ function NewLink() {
 function StatusCell({ row }: { row: LibraryRow }) {
   if (row.status === null) {
     return (
-      <span className="text-muted-foreground">{row.failed ? "Not loaded" : "Loading"}</span>
+      <span className="text-muted-foreground">{row.failed ? "Not loaded" : <BrandLoader size={14} label="Loading" />}</span>
     );
   }
   if (row.status === "empty") {
@@ -416,7 +417,7 @@ export function ProcessLibrary() {
       </header>
       <main className="flex-1">
         {processes.isPending ? (
-          <p className="p-8 text-center text-[13px] text-muted-foreground">Loading the processes</p>
+          <p className="p-8 text-center text-[13px] text-muted-foreground"><BrandLoader size={32} label="Loading the processes" /></p>
         ) : processes.isError ? (
           <div className="p-8 text-center text-[13px]">
             <p>The processes did not load.</p>

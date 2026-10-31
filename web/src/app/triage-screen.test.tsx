@@ -170,6 +170,7 @@ describe("triage screen", () => {
       expect(html).toContain(text);
     }
     expect(html).toMatch(F_ENABLED);
+    expect(html).not.toContain('src="/zotra-loader-light.svg"');
   });
 
   test("D2: a failed check locks F and U", () => {
@@ -186,6 +187,7 @@ describe("triage screen", () => {
     expect(html).toContain("Loading the checks.");
     expect(html).toContain("F and U are locked. Loading the checks.");
     expect(html).toContain("Loading the documents.");
+    expect(html.split('src="/zotra-loader-light.svg"').length - 1).toBe(2);
     expect(html).toMatch(F_DISABLED);
   });
 
@@ -205,6 +207,7 @@ describe("triage screen", () => {
   test("D6: pending events give the loading stage", () => {
     const html = render(seed({ noC2Events: true }));
     expect(html).toContain("Loading the triage.");
+    expect(html).toContain('src="/zotra-loader-light.svg"');
     expect(html).not.toContain("Case 1 of");
   });
 
@@ -294,7 +297,7 @@ describe("read-only deck", () => {
       expect(html).toContain(text);
     }
     expect(html).toMatch(/<h2[^>]*>Voahangy Rasoanaivo<\/h2>/);
-    for (const text of ["Triage: Credit analysis", "Exit triage", 'aria-keyshortcuts="F"', 'role="status"', "Open the case"]) {
+    for (const text of ["Triage: Credit analysis", "Exit triage", 'aria-keyshortcuts="F"', '<p role="status"', "Open the case"]) {
       expect(html).not.toContain(text);
     }
   });

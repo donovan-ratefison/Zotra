@@ -15,6 +15,7 @@ import {
 } from "../studio/api";
 import { listUsers } from "../studio/case-api";
 import { fetchInbox } from "./app-api";
+import { BrandLoader } from "@/components/BrandLoader";
 import {
   fetchAudit,
   fetchAuditVerify,
@@ -180,7 +181,7 @@ function roleNamesOf(roleIds: string[], def: ProcessDefinition): string {
 function Loading({ text }: { text: string }) {
   return (
     <div className="flex flex-1 items-center justify-center text-muted-foreground">
-      {text}
+      <BrandLoader size={32} label={text} />
     </div>
   );
 }

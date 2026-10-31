@@ -8,6 +8,7 @@ describe("App", () => {
     try {
       const html = renderToString(<App />);
       expect(html).toContain("Loading the studio");
+      expect(html).toContain('src="/zotra-loader-light.svg"');
     } finally {
       vi.unstubAllGlobals();
     }

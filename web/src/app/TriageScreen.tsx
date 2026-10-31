@@ -22,6 +22,7 @@ import { valueText } from "../studio/format";
 import type { ProcessNode, Version } from "../studio/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
+import { BrandLoader } from "@/components/BrandLoader";
 import { fetchChecks, type CheckResult, type InboxCase } from "./app-api";
 import { pickField } from "./InboxScreen";
 import {
@@ -164,7 +165,7 @@ export function RulesSection({ checks, checksError }: {
       {checksError !== null ? (
         <p className="text-[12.5px] text-red-700">{`The checks did not load: ${checksError}`}</p>
       ) : checks === null ? (
-        <p className="text-[12.5px] text-muted-foreground">Loading the checks.</p>
+        <p className="text-[12.5px] text-muted-foreground"><BrandLoader size={16} label="Loading the checks." /></p>
       ) : checks.length === 0 ? (
         <p className="text-[12.5px] text-muted-foreground">No rule on this step.</p>
       ) : (
@@ -275,7 +276,7 @@ export function TriageScreen(props: {
     );
   }
   if (derived === null) {
-    return <Centered><p className="text-muted-foreground">Loading the triage.</p></Centered>;
+    return <Centered><p className="text-muted-foreground"><BrandLoader size={32} label="Loading the triage." /></p></Centered>;
   }
   const order = frozen ?? derived;
   if (order.length === 0) {
@@ -610,7 +611,7 @@ function Deck({
                 {docsError !== null ? (
                   <p className="text-[12.5px] text-red-700">{`The documents did not load: ${docsError}`}</p>
                 ) : rows === null ? (
-                  <p className="text-[12.5px] text-muted-foreground">Loading the documents.</p>
+                  <p className="text-[12.5px] text-muted-foreground"><BrandLoader size={16} label="Loading the documents." /></p>
                 ) : rows.length === 0 ? (
                   <p className="text-[12.5px] text-muted-foreground">No document on this case path.</p>
                 ) : (

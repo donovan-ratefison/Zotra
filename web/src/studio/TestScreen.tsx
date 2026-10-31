@@ -48,11 +48,12 @@ import { sendDecision } from "../app/triage";
 import { TimelineBar } from "./TimelineBar";
 import { useStudioStore } from "./store";
 import type { ProcessDefinition, VersionSummary } from "./types";
+import { BrandLoader } from "@/components/BrandLoader";
 
 function Loading() {
   return (
     <div className="flex flex-1 items-center justify-center text-muted-foreground">
-      Loading the test view
+      <BrandLoader size={32} label="Loading the test view" />
     </div>
   );
 }
@@ -561,7 +562,7 @@ export function TestScreen({ def, version }: {
               </div>
             ) : eventsQuery.data === undefined ? (
               <div className="shrink-0 border-t px-4 py-2 text-sm text-muted-foreground">
-                Loading the events
+                <BrandLoader size={16} label="Loading the events" />
               </div>
             ) : (
               <TimelineBar
