@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Checkbox } from "@/ui/checkbox";
 import { valueText } from "./format";
 import { accessOf } from "./StepScreen";
+import type { CaseEvent } from "./case-api";
 import type { ProcessDefinition, ScopeAccess } from "./types";
 
 const SCOPE_TEXT: Record<ScopeAccess, [letter: string, title: string]> = {
@@ -14,6 +15,23 @@ const SCOPE_TEXT: Record<ScopeAccess, [letter: string, title: string]> = {
   write: ["W", "Write"],
   hidden: ["H", "Hidden"],
 };
+
+// scopeNodeOf gives the node whose role sets the scope: the node of the
+// position if it has a role, else the last entered step with a role
+// (the position is on a start, gateway or end node).
+export function scopeNodeOf(
+  def: ProcessDefinition,
+  events: CaseEvent[],
+  nodeId: string,
+): string {
+  const withRole = (id: unknown) =>
+    def.nodes.some((nd) => nd.id === id && nd.role !== null);
+  if (withRole(nodeId)) return nodeId;
+  const last = [...events]
+    .reverse()
+    .find((e) => e.type === "step_entered" && withRole(e.payload.node_id));
+  return last !== undefined ? String(last.payload.node_id) : nodeId;
+}
 
 export function Inspector({
   def,
@@ -91,52 +109,73 @@ export function Inspector({
       </div>
 
       {view === "list" ? (
-        <ul aria-label="Fields" className="flex flex-col divide-y rounded-lg border text-[13px]">
-          {fields.map((field) => {
-            const isAdded = !(field.name in before);
-            const isChanged = changed(field.name);
-            const access =
-              hasRole && node !== undefined
-                ? accessOf(field, node, def)
-                : null;
-            const show = (side: Record<string, unknown>) =>
-              field.name in side ? valueText(field, side[field.name], def.currency) : "-";
-            return (
-              <li
-                key={field.name}
-                className={`flex items-start gap-2 px-2.5 py-1.5 ${
-                  isAdded ? "bg-[#dcfce7]" : isChanged ? "bg-[#fef3c7]" : ""
-                }`}
-              >
-                <span className="w-[42%] shrink-0 break-words text-muted-foreground" title={field.label}>
-                  {field.label}
-                </span>
-                <span className="min-w-0 flex-1 break-words">
-                  {isChanged && !isAdded && (
-                    <span className="text-muted-foreground line-through decoration-muted-foreground/60">
-                      {show(before)}
-                    </span>
-                  )}
-                  {isChanged && !isAdded && <span className="mx-1 text-muted-foreground">→</span>}
-                  <span className={isChanged ? "font-medium" : undefined}>{show(after)}</span>
-                  {isChanged && field.computed !== null && (
-                    <span className="ml-1 rounded border px-1 text-[10px]">
-                      computed
-                    </span>
-                  )}
-                </span>
-                {access !== null && (
-                  <span
-                    title={SCOPE_TEXT[access][1]}
-                    className="shrink-0 rounded border px-1 font-mono text-[10.5px] text-muted-foreground"
+        <div className="overflow-hidden rounded-lg border">
+          <table aria-label="Fields" className="w-full table-fixed border-collapse text-[13px]">
+            <thead>
+              <tr className="text-left text-[11.5px] font-medium text-muted-foreground">
+                <th className="w-[36%] px-2.5 py-1.5 font-medium">Field</th>
+                <th className="px-2.5 py-1.5 font-medium">Before</th>
+                <th className="px-2.5 py-1.5 font-medium">After</th>
+                {hasRole && <th className="w-14 px-2.5 py-1.5 text-center font-medium">Scope</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {fields.map((field) => {
+                const isAdded = !(field.name in before);
+                const isChanged = changed(field.name);
+                const access =
+                  hasRole && node !== undefined ? accessOf(field, node, def) : null;
+                const show = (side: Record<string, unknown>) =>
+                  field.name in side ? (
+                    valueText(field, side[field.name], def.currency)
+                  ) : (
+                    <i className="text-muted-foreground">absent</i>
+                  );
+                return (
+                  <tr
+                    key={field.name}
+                    className={`border-t ${
+                      isAdded ? "bg-[#dcfce7]" : isChanged ? "bg-[#fef3c7]" : ""
+                    }`}
                   >
-                    {SCOPE_TEXT[access][0]}
-                  </span>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+                    <td
+                      className={`border-l-[3px] px-2.5 py-1.5 align-top ${
+                        isAdded
+                          ? "border-l-green-600"
+                          : isChanged
+                            ? "border-l-amber-500"
+                            : "border-l-transparent"
+                      }`}
+                    >
+                      <span className="break-words text-muted-foreground" title={field.label}>
+                        {field.label}
+                      </span>
+                    </td>
+                    <td className="break-words px-2.5 py-1.5 align-top">{show(before)}</td>
+                    <td className="break-words px-2.5 py-1.5 align-top">
+                      <span className={isChanged ? "font-medium" : undefined}>{show(after)}</span>
+                      {isChanged && field.computed !== null && (
+                        <span className="ml-1 rounded border px-1 text-[10px]">
+                          computed
+                        </span>
+                      )}
+                    </td>
+                    {access !== null && (
+                      <td className="px-2.5 py-1.5 text-center align-top">
+                        <span
+                          title={SCOPE_TEXT[access][1]}
+                          className="rounded border px-1 font-mono text-[10.5px] text-muted-foreground"
+                        >
+                          {SCOPE_TEXT[access][0]}
+                        </span>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <pre className="font-mono text-[12px]">
           {fields.map((field, i) => {
@@ -170,7 +209,9 @@ export function Inspector({
           <span className="inline-block size-3 rounded-sm bg-[#fef3c7]" />
           Modified
         </span>
-        {hasRole && <span>R Read · W Write · H Hidden</span>}
+        {hasRole && node !== undefined && (
+          <span>{`Scope of ${node.name}: R Read · W Write · H Hidden`}</span>
+        )}
       </div>
     </div>
   );

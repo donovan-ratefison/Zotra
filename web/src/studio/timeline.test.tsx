@@ -12,7 +12,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactFlowProvider } from "@xyflow/react";
 import { eventLabel } from "./Timeline";
 import { milestonesOf, overflowSides, ScrollEdge, TimelineBar, upcomingOf } from "./TimelineBar";
-import { Inspector } from "./Inspector";
+import { Inspector, scopeNodeOf } from "./Inspector";
+import seedJson from "../../../internal/store/seed/example-process.json";
 import { ChecksTab } from "./ChecksTab";
 import { StepScreen } from "./StepScreen";
 import { TestScreen } from "./TestScreen";
@@ -281,6 +282,7 @@ function renderInspector(def: ProcessDefinition, props: {
   after: Record<string, unknown>;
   initialView?: "list" | "json";
   initialOnlyChanges?: boolean;
+  nodeId?: string;
 }): string {
   return renderToString(
     createElement(Inspector, { def, nodeId: "entry", ...props }),
@@ -562,6 +564,39 @@ describe("timeline", () => {
 });
 
 describe("inspector", () => {
+  const seed = seedJson as ProcessDefinition;
+  const entered = (...ids: string[]) =>
+    ids.map((id, i) => ev(i + 1, "step_entered", { node_id: id }));
+  // rowOf gives the table row of the field with this label; the cut at
+  // </tr> keeps the legend colors out of the last row.
+  const rowOf = (html: string, label: string) =>
+    (html.split("<tr").find((r) => r.includes(`title="${label}"`)) ?? "").split("</tr>")[0]!;
+
+  test("pol-18 row P1: a node with a role is its own scope node", () => {
+    expect(scopeNodeOf(seed, [], "analysis")).toBe("analysis");
+  });
+
+  test("pol-18 row P2: an end node takes the last step with a role", () => {
+    const events = entered("entry", "complete", "analysis", "threshold", "offer", "signing", "release", "released");
+    expect(scopeNodeOf(seed, events, "released")).toBe("release");
+  });
+
+  test("pol-18 row P3: a gateway takes the step before it", () => {
+    expect(scopeNodeOf(seed, entered("entry", "complete"), "complete")).toBe("entry");
+  });
+
+  test("pol-18 row P4: a start node with no events stays the start node", () => {
+    expect(scopeNodeOf(seed, [], "start")).toBe("start");
+  });
+
+  test("pol-18 row P5: an unknown node takes the last step with a role", () => {
+    expect(scopeNodeOf(seed, entered("entry"), "ghost")).toBe("entry");
+  });
+
+  test("pol-18 row P6: an unknown entered node is skipped", () => {
+    expect(scopeNodeOf(seed, entered("ghost"), "refused")).toBe("refused");
+  });
+
   test("3.2 row 12: the list view shows added rows and the scope column", () => {
     const html = unquote(
       renderInspector(testDefinition, {
@@ -571,9 +606,10 @@ describe("inspector", () => {
     );
     expect(html).toContain(">€120,000.00<");
     expect(html).toContain(">Demo Client<");
-    expect((html.match(/<li class="[^"]*bg-\[#dcfce7\]"/g) ?? []).length).toBe(2);
+    expect((html.match(/<tr class="[^"]*bg-\[#dcfce7\]"/g) ?? []).length).toBe(2);
     expect((html.match(/title="Write"/g) ?? []).length).toBe(2);
     expect((html.match(/>W</g) ?? []).length).toBe(2);
+    expect((html.match(/>absent</g) ?? []).length).toBe(2);
   });
 
   test("3.2 row 13: the JSON view holds the added lines", () => {
@@ -606,37 +642,38 @@ describe("inspector", () => {
     });
     expect(html).toContain(">Monthly payment<");
     expect(html).toContain(">computed<");
-    expect((html.match(/<li class="[^"]*bg-\[#fef3c7\]"/g) ?? []).length).toBe(2);
+    expect((html.match(/<tr class="[^"]*bg-\[#fef3c7\]"/g) ?? []).length).toBe(2);
   });
-
-  const docsRow = (html: string) => html.match(/<li class="[^"]*"><span[^>]*title="Documents"[\s\S]*?<\/li>/)?.[0] ?? "";
 
   test("pol-4 row I1: equal arrays in other objects are not a change", () => {
     const html = renderInspector(testDefinition, {
       before: { docs: [{ name: "ID", read: true }] },
       after: { docs: [{ name: "ID", read: true }] },
     });
-    const row = docsRow(html);
+    const row = rowOf(html, "Documents");
     expect(row).toContain(">Documents<");
     expect(row).not.toContain("bg-[#fef3c7]");
-    expect(row).not.toContain("line-through");
+    expect(row).not.toContain("border-l-amber-500");
   });
 
   test("pol-4 row I2: a list with one more item is a change", () => {
-    const row = docsRow(renderInspector(testDefinition, {
+    const row = rowOf(renderInspector(testDefinition, {
       before: { docs: [{ name: "ID" }] },
       after: { docs: [{ name: "ID" }, { name: "Payslips" }] },
-    }));
+    }), "Documents");
     expect(row).toContain("bg-[#fef3c7]");
-    expect(row).toContain("line-through");
+    expect(row).toContain("border-l-amber-500");
+    expect(row).toMatch(/>1 scan<[\s\S]*>2 scans</);
   });
 
   test("pol-4 row I3: a field only in after is added", () => {
-    const row = docsRow(renderInspector(testDefinition, {
+    const row = rowOf(renderInspector(testDefinition, {
       before: {},
       after: { docs: [{ name: "ID" }] },
-    }));
+    }), "Documents");
     expect(row).toContain("bg-[#dcfce7]");
+    expect(row).toContain("border-l-green-600");
+    expect(row).toContain(">absent<");
   });
 
   test("pol-4 row I4: the label wraps and is not cut", () => {
@@ -646,6 +683,28 @@ describe("inspector", () => {
     });
     expect(html).toMatch(/<span class="[^"]*break-words[^"]*" title="Amount">/);
     expect(html).not.toContain("truncate");
+  });
+
+  test("pol-18 row C1: the table has the four columns and both values", () => {
+    const html = renderInspector(testDefinition, { before: { amount: 1 }, after: { amount: 1 } });
+    for (const head of [">Field<", ">Before<", ">After<", ">Scope<"]) expect(html).toContain(head);
+    expect((html.match(/€1\.00/g) ?? []).length).toBe(2);
+  });
+
+  test("pol-18 row C2: a node with no role has no scope column", () => {
+    const html = renderInspector(testDefinition, { before: { amount: 1 }, after: { amount: 1 }, nodeId: "start" });
+    expect(html).not.toContain(">Scope<");
+    expect(html).not.toContain("Scope of");
+  });
+
+  test("pol-18 row C3: the legend names the step of the scope", () => {
+    const html = renderInspector(testDefinition, { before: { amount: 1 }, after: { amount: 1 } });
+    expect(html).toContain("Scope of Application entry: R Read · W Write · H Hidden");
+  });
+
+  test("pol-18 row C4: a removed value shows absent in the After column", () => {
+    const row = rowOf(renderInspector(testDefinition, { before: { amount: 1 }, after: {} }), "Amount");
+    expect(row).toMatch(/€1\.00[\s\S]*>absent</);
   });
 });
 

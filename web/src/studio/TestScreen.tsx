@@ -31,7 +31,7 @@ import {
 } from "./case-api";
 import { caseViewOf } from "./case-view";
 import { ChecksTab } from "./ChecksTab";
-import { Inspector } from "./Inspector";
+import { Inspector, scopeNodeOf } from "./Inspector";
 import { listCaseDocuments, uploadDocument, type DocumentDTO } from "./doc-api";
 import { NewCaseDialog } from "./NewCaseDialog";
 import {
@@ -637,7 +637,7 @@ export function TestScreen({ def, version }: {
                   def={def}
                   before={before}
                   after={after}
-                  nodeId={loaded.state.node_id}
+                  nodeId={scopeNodeOf(def, events.slice(0, n), loaded.state.node_id)}
                 />
               </div>
             )}
