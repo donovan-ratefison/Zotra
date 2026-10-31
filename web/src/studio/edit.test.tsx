@@ -221,30 +221,46 @@ describe("menuItems", () => {
   const step = { action: "delete-node", label: "Delete step", disabled: false, title: null };
   const link = { action: "delete-edge", label: "Delete link", disabled: false, title: null };
   test("M1: a step gives Delete step, enabled", () => {
-    expect(menuItems(base, { kind: "node", id: "analysis" }, false)).toEqual([step]);
+    expect(menuItems(base, { kind: "node", id: "analysis" }, false, true)).toEqual([step]);
   });
   test("M2: a step with unsaved edits gives a disabled item", () => {
-    expect(menuItems(base, { kind: "node", id: "analysis" }, true)).toEqual([
+    expect(menuItems(base, { kind: "node", id: "analysis" }, true, true)).toEqual([
       { ...step, disabled: true, title: "Save the step first" },
     ]);
   });
   test("M3: the start gives no item", () => {
-    expect(menuItems(base, { kind: "node", id: "start" }, false)).toEqual([]);
+    expect(menuItems(base, { kind: "node", id: "start" }, false, true)).toEqual([]);
   });
   test("M4: an unknown step gives no item", () => {
-    expect(menuItems(base, { kind: "node", id: "nope" }, false)).toEqual([]);
+    expect(menuItems(base, { kind: "node", id: "nope" }, false, true)).toEqual([]);
   });
   test("M5: a link gives Delete link, enabled", () => {
-    expect(menuItems(base, { kind: "edge", id: "e01" }, false)).toEqual([link]);
+    expect(menuItems(base, { kind: "edge", id: "e01" }, false, true)).toEqual([link]);
   });
   test("M6: a link with unsaved step edits stays enabled", () => {
-    expect(menuItems(base, { kind: "edge", id: "e01" }, true)).toEqual([link]);
+    expect(menuItems(base, { kind: "edge", id: "e01" }, true, true)).toEqual([link]);
   });
   test("M7: an unknown link gives no item", () => {
-    expect(menuItems(base, { kind: "edge", id: "nope" }, false)).toEqual([]);
+    expect(menuItems(base, { kind: "edge", id: "nope" }, false, true)).toEqual([]);
   });
   test("M8: a new end step gives Delete step, enabled", () => {
     const r = addNode(base, "end");
-    expect(menuItems(r.def, { kind: "node", id: r.id }, false)).toEqual([step]);
+    expect(menuItems(r.def, { kind: "node", id: r.id }, false, true)).toEqual([step]);
+  });
+  const pane = [
+    { action: "rearrange", label: "Rearrange", disabled: false, title: null },
+    { action: "another-path", label: "Try another path", disabled: false, title: null },
+  ];
+  test("M9: the canvas of a read-only version gives the two layout items", () => {
+    expect(menuItems(base, { kind: "pane" }, false, false)).toEqual(pane);
+  });
+  test("M10: the canvas of a draft with unsaved edits gives the two items, enabled", () => {
+    expect(menuItems(base, { kind: "pane" }, true, true)).toEqual(pane);
+  });
+  test("M11: a step of a read-only version gives no item", () => {
+    expect(menuItems(base, { kind: "node", id: "analysis" }, false, false)).toEqual([]);
+  });
+  test("M12: a link of a read-only version gives no item", () => {
+    expect(menuItems(base, { kind: "edge", id: "e01" }, false, false)).toEqual([]);
   });
 });

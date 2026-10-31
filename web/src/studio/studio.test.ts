@@ -7,17 +7,24 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Position, ReactFlowProvider, type Node } from "@xyflow/react";
 import { getVersion, listProcesses, listVersions, ApiError } from "./api";
 import {
+  bends,
+  bestCandidate,
+  crossings,
   diagramEdgeText,
   edgePillText,
   estimatePillWidth,
   gridLayout,
   labelBox,
+  layoutCandidates,
   layoutProcess,
+  nextCandidate,
   PILL_HEIGHT,
   PILL_MARGIN,
   pillPlacement,
   roleColor,
   toElkGraph,
+  type FlowEdge,
+  type Layout,
 } from "./layout";
 import { EdgePill, edgeAnchor, EventShape, fitViewport, focusBox, focusViewport, neighborIn, TaskCard } from "./diagram";
 import { addNode, connect } from "./edit";
@@ -1530,5 +1537,140 @@ describe("undo", () => {
     expect(stack[0]!.name).toBe("d2");
     expect(stack[19]!.name).toBe("d21");
     expect(pushUndo([], miniDefinition)).toEqual([miniDefinition]);
+  });
+});
+
+// The shape of feedback item 0026: the seed plus a proposed task
+// between the client signature and the release of funds.
+function shapeDefinition(): ProcessDefinition {
+  const signing = seedDefinition.nodes.find((n) => n.id === "signing")!;
+  const validation: ProcessNode = {
+    ...signing, id: "validation", name: "Signature validation", role: "legal", deadline_hours: 24, signature: false,
+  };
+  const nodes = [...seedDefinition.nodes];
+  nodes.splice(nodes.findIndex((n) => n.id === "release"), 0, validation);
+  const edges = seedDefinition.edges.map((e) => (e.id === "e13" ? { ...e, to: "validation" } : e));
+  edges.push({ id: "e15", from: "validation", to: "release", label: null, decision: null, condition: null, is_default: false });
+  return { ...seedDefinition, nodes, edges };
+}
+
+describe("layout candidates", () => {
+  type Grid = NonNullable<ReturnType<typeof gridLayout>>;
+  function expectCell(grid: Grid, id: string, [cx, cy, row]: [number, number, number]) {
+    const c = grid.cells.get(id)!;
+    expect(c.cx).toBe(cx);
+    expect(c.cy).toBe(cy);
+    expect(c.row).toBe(row);
+  }
+  const line = (id: string, pts: [number, number][]) =>
+    ({ id, source: "a", target: "b", data: { points: pts.map(([x, y]) => ({ x, y })), pill: null } }) as unknown as FlowEdge;
+  const A = line("A", [[0, 0], [100, 0]]);
+  const B = line("B", [[50, -50], [50, 50]]);
+  const C = line("C", [[100, 0], [100, 50]]);
+  const D = line("D", [[0, 0], [60, 0]]);
+  const L = line("L", [[0, 0], [0, 50], [80, 50]]);
+  const withEdges = (edges: FlowEdge[]) => ({ nodes: [], edges, width: 10, height: 10 }) as unknown as Layout;
+
+  test("L1: a short tail goes down under the last node of the row", () => {
+    const grid = gridLayout(shapeDefinition());
+    expect(grid).not.toBeNull();
+    expectCell(grid!, "validation", [1124.8, 0, 0]);
+    expectCell(grid!, "release", [1124.8, 140, 1]);
+    expectCell(grid!, "released", [1124.8, 280, 2]);
+    expectCell(grid!, "decision", [610.8, 140, 1]);
+    expectCell(grid!, "refused", [610.8, 280, 2]);
+  });
+
+  test("L2: the tail links go straight down", () => {
+    const grid = gridLayout(shapeDefinition())!;
+    expect(grid.points.get("e15")).toEqual([{ x: 1124.8, y: 36 }, { x: 1124.8, y: 104 }]);
+    expect(grid.points.get("e14")).toEqual([{ x: 1124.8, y: 176 }, { x: 1124.8, y: 260 }]);
+  });
+
+  test("L3: the default layout of the item shape has no link crossing", async () => {
+    expect(crossings((await layoutProcess(shapeDefinition())).edges)).toBe(0);
+  });
+
+  test("L4: a tail of 2 makes a column", () => {
+    const grid = gridLayout(chainDefinition(8))!;
+    expectCell(grid, "t8", [1280, 140, 1]);
+    expectCell(grid, "released", [1280, 280, 2]);
+  });
+
+  test("L5: a tail of 3 keeps the left-to-right row", () => {
+    const grid = gridLayout(chainDefinition(9))!;
+    expectCell(grid, "t8", [76, 140, 1]);
+    expectCell(grid, "t9", [264, 140, 1]);
+    expectCell(grid, "released", [264, 280, 2]);
+  });
+
+  test("L6: a tail of 1 sits under the last task", () => {
+    const grid = gridLayout(chainDefinition(7))!;
+    expectCell(grid, "t7", [1280, 0, 0]);
+    expectCell(grid, "released", [1280, 140, 1]);
+  });
+
+  test("L7: with no row budget the main path stays on one row", () => {
+    const grid = gridLayout(chainDefinition(12), Infinity)!;
+    expectCell(grid, "t12", [2220, 0, 0]);
+    expectCell(grid, "released", [2220, 140, 1]);
+  });
+
+  test("L8: the seed has three candidates, the default first", async () => {
+    const list = await layoutCandidates(seedDefinition);
+    expect(list).toHaveLength(3);
+    expect(list[0]).toEqual(await layoutProcess(seedDefinition));
+  });
+
+  test("L9: a gateway link to itself keeps only the ELK candidate", async () => {
+    const def: ProcessDefinition = {
+      ...miniDefinition,
+      edges: [
+        ...miniDefinition.edges,
+        { id: "self", from: "complete", to: "complete", label: null, decision: null, condition: null, is_default: false },
+      ],
+    };
+    const list = await layoutCandidates(def);
+    expect(list).toHaveLength(1);
+    expect(list[0]!.nodes.some((n) => n.data.labelPos !== undefined)).toBe(false);
+  });
+
+  test("L10: crossings count only strict crossings of two links", () => {
+    expect(crossings([A, B])).toBe(1);
+    expect(crossings([A, C])).toBe(0);
+    expect(crossings([A, D])).toBe(0);
+    expect(crossings([L, B])).toBe(0);
+    expect(crossings([L])).toBe(0);
+  });
+
+  test("L11: bends count the inner points", () => {
+    expect(bends([A, L])).toBe(1);
+  });
+
+  test("L12: the best candidate has the fewest crossings, then bends, then the first index", () => {
+    expect(bestCandidate([withEdges([A, B]), withEdges([A, L]), withEdges([A, C]), withEdges([C])])).toBe(2);
+  });
+
+  test("L13: the default grid is the best candidate of the seed and of the item shape", async () => {
+    expect(bestCandidate(await layoutCandidates(seedDefinition))).toBe(0);
+    expect(bestCandidate(await layoutCandidates(shapeDefinition()))).toBe(0);
+  });
+
+  test("L14: the next candidate skips equal positions and wraps", async () => {
+    const list = await layoutCandidates(seedDefinition);
+    expect(nextCandidate(list, list[0]!)).toBe(2);
+    expect(nextCandidate(list, list[2]!)).toBe(0);
+  });
+
+  test("L15: the item shape cycles through its three candidates", async () => {
+    const list = await layoutCandidates(shapeDefinition());
+    expect(nextCandidate(list, list[0]!)).toBe(1);
+    expect(nextCandidate(list, list[1]!)).toBe(2);
+    expect(nextCandidate(list, list[2]!)).toBe(0);
+  });
+
+  test("L16: one candidate gives no other path", async () => {
+    const list = await layoutCandidates(seedDefinition);
+    expect(nextCandidate([list[0]!], list[0]!)).toBe(-1);
   });
 });

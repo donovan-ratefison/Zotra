@@ -117,19 +117,38 @@ export function removeNode(
 }
 
 // The right-click menu of the diagram: one delete action for a step
-// or a link.
-export type MenuTarget = { kind: "node"; id: string } | { kind: "edge"; id: string };
+// or a link of a draft, two layout actions for the empty canvas of
+// any version.
+export type MenuTarget =
+  | { kind: "node"; id: string }
+  | { kind: "edge"; id: string }
+  | { kind: "pane" };
 export type MenuItem = {
-  action: "delete-node" | "delete-edge";
+  action: "delete-node" | "delete-edge" | "rearrange" | "another-path";
   label: string;
   disabled: boolean;
   title: string | null;
 };
 
-// menuItems gives no item for an unknown id or the start, so the
-// browser menu stays. A step with unsaved panel edits cannot be
-// deleted (same rule as the step panel); a link always can.
-export function menuItems(def: ProcessDefinition, target: MenuTarget, dirty: boolean): MenuItem[] {
+// menuItems gives no item for an unknown id, the start, or a step or
+// a link of a version that is not editable, so the browser menu
+// stays. A step with unsaved panel edits cannot be deleted (same rule
+// as the step panel); a link always can.
+export function menuItems(
+  def: ProcessDefinition,
+  target: MenuTarget,
+  dirty: boolean,
+  editable: boolean,
+): MenuItem[] {
+  if (target.kind === "pane") {
+    return [
+      { action: "rearrange", label: "Rearrange", disabled: false, title: null },
+      { action: "another-path", label: "Try another path", disabled: false, title: null },
+    ];
+  }
+  if (!editable) {
+    return [];
+  }
   if (target.kind === "edge") {
     return def.edges.some((e) => e.id === target.id)
       ? [{ action: "delete-edge", label: "Delete link", disabled: false, title: null }]

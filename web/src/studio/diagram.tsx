@@ -34,8 +34,12 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
+  bestCandidate,
+  layoutCandidates,
   layoutProcess,
+  nextCandidate,
   pathMidpoint,
   type DiagramEdgeData,
   type DiagramNodeData,
@@ -1066,7 +1070,8 @@ export function ProcessDiagram({
   highlightNodeIds?: string[] | null;
   // The edit handlers of a draft: the toolbar adds a step, a drag
   // between two handles links two steps, the right-click menu deletes
-  // a step or a link. Null keeps the diagram read only.
+  // a step or a link. Null keeps the diagram read only. The menu of
+  // the empty canvas shows other layouts on every version.
   edit?: {
     onAdd: (type: AddType) => void;
     onConnect: (from: string, to: string) => void;
@@ -1084,6 +1089,9 @@ export function ProcessDiagram({
     items: MenuItem[];
   } | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  // The current definition, so that a layout list that ends after a
+  // change of def is dropped.
+  const defRef = useRef(def);
   // The step under the pointer, else the step with keyboard focus:
   // its links light up and the steps it does not touch dim.
   const [hoverId, setHoverId] = useState<string | null>(null);
@@ -1103,6 +1111,7 @@ export function ProcessDiagram({
       : null;
   }, [active, def, highlightNodeIds]);
   useEffect(() => {
+    defRef.current = def;
     let ignore = false;
     layoutProcess(def).then((r) => withSources(def, r)).then((result) => {
       if (!ignore) {
@@ -1220,19 +1229,48 @@ export function ProcessDiagram({
     [layout, ghostIds],
   );
 
-  // openMenu opens the custom menu on a draft only. With no item, the
-  // browser menu stays.
-  function openMenu(e: MouseEvent, target: MenuTarget) {
-    if (edit === null || wrapRef.current === null) {
+  // openMenu opens the custom menu. With no item, the browser menu
+  // stays.
+  function openMenu(e: MouseEvent | globalThis.MouseEvent, target: MenuTarget) {
+    if (wrapRef.current === null) {
       return;
     }
-    const items = menuItems(def, target, useStudioStore.getState().dirty);
+    const items = menuItems(def, target, useStudioStore.getState().dirty, edit !== null);
     if (items.length === 0) {
       return;
     }
     e.preventDefault();
     const box = wrapRef.current.getBoundingClientRect();
     setMenu({ x: e.clientX - box.left, y: e.clientY - box.top, target, items });
+  }
+
+  // Rearrange shows the candidate with the fewest crossings; another
+  // path shows the next candidate that differs from the view. Nothing
+  // is stored: a new def lays out the default grid again.
+  async function relayout(action: "rearrange" | "another-path") {
+    const asked = def;
+    const list = (await layoutCandidates(asked)).map((l) => withSources(asked, l));
+    if (defRef.current !== asked || layout === null) {
+      return;
+    }
+    const index = action === "rearrange" ? bestCandidate(list) : nextCandidate(list, layout);
+    if (index === -1) {
+      toast("This process has no other path.");
+      return;
+    }
+    setLayout(list[index]!);
+  }
+
+  function runMenuItem(item: MenuItem, target: MenuTarget) {
+    if (item.action === "rearrange" || item.action === "another-path") {
+      void relayout(item.action);
+    } else if (target.kind !== "pane" && edit !== null) {
+      if (item.action === "delete-node") {
+        edit.onDeleteNode(target.id);
+      } else {
+        edit.onDeleteEdge(target.id);
+      }
+    }
   }
 
   if (layout === null) {
@@ -1295,6 +1333,7 @@ export function ProcessDiagram({
         onPaneClick={() => onNodeSelect(null)}
         onNodeContextMenu={(e, n) => openMenu(e, { kind: "node", id: n.id })}
         onEdgeContextMenu={(e, ed) => openMenu(e, { kind: "edge", id: ed.id })}
+        onPaneContextMenu={(e) => openMenu(e, { kind: "pane" })}
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="#d4d4d8" />
         <AutoFit box={wrapRef} layout={layout} focus={focus} />
@@ -1319,7 +1358,7 @@ export function ProcessDiagram({
           </Panel>
         )}
       </ReactFlow>
-      {edit !== null && menu !== null && (
+      {menu !== null && (
         <DropdownMenu open onOpenChange={(open) => !open && setMenu(null)}>
           <DropdownMenuTrigger asChild>
             <span
@@ -1332,14 +1371,10 @@ export function ProcessDiagram({
             {menu.items.map((item) => (
               <DropdownMenuItem
                 key={item.action}
-                variant="destructive"
+                variant={item.action.startsWith("delete") ? "destructive" : "default"}
                 disabled={item.disabled}
                 title={item.title ?? undefined}
-                onSelect={() =>
-                  item.action === "delete-node"
-                    ? edit.onDeleteNode(menu.target.id)
-                    : edit.onDeleteEdge(menu.target.id)
-                }
+                onSelect={() => runMenuItem(item, menu.target)}
               >
                 {item.label}
               </DropdownMenuItem>

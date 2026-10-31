@@ -421,7 +421,7 @@ function nodeLabelBox(node: ProcessNode, c: Cell, pos: LabelPos): Box {
   return { x: c.cx - w / 2, y: c.cy + c.h / 2 + 4, w, h };
 }
 
-export function gridLayout(def: ProcessDefinition): GridLayout | null {
+export function gridLayout(def: ProcessDefinition, budget = ROW_BUDGET): GridLayout | null {
   const spine = mainPath(def);
   if (spine === null) {
     return null;
@@ -442,12 +442,15 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
   };
 
   // 1. The main path. A row holds spine nodes until the next node
-  // would push the row right edge past ROW_BUDGET, and the rest
+  // would push the row right edge past the budget, and the rest
   // continues on the row below, again from the left, so every row
-  // reads left to right. The gap between two nodes still holds the
-  // text of their link.
+  // reads left to right. A tail of 1 or 2 nodes goes down in a column
+  // under the last node of the row, so its link does not run back
+  // across the row. The gap between two nodes still holds the text of
+  // their link.
   let x = 0;
   let row = 0;
+  let tail = false;
   spine.forEach((id, i) => {
     const s = sizeOf(id);
     if (i === 0) {
@@ -455,7 +458,12 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
     } else {
       const p = cells.get(spine[i - 1]!)!;
       const next = p.cx + p.w / 2 + Math.max(GRID_GAP, labelOf(spine[i - 1]!, id)) + s.width / 2;
-      if (next + s.width / 2 > ROW_BUDGET) {
+      const wrap = next + s.width / 2 > budget;
+      tail ||= wrap && spine.length - i <= 2;
+      if (tail) {
+        row++;
+        x = p.cx;
+      } else if (wrap) {
         row++;
         x = s.width / 2;
       } else {
@@ -512,7 +520,7 @@ export function gridLayout(def: ProcessDefinition): GridLayout | null {
     }
     const s = NODE_SIZE[n.type];
     let cx = parkRight === 0 ? s.width / 2 : parkRight + GRID_GAP + s.width / 2;
-    if (parkRight !== 0 && cx + s.width / 2 > ROW_BUDGET) {
+    if (parkRight !== 0 && cx + s.width / 2 > budget) {
       parkRow++;
       cx = s.width / 2;
     }
@@ -1061,6 +1069,16 @@ export async function layoutProcess(def: ProcessDefinition): Promise<{
   if (grid !== null) {
     return fromGrid(def, grid);
   }
+  return elkLayout(def);
+}
+
+export async function layoutCandidates(def: ProcessDefinition): Promise<Layout[]> {
+  assertDefinition(def);
+  const grids = [gridLayout(def), gridLayout(def, Infinity)].filter((g) => g !== null);
+  return [...grids.map((g) => fromGrid(def, g)), await elkLayout(def)];
+}
+
+async function elkLayout(def: ProcessDefinition): Promise<Layout> {
   const graph = toElkGraph(def);
   let laidOut = await new ELK().layout(graph);
   if ((laidOut.width ?? 0) > ROW_BUDGET) {
@@ -1141,7 +1159,7 @@ export const SOURCE_SIZE = { width: 150, height: 36 };
 
 export type SourceFlowNode = Node<{ source: SourceRow }, "source">;
 
-type Layout = Awaited<ReturnType<typeof layoutProcess>>;
+export type Layout = Awaited<ReturnType<typeof layoutProcess>>;
 
 // The source cards and their dotted links. Each source that a task
 // lists gets one card, in one row centered above the first task that
@@ -1229,4 +1247,58 @@ export function withSources(
     height: layout.height + dy,
     sources: { nodes: cards.map(moveNode), edges: links.map(moveEdge) },
   };
+}
+
+// The number of crossings between the links of a layout: each pair of
+// segments of two different links that cross at a point inside both.
+export function crossings(edges: FlowEdge[]): number {
+  const segs = edges.map((e) => e.data!.points.slice(1).map((q, i) => [e.data!.points[i]!, q] as const));
+  const side = (a: DiagramPoint, b: DiagramPoint, c: DiagramPoint) =>
+    Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+  let n = 0;
+  for (let i = 0; i < segs.length; i++) {
+    for (let j = i + 1; j < segs.length; j++) {
+      for (const [a, b] of segs[i]!) {
+        for (const [c, d] of segs[j]!) {
+          if (side(a, b, c) * side(a, b, d) < 0 && side(c, d, a) * side(c, d, b) < 0) n++;
+        }
+      }
+    }
+  }
+  return n;
+}
+export function bends(edges: FlowEdge[]): number {
+  return edges.reduce((sum, e) => sum + e.data!.points.length - 2, 0);
+}
+
+// The index of the candidate with the fewest crossings, then the
+// fewest bends, then the first in candidate order.
+export function bestCandidate(list: Layout[]): number {
+  let best = 0;
+  list.forEach((l, i) => {
+    const b = list[best]!;
+    const d = crossings(l.edges) - crossings(b.edges) || bends(l.edges) - bends(b.edges);
+    if (d < 0) best = i;
+  });
+  return best;
+}
+
+function samePositions(a: Layout, b: Layout): boolean {
+  return a.nodes.length === b.nodes.length &&
+    a.nodes.every((n) => {
+      const m = b.nodes.find((o) => o.id === n.id);
+      return m !== undefined && m.position.x === n.position.x && m.position.y === n.position.y;
+    });
+}
+
+// The index of the next candidate after the shown one, in cyclic
+// order, whose node positions differ from the shown layout; -1 when
+// none differs.
+export function nextCandidate(list: Layout[], shown: Layout): number {
+  const at = list.findIndex((l) => samePositions(l, shown));
+  for (let k = 1; k <= list.length; k++) {
+    const i = (at + k + list.length) % list.length;
+    if (!samePositions(list[i]!, shown)) return i;
+  }
+  return -1;
 }
