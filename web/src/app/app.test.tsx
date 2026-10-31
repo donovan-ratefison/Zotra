@@ -214,10 +214,20 @@ function seedShell(client: QueryClient) {
   client.setQueryData(["inbox", "u-advisor"], { user: inboxUser, cases: [inboxCase] });
 }
 
-function renderInbox(cases: InboxCase[], state?: CaseState): string {
+function renderInbox(
+  cases: InboxCase[],
+  state?: CaseState,
+  enteredAt = "2026-10-27T12:05:00Z",
+): string {
   const client = newClient();
   if (state !== undefined) {
     client.setQueryData(["case", "c1"], { case: caseFixture, state });
+    client.setQueryData(["events", "c1"], [
+      {
+        case_id: "c1", seq: 1, type: "step_entered", at: enteredAt,
+        actor: "system", payload: { node_id: "entry" }, prev_hash: "", hash: "",
+      },
+    ]);
   }
   return renderToString(
     createElement(
@@ -226,6 +236,8 @@ function renderInbox(cases: InboxCase[], state?: CaseState): string {
       createElement(InboxScreen, {
         def: defFixture,
         userId: "u-advisor",
+        users: usersFixture,
+        now: Date.parse("2026-10-28T02:00:00Z"),
         cases,
         roleNames: "Advisor",
         onOpenCase: () => {},
@@ -379,7 +391,11 @@ describe("inbox screen", () => {
     expect(html).toContain("Application entry");
     expect(html).toContain("Take the case");
     expect(html).toContain("Open a case to work on its step.");
-    expect(html).toContain("27 Oct, 12:00");
+    expect(html).toContain("28 Oct, 12:05");
+    expect(html).toContain("10 h left");
+    expect(html).toContain("New");
+    expect(html).toContain("Not taken");
+    expect(html.match(/>Not taken</g)).toHaveLength(2);
     expect(html).not.toContain("27/10/2026");
   });
 
@@ -406,6 +422,36 @@ describe("inbox screen", () => {
     expect(html).toContain("Application entry");
     expect(html).toContain("-</td>");
     expect(html).not.toContain("Take the case");
+  });
+
+  test("pol-16 row N2: a case taken by another user shows the initials and the name", () => {
+    const html = renderInbox([inboxCase], otherTakenState);
+    expect(html).toContain("DB");
+    expect(html).toContain("Demo Back-office");
+    // The only "Not taken" is the tab.
+    expect(html.match(/>Not taken</g)).toHaveLength(1);
+  });
+
+  test("pol-16 row N3: a pending case gives dashes and the tab bar", () => {
+    const html = renderInbox([inboxCase]);
+    expect(html).toContain("-</td>");
+    expect(html).toContain(">All<");
+    expect(html.match(/>Not taken</g)).toHaveLength(1);
+    expect(html).not.toContain("h left");
+  });
+
+  test("pol-16 row N4: a case past its deadline shows the late pill and the due date", () => {
+    const html = renderInbox([inboxCase], stateFixture, "2026-10-26T12:00:00Z");
+    expect(html).toContain("Late by 14 h");
+    expect(html).toContain("27 Oct, 12:00");
+  });
+
+  test("pol-16 row N5: All is pressed and the search has its label and hint", () => {
+    const html = renderInbox([inboxCase], stateFixture);
+    expect(html.match(/aria-pressed="true"/g)).toHaveLength(1);
+    expect(html).toMatch(/aria-pressed="true"[^>]*>All</);
+    expect(html).toContain('aria-label="Search by case number or client"');
+    expect(html).toContain('title="Case number or client"');
   });
 });
 

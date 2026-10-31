@@ -582,6 +582,8 @@ export function AppShell() {
       <InboxScreen
         def={def}
         userId={effectiveUserId}
+        users={users}
+        now={inboxQuery.dataUpdatedAt}
         cases={inboxQuery.data.cases}
         roleNames={roleNamesOf(inboxQuery.data.user.role_ids, def)}
         onOpenCase={openCase}
