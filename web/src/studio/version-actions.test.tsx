@@ -11,6 +11,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { ApiError, forkVersion, freezeVersion, publishVersion } from "./api";
 import {
   FreezeDialogBody,
+  HistoryBody,
   NewDraftDialogBody,
   PublishDialogBody,
   VersionActions,
@@ -18,6 +19,7 @@ import {
   docLinks,
   labelValid,
   newestPublished,
+  statusText,
 } from "./version-actions";
 import { TopBar } from "./StudioShell";
 import { useStudioStore } from "./store";
@@ -478,7 +480,7 @@ describe("new draft dialog body", () => {
 });
 
 describe("top bar", () => {
-  test("19: the top bar shows the pill and the published actions", () => {
+  test("19, T3: the top bar shows the pill and the published actions", () => {
     const html = renderToString(
       createElement(TopBar, {
         def: miniDefinition,
@@ -571,5 +573,74 @@ describe("api errors", () => {
     expect(apiError.status).toBe(500);
     expect(apiError.code).toBe("http");
     expect(apiError.message).toBe("HTTP 500");
+  });
+});
+
+describe("one published version for new cases", () => {
+  test("S1: a draft says Draft", () => {
+    expect(statusText(versionRow(2, "draft"), 3)).toBe("Draft");
+  });
+  test("S2: a frozen version says Frozen", () => {
+    expect(statusText(versionRow(2, "frozen"), 3)).toBe("Frozen");
+  });
+  test("S3: the newest published version says Published", () => {
+    expect(statusText(versionRow(3, "published"), 3)).toBe("Published");
+  });
+  test("S4: an older published version says Replaced by v3", () => {
+    expect(statusText(versionRow(1, "published"), 3)).toBe("Replaced by v3");
+  });
+  test("S5: no newest number keeps Published", () => {
+    expect(statusText(versionRow(1, "published"), null)).toBe("Published");
+  });
+
+  const twoPublished = [versionRow(1, "published"), versionRow(3, "published")];
+  const topBar = (shown: VersionSummary) =>
+    renderToString(
+      createElement(TopBar, {
+        def: miniDefinition,
+        version: shown,
+        versions: twoPublished,
+        versionsPending: false,
+        onVersionsChanged: () => {},
+      }),
+    );
+
+  test("T1: the top bar shows the replaced version with a gray dot", () => {
+    const html = topBar(versionRow(1, "published"));
+    expect(html).toContain("v1 · Replaced by v3");
+    expect(html).toContain("v3 · Published");
+    expect(html).toContain("#71717a");
+    expect(html).not.toContain("v1 · Published");
+  });
+  test("T2: the top bar shows the newest published version with a green dot", () => {
+    const html = topBar(versionRow(3, "published"));
+    expect(html).toContain("v1 · Replaced by v3");
+    expect(html).toContain("v3 · Published");
+    expect(html).toContain("#16a34a");
+  });
+
+  const count = (html: string, text: string) => html.split(text).length - 1;
+  const history = (versions: VersionSummary[]) =>
+    renderToString(
+      createElement(HistoryBody, {
+        def: miniDefinition,
+        version: versions[0],
+        versions,
+        onAction: () => {},
+      }),
+    );
+
+  test("H1: the history has one Published badge and one replaced badge", () => {
+    const html = history([versionRow(1, "published"), versionRow(2, "frozen"), versionRow(3, "published")]);
+    expect(count(html, ">Replaced by v3<")).toBe(1);
+    expect(count(html, ">Published<")).toBe(1);
+    expect(count(html, "New cases start on this version.")).toBe(1);
+    expect(count(html, "Shown")).toBe(1);
+    expect(count(html, "New cases start on v3. Its cases in progress stay on v1.")).toBe(1);
+  });
+  test("H2: a history with no published version has no new-case line", () => {
+    const html = history([versionRow(1, "draft"), versionRow(2, "frozen")]);
+    expect(html).not.toContain("New cases start on this version.");
+    expect(html).not.toContain("Replaced by");
   });
 });

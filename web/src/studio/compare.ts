@@ -5,7 +5,7 @@
 import type { Supervision } from "../app/sup-api";
 import type { DiffRow } from "./diff";
 import type { ProcessDefinition, VersionSummary } from "./types";
-import { STATUS_BADGE } from "./version-actions";
+import { statusText } from "./version-actions";
 
 // The two versions of the screen: the diff goes from base to other.
 export interface ComparePair {
@@ -60,8 +60,8 @@ export function swapPair(pair: ComparePair): ComparePair {
   return { base: pair.other, other: pair.base };
 }
 
-export function versionText(v: VersionSummary): string {
-  return `v${v.number} · ${v.label} (${STATUS_BADGE[v.status][0]})`;
+export function versionText(v: VersionSummary, newest: number | null): string {
+  return `v${v.number} · ${v.label} (${statusText(v, newest)})`;
 }
 
 const MARK: Record<DiffRow["kind"], string> = {

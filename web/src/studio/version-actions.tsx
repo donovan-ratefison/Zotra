@@ -192,6 +192,16 @@ export function newestPublished(versions: VersionSummary[]): number | null {
   return best;
 }
 
+// statusText names the status of a version. Several versions can be
+// published: only the newest one runs new cases, an older one says
+// which version replaced it.
+export function statusText(row: VersionSummary, newest: number | null): string {
+  if (row.status === "published" && newest !== null && row.number < newest) {
+    return `Replaced by v${newest}`;
+  }
+  return STATUS_BADGE[row.status]?.[0] ?? row.status;
+}
+
 // HistoryBody is the version history: one card per version, newest
 // first, on a vertical line. Each card carries the actions its status
 // allows. The opened version carries the Shown badge.
@@ -226,7 +236,8 @@ export function HistoryBody({ def, version, versions, onOpen, onCompare, onActio
         <span aria-hidden className="absolute top-6 bottom-6 left-[27px] w-px bg-border" />
         {rows.map((row) => {
           const shown = row.id === version.id;
-          const [badge, badgeCls] = STATUS_BADGE[row.status];
+          const replaced = row.status === "published" && published !== null && row.number < published;
+          const badgeCls = replaced ? "border-zinc-300 bg-zinc-50 text-zinc-700" : STATUS_BADGE[row.status][1];
           const parent = numberOf(row.parent_id);
           return (
             <li
@@ -237,11 +248,13 @@ export function HistoryBody({ def, version, versions, onOpen, onCompare, onActio
               <span
                 aria-hidden
                 className={`relative z-10 mt-4 size-3 shrink-0 rounded-full border-2 bg-background ${
-                  row.status === "published"
-                    ? "border-emerald-600"
-                    : row.status === "frozen"
-                      ? "border-blue-600"
-                      : "border-dashed border-amber-500"
+                  replaced
+                    ? "border-zinc-400"
+                    : row.status === "published"
+                      ? "border-emerald-600"
+                      : row.status === "frozen"
+                        ? "border-blue-600"
+                        : "border-dashed border-amber-500"
                 } ${shown ? "ring-4 ring-blue-100" : ""}`}
               />
               <div
@@ -252,7 +265,12 @@ export function HistoryBody({ def, version, versions, onOpen, onCompare, onActio
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-[14px] font-semibold">{`v${row.number}`}</span>
                   <span className="min-w-0 truncate text-[14px]">{row.label}</span>
-                  <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${badgeCls}`}>{badge}</span>
+                  <span
+                    className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${badgeCls}`}
+                    title={replaced ? `New cases start on v${published}. Its cases in progress stay on v${row.number}.` : undefined}
+                  >
+                    {statusText(row, published)}
+                  </span>
                   {shown && (
                     <span className="rounded-full border border-blue-300 bg-background px-2 py-0.5 text-[11px] font-medium text-blue-700">
                       Shown
@@ -262,6 +280,9 @@ export function HistoryBody({ def, version, versions, onOpen, onCompare, onActio
                 <p className="text-[12px] text-muted-foreground">
                   {`${dateText(row.frozen_at ?? row.created_at)}${parent === null ? "" : ` · from v${parent}`}`}
                 </p>
+                {row.status === "published" && row.number === published && (
+                  <p className="text-[12px] text-emerald-800">New cases start on this version.</p>
+                )}
                 <div className="flex flex-wrap gap-1.5 pt-0.5">
                   {!shown && onOpen !== undefined && (
                     <Button variant="outline" size="sm" className="h-7" onClick={() => onOpen(row.id)}>

@@ -19,6 +19,7 @@ import {
   versionText,
 } from "./compare";
 import { ProcessDiagram } from "./diagram";
+import { newestPublished } from "./version-actions";
 import { changedIds, diffChips, diffDefinitions, type DiffRow } from "./diff";
 import { Button } from "@/ui/button";
 import {
@@ -117,6 +118,7 @@ export function CompareScreen({ versions, openId, baseId, onClose }: {
     );
   }
 
+  const newest = newestPublished(versions);
   const versionSelect = (side: "base" | "other", label: string) => (
     <Select
       value={pair[side]}
@@ -128,7 +130,7 @@ export function CompareScreen({ versions, openId, baseId, onClose }: {
       <SelectContent>
         {versions.map((v) => (
           <SelectItem key={v.id} value={v.id}>
-            {versionText(v)}
+            {versionText(v, newest)}
           </SelectItem>
         ))}
       </SelectContent>

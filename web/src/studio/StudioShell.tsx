@@ -41,7 +41,7 @@ import { NodePanel, UnsavedBadge } from "./NodePanel";
 import { ProcessPanel } from "./ProcessPanel";
 import { ProposalBar } from "./ProposalBar";
 import { ResizeHandle } from "./resize";
-import { VersionActions } from "./version-actions";
+import { newestPublished, statusText, VersionActions } from "./version-actions";
 import { loadStoredPolicy, policySource, type Paragraph } from "./policy";
 import { useStudioStore, type PanelTab } from "./store";
 import { TestScreen } from "./TestScreen";
@@ -987,11 +987,6 @@ export function StudioShell() {
   );
 }
 
-const STATUS_TEXT: Record<string, string> = {
-  draft: "Draft",
-  frozen: "Frozen",
-  published: "Published",
-};
 const STATUS_DOT: Record<string, string> = {
   draft: "#d97706",
   frozen: "#2563eb",
@@ -1034,7 +1029,15 @@ export function TopBar({
   onUndo?: () => void;
   canUndo?: boolean;
 }) {
-  const dotColor = version === undefined ? undefined : STATUS_DOT[version.status] ?? "#71717a";
+  const list = version === undefined ? [] : versions.length > 0 ? versions : [version];
+  const newest = newestPublished(list);
+  // A replaced published version has the gray dot of its badge.
+  const dotColor =
+    version === undefined
+      ? undefined
+      : version.status === "published" && newest !== null && version.number < newest
+        ? "#71717a"
+        : STATUS_DOT[version.status] ?? "#71717a";
   const mode = useStudioStore((s) => s.mode);
   const setMode = useStudioStore((s) => s.setMode);
   const dirty = useStudioStore((s) => s.dirty);
@@ -1085,9 +1088,9 @@ export function TopBar({
             onChange={(e) => onSelectVersion?.(e.target.value)}
             className="cursor-pointer bg-transparent text-[12px] outline-none"
           >
-            {(versions.length > 0 ? versions : [version]).map((row) => (
+            {list.map((row) => (
               <option key={row.id} value={row.id}>
-                {`v${row.number} · ${STATUS_TEXT[row.status] ?? row.status}`}
+                {`v${row.number} · ${statusText(row, newest)}`}
               </option>
             ))}
           </select>

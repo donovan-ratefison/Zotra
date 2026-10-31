@@ -149,8 +149,14 @@ describe("pickPair and swapPair", () => {
 });
 
 describe("texts", () => {
-  test("T1: versionText", () => {
-    expect(versionText(v2)).toBe("v2 · Threshold (Frozen)");
+  test("C1: versionText of a frozen version", () => {
+    expect(versionText(v2, 1)).toBe("v2 · Threshold (Frozen)");
+  });
+  test("C2: versionText of a replaced published version", () => {
+    expect(versionText(v1, 3)).toBe("v1 · Initial (Replaced by v3)");
+  });
+  test("C3: versionText of the newest published version", () => {
+    expect(versionText(v1, 1)).toBe("v1 · Initial (Published)");
   });
   test("L1: changeLines", () => {
     expect(changeLines(diffDefinitions(base, other).rows)).toEqual(ROWS);
