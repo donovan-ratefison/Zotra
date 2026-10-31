@@ -457,7 +457,7 @@ export function TestScreen({ def, version }: {
     content = (
       <>
         <div className="flex h-12 shrink-0 items-center gap-3 border-b px-4 text-[13px]">
-          {currentNode !== null && currentNode.type === "task" && loaded.state.status !== "closed" && (
+          {currentNode !== null && (currentNode.type === "task" || loaded.state.status === "closed") && (
             <>
               <span className="text-muted-foreground">Act as</span>
               <ActorSelect
@@ -466,7 +466,7 @@ export function TestScreen({ def, version }: {
                 state={loaded.state}
                 actor={effectiveActor}
                 onActorChange={setActor}
-                disabled={at !== null}
+                disabled={at !== null || loaded.state.status === "closed"}
                 className="h-8 w-[200px]"
               />
               <span aria-hidden className="h-5 w-px bg-border" />
@@ -638,6 +638,7 @@ export function TestScreen({ def, version }: {
                 onUpload={onUpload}
                 actorInBar
                 showHeader={false}
+                finalData
               />
             )}
             {panelTab === "inspector" && (

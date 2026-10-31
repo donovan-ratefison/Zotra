@@ -151,7 +151,7 @@ function Footer({ children }: { children: ReactNode }) {
   );
 }
 
-export function StepScreen({ def, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly = false, actorLocked = false, actorInBar = false, showHeader = true, documents, documentsError, events, uploading, onUpload }: {
+export function StepScreen({ def, state, users, actor, onActorChange, onCommand, failedChecks, decisionEnabled, onValueChange, readOnly = false, actorLocked = false, actorInBar = false, showHeader = true, finalData = false, documents, documentsError, events, uploading, onUpload }: {
   def: ProcessDefinition;
   state: CaseState;
   users: UserDTO[];
@@ -165,6 +165,7 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
   actorLocked?: boolean;
   actorInBar?: boolean; // the caller renders ActorSelect in its toolbar
   showHeader?: boolean; // the caller renders StepHeader above its tabs
+  finalData?: boolean; // the test screen shows the final data of a closed case
   documents: DocumentDTO[] | null;
   documentsError: string | null;
   events: CaseEvent[];
@@ -176,6 +177,17 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
       <div className="flex flex-col gap-2 px-4 pt-3.5">
         <h2 className="text-[17px] font-semibold leading-tight">Case closed</h2>
         <p className="text-sm text-muted-foreground">{`Result: ${state.result}.`}</p>
+        {finalData && (
+          <DataList
+            def={def}
+            state={state}
+            label="Final data"
+            fields={def.fields.filter((field) => {
+              const value = state.data[field.name];
+              return value !== null && value !== undefined && value !== "" && !(Array.isArray(value) && value.length === 0);
+            })}
+          />
+        )}
       </div>
     );
   }
@@ -366,13 +378,22 @@ function CaseSummary({ def, node, state, withWrites = false }: {
       (withWrites || access === "read" || field.computed !== null)
     );
   });
-  if (rows.length === 0) {
+  return <DataList def={def} state={state} fields={rows} label="Case data" />;
+}
+
+function DataList({ def, state, fields, label }: {
+  def: ProcessDefinition;
+  state: CaseState;
+  fields: Field[];
+  label: string;
+}) {
+  if (fields.length === 0) {
     return null;
   }
   return (
-    <section aria-label="Case data" className="rounded-lg bg-muted/50 px-3 py-2.5">
+    <section aria-label={label} className="rounded-lg bg-muted/50 px-3 py-2.5">
       <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
-        {rows.map((field) => (
+        {fields.map((field) => (
           <div key={field.name} className="flex min-w-0 flex-col">
             <dt className="truncate text-[11.5px] text-muted-foreground">{field.label}</dt>
             <dd className="truncate text-[13px] font-medium">

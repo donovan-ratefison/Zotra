@@ -151,6 +151,10 @@ const closedState: CaseState = {
   status: "closed",
   result: "approved",
 };
+const closedFinal: CaseState = {
+  ...closedState,
+  data: { amount: 120000, client_name: "Hery", kind: "", docs: ["d1"] },
+};
 
 const scanRow = {
   id: "d1",
@@ -245,6 +249,7 @@ function renderStep(state: CaseState, props?: {
   failedChecks?: { id: string; message: string }[];
   decisionEnabled?: boolean;
   actorLocked?: boolean;
+  finalData?: boolean;
 }): string {
   return renderToString(
     createElement(StepScreen, {
@@ -258,6 +263,7 @@ function renderStep(state: CaseState, props?: {
       decisionEnabled: props?.decisionEnabled ?? false,
       onValueChange: () => {},
       actorLocked: props?.actorLocked ?? false,
+      finalData: props?.finalData ?? false,
       documents: [scanRow],
       documentsError: null,
       events: [],
@@ -269,12 +275,12 @@ function renderStep(state: CaseState, props?: {
 
 // renderTestScreen renders TestScreen with both queries pre-seeded
 // and the store set to the test mode with case c1.
-function renderTestScreen(): string {
+function renderTestScreen(state: CaseState = stateFixture): string {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   client.setQueryData(["users"], usersFixture);
-  client.setQueryData(["case", "c1"], { case: caseFixture, state: stateFixture });
+  client.setQueryData(["case", "c1"], { case: caseFixture, state });
   setStudioStore({
     selectedNodeId: null,
     tab: "general",
@@ -512,11 +518,34 @@ describe("step screen", () => {
     expect(html).toMatch(/<button(?![^>]*\bdisabled=)[^>]*>[^<]*unfavorable/);
   });
 
-  test("3.1 row 18: a closed case shows the result and no act-as pick", () => {
-    const html = renderStep(closedState);
+  test("3.1 row 18: a closed case shows the result, the final data and no act-as pick", () => {
+    const html = renderStep(closedFinal, { finalData: true });
     expect(html).toContain("Case closed");
     expect(html).toContain("Result: approved.");
+    expect(html).toContain('aria-label="Final data"');
+    for (const text of [">Amount<", ">€120,000.00<", ">Client<", ">Hery<", ">Documents<", ">1 scan<"]) {
+      expect(html).toContain(text);
+    }
+    expect(html).not.toContain(">Kind<");
     expect(html).not.toContain("Act as");
+  });
+
+  test("pol-10 row C1: a closed case with no data shows no final data", () => {
+    const html = renderStep({ ...closedState, data: {} }, { finalData: true });
+    expect(html).toContain("Case closed");
+    expect(html).not.toContain("Final data");
+  });
+
+  test("pol-10 row C2: an empty document list is not final data", () => {
+    const html = renderStep({ ...closedState, data: { docs: [] } }, { finalData: true });
+    expect(html).not.toContain("Final data");
+  });
+
+  test("pol-10 row C3: without finalData the closed view stays the same", () => {
+    const html = renderStep(closedFinal);
+    expect(html).toContain("Result: approved.");
+    expect(html).not.toContain("Final data");
+    expect(html).not.toContain("€120,000.00");
   });
 
   test("3.1 row 19: the failed checks list their check id and message", () => {
@@ -543,6 +572,14 @@ describe("test screen", () => {
     expect(html).toContain(">CASE-2026-0001<");
     expect(html).toContain("New test case");
     expect(html).toContain("Demo Advisor");
+    expect(html).toMatch(/<button(?![^>]*\bdisabled=)[^>]*aria-label="Act as"/);
+  });
+
+  test("pol-10 row T1: a closed case keeps a disabled act-as pick and shows the final data", () => {
+    const html = renderTestScreen({ ...closedState, node_id: "released" });
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Act as"/);
+    expect(html).toContain("Demo Advisor");
+    expect(html).toContain('aria-label="Final data"');
   });
 });
 
