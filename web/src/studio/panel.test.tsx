@@ -358,6 +358,58 @@ describe("panel render", () => {
     expect(html).toContain("Documents");
     expect(html).toContain("R Read · W Write · H Hidden");
   });
+
+  test("N1: a check card title is its position, the id is the hover text", () => {
+    const html = renderNodePanel(draftVersion, {
+      selectedNodeId: "entry",
+      tab: "requirements",
+    });
+    expect(html).toContain(">Check 1<");
+    expect(html).toContain('title="c1"');
+    expect(html).not.toContain(">Check c1<");
+  });
+
+  test("N2: two checks are Check 1 and Check 2", () => {
+    const html = renderNodePanel(
+      draftVersion,
+      { selectedNodeId: "entry", tab: "requirements" },
+      withC1C3,
+    );
+    expect(html).toContain(">Check 1<");
+    expect(html).toContain(">Check 2<");
+    expect(html).toContain('title="c3"');
+    expect(html).not.toContain(">Check c3<");
+  });
+
+  const docLabel = /<label[^>]*for="np-doc"[^>]*>Document name<\/label>/;
+  const docInput = /<input[^>]*id="np-doc"[^>]*>/;
+
+  test("N3: the document input of a draft has a label and is enabled", () => {
+    const html = renderNodePanel(draftVersion, {
+      selectedNodeId: "entry",
+      tab: "requirements",
+    });
+    expect(html).toMatch(docLabel);
+    expect(html.match(docInput)![0]).not.toContain('disabled=""');
+  });
+
+  test("N4: the document input of a published version has a label and is disabled", () => {
+    const html = renderNodePanel(publishedVersion, {
+      selectedNodeId: "entry",
+      tab: "requirements",
+    });
+    expect(html).toMatch(docLabel);
+    expect(html.match(docInput)![0]).toContain('disabled=""');
+  });
+
+  test("N5: a task with no check shows no check card", () => {
+    const html = renderNodePanel(draftVersion, {
+      selectedNodeId: "review",
+      tab: "requirements",
+    });
+    expect(html).not.toContain(">Check 1<");
+    expect(html).toContain("Add check");
+  });
 });
 
 describe("scope matrix render", () => {

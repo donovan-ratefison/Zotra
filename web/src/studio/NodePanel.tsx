@@ -393,10 +393,11 @@ export function NodePanel({
                 ))}
               </ul>
             )}
+            <Label htmlFor="np-doc">Document name</Label>
             <div className="flex items-center gap-2">
               <Input
+                id="np-doc"
                 value={docName}
-                title="Document name"
                 disabled={!editable}
                 className="flex-1"
                 onChange={(e) => setDocName(e.target.value)}
@@ -432,11 +433,11 @@ export function NodePanel({
           </div>
           <section className="flex flex-col gap-2">
             <span className="text-[12.5px] font-medium">Checks</span>
-            {node.checks.map((check) => (
+            {node.checks.map((check, i) => (
               <div key={check.id} className="flex flex-col gap-2 rounded-md border p-2.5">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[12.5px] font-medium">
-                    {`Check ${check.id}`}
+                  <span className="text-[12.5px] font-medium" title={check.id}>
+                    {`Check ${i + 1}`}
                   </span>
                   <Button
                     type="button"
