@@ -3,7 +3,8 @@
 // its old text struck and its new text highlighted. Nothing is stored:
 // the designer can download the draft as Markdown.
 
-import { Download, Loader2 } from "lucide-react";
+import { Download } from "lucide-react";
+import { BrandLoader } from "@/components/BrandLoader";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/ui/dialog";
 import type { PolicyDraft } from "./ai-api";
@@ -75,8 +76,7 @@ export function PolicyDraftView({ status, draft, blocks, error }: {
   if (status !== "success" || draft === undefined) {
     return (
       <p className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-        The AI writes the draft...
+        <BrandLoader size={16} label="The AI writes the draft..." />
       </p>
     );
   }

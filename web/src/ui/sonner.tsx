@@ -1,10 +1,10 @@
 import {
   CircleCheckIcon,
   InfoIcon,
-  Loader2Icon,
   OctagonXIcon,
   TriangleAlertIcon,
 } from "lucide-react"
+import { BrandLoader } from "@/components/BrandLoader"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 
 // The caller passes theme ("light" or "dark"): the app has no next-themes provider.
@@ -18,7 +18,7 @@ const Toaster = ({ theme = "light", ...props }: ToasterProps) => {
         info: <InfoIcon className="size-4" />,
         warning: <TriangleAlertIcon className="size-4" />,
         error: <OctagonXIcon className="size-4" />,
-        loading: <Loader2Icon className="size-4 animate-spin" />,
+        loading: <BrandLoader size={16} />,
       }}
       // H46: a long title or description (an error, a list of finishes) makes a tall toast, and the stack of toasts
       // can fill the screen. At most 2 lines each; a long word (a path, a URL) breaks. The bell keeps the full text.

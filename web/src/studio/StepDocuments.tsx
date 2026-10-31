@@ -5,6 +5,7 @@
 // goes through onCommand. The card holds one scan dialog at a time.
 
 import { useRef, useState } from "react";
+import { BrandLoader } from "@/components/BrandLoader";
 import { Button } from "@/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Hint } from "@/ui/hint";
@@ -210,7 +211,7 @@ export function StepDocuments({ node, documents, documentsError, uploading, onUp
           {`The documents did not load: ${documentsError}`}
         </p>
       ) : documents === null ? (
-        <p className="text-sm text-muted-foreground">Loading the documents.</p>
+        <p className="text-sm text-muted-foreground"><BrandLoader size={16} label="Loading the documents." /></p>
       ) : (
         <>
           {node.documents.length > 0 && (

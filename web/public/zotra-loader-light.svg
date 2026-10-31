@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="Loading">
+<title>Loading</title>
+<style>
+.zotra-needle { animation: zotra-turn 1.1s linear infinite; transform-box: view-box; transform-origin: 80px 80px; }
+@keyframes zotra-turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .zotra-needle { animation: none; } }
+</style>
+<defs><mask id="zotra-loader-holes" maskUnits="userSpaceOnUse" x="0" y="0" width="160" height="160"><rect width="160" height="160" fill="#fff"/><rect x="76.5" y="6" width="7" height="22"/><circle cx="80" cy="80" r="3.5"/></mask></defs>
+<g mask="url(#zotra-loader-holes)">
+<circle cx="80" cy="80" r="62" fill="none" stroke="#1a1523" stroke-width="16"/>
+<g class="zotra-needle"><polygon fill="#d9cfe6" points="55.8,111.85 89.55,87.26 80,80 70.45,72.74"/><polygon fill="#820ad1" points="104.2,48.15 89.55,87.26 80,80 70.45,72.74"/></g>
+</g>
+</svg>

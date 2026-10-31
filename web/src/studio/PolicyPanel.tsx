@@ -9,6 +9,7 @@ import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 // The text layer style puts the transparent text over the page canvas,
 // so a highlight mark covers its words on the page.
 import "react-pdf/dist/Page/TextLayer.css";
+import { BrandLoader } from "@/components/BrandLoader";
 import { Button } from "@/ui/button";
 import {
   paragraphIdsOfItems,
@@ -113,7 +114,7 @@ export function PolicyPanel({
       </div>
       {status === "loading" ? (
         <p className="px-4 py-3 text-sm text-muted-foreground">
-          Loading the policy...
+          <BrandLoader size={16} label="Loading the policy..." />
         </p>
       ) : status === "error" ? (
         <p className="px-4 py-3 text-sm text-destructive">
@@ -125,7 +126,7 @@ export function PolicyPanel({
         </p>
       ) : mod === null ? (
         <p className="px-4 py-3 text-sm text-muted-foreground">
-          Loading the policy...
+          <BrandLoader size={16} label="Loading the policy..." />
         </p>
       ) : loadError ? (
         <p className="px-4 py-3 text-sm text-destructive">

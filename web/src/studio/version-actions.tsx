@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { Download, FileText, GitBranch, GitCompareArrows, History, Lock, Sparkles, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError, freezeVersion, forkVersion, publishVersion } from "./api";
+import { BrandLoader } from "@/components/BrandLoader";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent } from "@/ui/dialog";
 import {
@@ -96,7 +97,7 @@ export function PublishDialogBody({ version, def, publishedNumber,
         </h2>
         {versionsPending ? (
           <p className="text-sm text-muted-foreground">
-            Loading the versions.
+            <BrandLoader size={16} label="Loading the versions." />
           </p>
         ) : publishedNumber !== null ? (
           <p className="text-sm text-muted-foreground">

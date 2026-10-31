@@ -389,7 +389,7 @@ describe("analysis progress and cancel", () => {
   test("50h: the block holds the bar and the spinner", () => {
     const html = progress(42, 18);
     expect(html).toContain('data-testid="analyze-bar"');
-    expect(html).toContain("animate-spin");
+    expect(html).toContain('src="/zotra-loader-light.svg"');
   });
 
   test("50i: policyToProcess passes the signal only when given", async () => {

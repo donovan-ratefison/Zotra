@@ -6,7 +6,7 @@
 // title is a plain element and the description is a Hint.
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { BrandLoader } from "@/components/BrandLoader";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent } from "@/ui/dialog";
 import { Hint } from "@/ui/hint";
@@ -51,8 +51,7 @@ export function AnalyzeProgress({ paragraphs, seconds }: { paragraphs: number; s
       <style>{BAR_CSS}</style>
       <div role="status" aria-live="polite" className="flex flex-col gap-2 rounded-lg border p-4">
         <div className="flex items-center gap-2 text-sm font-medium">
-          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          Analyzing the policy
+          <BrandLoader size={16} label="Analyzing the policy" />
         </div>
         <p className="text-sm text-muted-foreground">
           {`The AI reads ${paragraphs} ${paragraphs === 1 ? "paragraph" : "paragraphs"} and drafts the process.`}

@@ -15,7 +15,6 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
-  Loader2,
   Sparkles,
   X,
 } from "lucide-react";
@@ -26,6 +25,7 @@ import {
   type RestateQuestion,
 } from "./ai-api";
 import { diffChips, diffDefinitions, type DiffRow } from "./diff";
+import { BrandLoader } from "@/components/BrandLoader";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Switch } from "@/ui/switch";
@@ -360,8 +360,7 @@ function ChatTurnView({
       <div className="max-w-[85%] rounded-lg border px-3 py-2 text-[13px]">
         {turn.kind === "waiting" && (
           <p aria-live="polite" className="flex items-center gap-1.5 text-zinc-500">
-            <Loader2 size={13} className="animate-spin" aria-hidden="true" />
-            {turn.text}
+            <BrandLoader size={13} label={turn.text} />
           </p>
         )}
         {turn.kind === "restate" && turn.questions !== undefined && (
