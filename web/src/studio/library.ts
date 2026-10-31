@@ -5,6 +5,11 @@
 import type { layoutProcess } from "./layout";
 import type { ProcessSummary, Version } from "./types";
 
+// The studio home is the library; a query (process, new, intro) opens the studio.
+export function isLibraryPage(pathname: string, search: string): boolean {
+  return pathname === "/processes" || ((pathname === "/" || pathname === "/studio") && search === "");
+}
+
 export type LibraryStatus = "published" | "frozen" | "draft" | "empty";
 export type LibraryFilter = LibraryStatus | "all" | "archived";
 

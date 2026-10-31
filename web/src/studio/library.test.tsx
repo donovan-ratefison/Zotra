@@ -1,4 +1,4 @@
-// The test rows 53a to 53q and L1 to L6 of the process library. The environment is
+// The test rows 53a to 53q, L1 to L6 and P1 to P10 of the process library. The environment is
 // node: direct calls of the pure functions, and renderToString of the
 // stateless view (one query client for the thumbnail query).
 
@@ -10,6 +10,7 @@ import seedJson from "../../../examples/home-loan/process.json";
 import { layoutProcess } from "./layout";
 import {
   filterRows,
+  isLibraryPage,
   libraryRow,
   sortRows,
   thumbnailShapes,
@@ -259,5 +260,22 @@ describe("archive", () => {
     expect(html).toContain('title="Archive"');
     expect(html).not.toContain("Old loan");
     expect(STATUS_OPTIONS.at(-1)).toEqual(["archived", "Archived"]);
+  });
+});
+
+describe("library page", () => {
+  test.each([
+    ["P1", "/processes", "", true],
+    ["P2", "/processes", "?status=draft", true],
+    ["P3", "/", "", true],
+    ["P4", "/studio", "", true],
+    ["P5", "/", "?process=p1", false],
+    ["P6", "/studio", "?process=p1&version=v1", false],
+    ["P7", "/", "?new=1", false],
+    ["P8", "/", "?intro=1", false],
+    ["P9", "/app", "", false],
+    ["P10", "/other", "", false],
+  ])("%s: %s%s", (_row, pathname, search, expected) => {
+    expect(isLibraryPage(pathname, search)).toBe(expected);
   });
 });

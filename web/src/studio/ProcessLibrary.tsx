@@ -406,7 +406,7 @@ export function ProcessLibrary() {
         className="flex h-12 w-full shrink-0 items-center gap-3 border-b px-4"
         style={{ background: "var(--card)" }}
       >
-        <a href="/" aria-label="Open the studio" className="shrink-0">
+        <a href="/" aria-label="All processes" className="shrink-0">
           <img src="/zotra-wordmark.svg" alt="Zotra" width={76} height={22} />
         </a>
         <span className="ml-auto">
