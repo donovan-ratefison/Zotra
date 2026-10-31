@@ -1,7 +1,8 @@
 package api
 
 // The tests of the document routes. The zone rows run in mode replay
-// with a primed cache, or in mode off. No test makes a live AI call.
+// with a primed cache, in mode off, or in mode live against one stub
+// server. No test calls the real AI API.
 
 import (
 	"bytes"
@@ -16,8 +17,12 @@ import (
 	"net/textproto"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/donovan-ratefison/zotra/internal/ai"
 	"github.com/donovan-ratefison/zotra/internal/readfields"
@@ -359,8 +364,92 @@ func TestDocumentZonesRefusals(t *testing.T) {
 
 	rec = postZones(t, id)
 	checkError(t, rec, http.StatusServiceUnavailable, "ai_unavailable",
-		`the AI layer is not available: Post `+
-			`"https://api.meta.ai/v1/responses": ai: off`)
+		"The AI layer is off.")
+}
+
+// 17b. Replay with no cached answer for stamp and ID card.
+func TestDocumentZonesReplayMiss(t *testing.T) {
+	dir := aiEnv(t)
+	h := newTestAPI(t)
+	id := uploadForZones(t, h)
+	primeSAM(t, dir, "signature", "image/png", pngBytes(t), samRecord)
+
+	rec := postZones(t, id)
+	checkError(t, rec, http.StatusServiceUnavailable, "ai_not_recorded", msgReplayMiss)
+}
+
+// 17c. The 3 requests of one scan run at the same time, and the zones
+// keep the order of the phrases.
+func TestDocumentZonesParallel(t *testing.T) {
+	answers := map[string]string{
+		"signature": samRecord,
+		"stamp":     `<|box;x1=10;y1=20;x2=39;y2=59|>`,
+		"ID card":   `<|box;x1=100;y1=200;x2=149;y2=299|>`,
+	}
+	var count, inFlight, maxInFlight atomic.Int32
+	all := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Input []struct {
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"input"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil ||
+			len(req.Input) == 0 || len(req.Input[0].Content) == 0 {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		phrase := req.Input[0].Content[0].Text
+		count.Add(1)
+		n := inFlight.Add(1)
+		for m := maxInFlight.Load(); n > m && !maxInFlight.CompareAndSwap(m, n); m = maxInFlight.Load() {
+		}
+		if n == 3 {
+			close(all)
+		}
+		select {
+		case <-all:
+		case <-time.After(3 * time.Second):
+		}
+		if phrase == "signature" {
+			time.Sleep(100 * time.Millisecond)
+		}
+		inFlight.Add(-1)
+		_ = json.NewEncoder(w).Encode(samEnvelope{Output: []samItem{{
+			Type:    "message",
+			Content: []samPart{{Type: "output_text", Text: answers[phrase]}},
+		}}})
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("ZOTRA_AI_MODE", "live")
+	t.Setenv("ZOTRA_AI_API_KEY", "k")
+	t.Setenv("ZOTRA_AI_BASE_URL", srv.URL)
+	t.Setenv("ZOTRA_AI_DOC_BASE_URL", "")
+	t.Setenv("ZOTRA_AI_DOC_API_KEY", "")
+	t.Setenv("ZOTRA_AI_CACHE_DIR", t.TempDir())
+	t.Setenv("ZOTRA_AI_STATE_DIR", t.TempDir())
+	h := newTestAPI(t)
+	id := uploadForZones(t, h)
+
+	rec := postZones(t, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("zones: status %d: %s", rec.Code, rec.Body.String())
+	}
+	if n := count.Load(); n != 3 {
+		t.Fatalf("requests = %d, want 3", n)
+	}
+	if m := maxInFlight.Load(); m != 3 {
+		t.Fatalf("maximum in flight = %d, want 3", m)
+	}
+	zones := decode(t, rec)["zones"].([]any)
+	if len(zones) != 3 {
+		t.Fatalf("zones = %d, want 3: %s", len(zones), rec.Body.String())
+	}
+	wantBox(t, zones[0], "signature", 454, 835, 266, 74)
+	wantBox(t, zones[1], "stamp", 10, 20, 30, 40)
+	wantBox(t, zones[2], "id", 100, 200, 50, 100)
 }
 
 // 18.
@@ -554,14 +643,14 @@ func TestDocumentReadRefusals(t *testing.T) {
 	// The AI layer is off.
 	rec = postRead(t, id, `{"fields":[{"name":"amount","label":"Amount","type":"money"}]}`)
 	checkError(t, rec, http.StatusServiceUnavailable, "ai_unavailable",
-		`the AI layer is not available: Post `+
-			`"https://api.meta.ai/v1/chat/completions": ai: off`)
+		"The AI layer is off.")
 }
 
 // fakeAI is one httptest AI server. It counts its requests and keeps
 // the last path, Authorization header and body, and every body.
 type fakeAI struct {
 	srv    *httptest.Server
+	mu     sync.Mutex
 	count  int
 	path   string
 	auth   string
@@ -574,6 +663,8 @@ func newFakeAI(t *testing.T, answer string) *fakeAI {
 	f := &fakeAI{}
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
+		f.mu.Lock()
+		defer f.mu.Unlock()
 		f.count++
 		f.path, f.auth, f.body = r.URL.Path, r.Header.Get("Authorization"), string(b)
 		f.bodies = append(f.bodies, string(b))
@@ -642,8 +733,10 @@ func TestDocumentEndpoint(t *testing.T) {
 			}
 			phrases = append(phrases, req.Input[0].Content[0].Text)
 		}
-		if strings.Join(phrases, "|") != "signature|stamp|ID card" {
-			t.Errorf("input_text = %q, want signature, stamp, ID card", phrases)
+		// The requests run at the same time, so their order is free.
+		slices.Sort(phrases)
+		if strings.Join(phrases, "|") != "ID card|signature|stamp" {
+			t.Errorf("input_text = %q, want ID card, signature, stamp", phrases)
 		}
 		if text.count != 0 {
 			t.Errorf("text saw %d requests, want 0", text.count)

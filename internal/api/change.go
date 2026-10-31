@@ -89,8 +89,7 @@ func (d apiDeps) changeProcess(w http.ResponseWriter, r *http.Request) {
 		ansBody, err := d.ai.ChatCompletion(r.Context(), messages,
 			"process", process.JSONSchema())
 		if err != nil {
-			writeError(w, http.StatusServiceUnavailable, "ai_unavailable",
-				aiErrorText(err))
+			writeAIError(w, err)
 			return
 		}
 		var errs []process.Error
@@ -425,7 +424,7 @@ func (d apiDeps) restateChange(w http.ResponseWriter, r *http.Request) {
 	}
 	ansBody, err := d.ai.ChatCompletion(r.Context(), messages, "restatement", restateSchema)
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "ai_unavailable", aiErrorText(err))
+		writeAIError(w, err)
 		return
 	}
 	var answer struct {

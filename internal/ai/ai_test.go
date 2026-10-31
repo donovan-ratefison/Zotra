@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -68,6 +70,7 @@ func newConfig(mode, cacheDir, baseURL string, budget float64) Config {
 		SAMModel:  "sam-3.1",
 		Mode:      mode,
 		CacheDir:  cacheDir,
+		StateDir:  cacheDir,
 		BudgetUSD: budget,
 	}
 }
@@ -106,7 +109,7 @@ func TestLoadConfig(t *testing.T) {
 			"ZOTRA_AI_BASE_URL", "ZOTRA_AI_API_KEY", "ZOTRA_AI_TEXT_MODEL",
 			"ZOTRA_AI_SAM_MODEL", "ZOTRA_AI_MODE", "ZOTRA_AI_CACHE_DIR",
 			"ZOTRA_AI_BUDGET_USD", "ZOTRA_AI_DOC_BASE_URL",
-			"ZOTRA_AI_DOC_API_KEY", "ZOTRA_AI_READ_MODEL",
+			"ZOTRA_AI_DOC_API_KEY", "ZOTRA_AI_READ_MODEL", "ZOTRA_AI_STATE_DIR",
 		} {
 			t.Setenv(v, "")
 		}
@@ -114,7 +117,7 @@ func TestLoadConfig(t *testing.T) {
 		if cfg.BaseURL != "https://api.meta.ai/v1" || cfg.APIKey != "" ||
 			cfg.TextModel != "muse-spark-1.3" || cfg.SAMModel != "sam-3.1" ||
 			cfg.Mode != "cache" || cfg.CacheDir != "local/ai-cache" ||
-			cfg.BudgetUSD != 2 || cfg.DocBaseURL != "https://api.meta.ai/v1" ||
+			cfg.StateDir != "local/ai-cache" || cfg.BudgetUSD != 2 || cfg.DocBaseURL != "https://api.meta.ai/v1" ||
 			cfg.DocAPIKey != "" || cfg.ReadModel != "muse-spark-1.3" {
 			t.Fatalf("wrong defaults: %+v", cfg)
 		}
@@ -132,13 +135,24 @@ func TestLoadConfig(t *testing.T) {
 		t.Setenv("ZOTRA_AI_DOC_BASE_URL", "")
 		t.Setenv("ZOTRA_AI_DOC_API_KEY", "")
 		t.Setenv("ZOTRA_AI_READ_MODEL", "")
+		t.Setenv("ZOTRA_AI_STATE_DIR", "")
 		cfg := LoadConfig()
 		if cfg.BaseURL != "http://127.0.0.1:9" || cfg.APIKey != "k2" ||
 			cfg.TextModel != "model-b" || cfg.SAMModel != "model-s" ||
 			cfg.Mode != "replay" || cfg.CacheDir != cacheDir ||
+			cfg.StateDir != cacheDir ||
 			cfg.BudgetUSD != 5 || cfg.DocBaseURL != "http://127.0.0.1:9" ||
 			cfg.DocAPIKey != "k2" || cfg.ReadModel != "model-b" {
 			t.Fatalf("env values not used: %+v", cfg)
+		}
+	})
+	t.Run("state dir", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("ZOTRA_AI_CACHE_DIR", filepath.Join(dir, "c"))
+		t.Setenv("ZOTRA_AI_STATE_DIR", filepath.Join(dir, "s"))
+		cfg := LoadConfig()
+		if cfg.CacheDir != filepath.Join(dir, "c") || cfg.StateDir != filepath.Join(dir, "s") {
+			t.Fatalf("state dir not used: %+v", cfg)
 		}
 	})
 	t.Run("document values", func(t *testing.T) {
@@ -200,7 +214,7 @@ func TestTransportReplayMiss(t *testing.T) {
 	tr := NewTransport(cfg, nil)
 	_, err := tr.RoundTrip(post(t, srv.URL+"/v1/x", plainBody))
 	want := "replay: no cached response for " + CacheKey("POST", "/v1/x", []byte(plainBody))
-	if err == nil || err.Error() != want {
+	if err == nil || err.Error() != want || !errors.Is(err, ErrReplayMiss) {
 		t.Fatalf("replay miss: got %v, want %q", err, want)
 	}
 	if n := count.Load(); n != 0 {
@@ -329,6 +343,105 @@ func TestBudgetCounts(t *testing.T) {
 	}
 	if e.Spent < 0.003375-1e-9 || e.Spent > 0.003375+1e-9 {
 		t.Fatalf("spent %v, want 0.003375", e.Spent)
+	}
+}
+
+// spentIn reads the spent amount of today from the budget file of dir.
+func spentIn(t *testing.T, dir string) float64 {
+	t.Helper()
+	b, err := os.ReadFile(budgetPath(dir))
+	if err != nil {
+		t.Fatalf("budget file not written: %v", err)
+	}
+	var e budgetEntry
+	if err := json.Unmarshal(b, &e); err != nil {
+		t.Fatal(err)
+	}
+	if e.Date != time.Now().UTC().Format("2006-01-02") {
+		t.Fatalf("budget date %q is not today", e.Date)
+	}
+	return e.Spent
+}
+
+func TestBudgetStateDir(t *testing.T) {
+	srv, _ := newAIServer(t, usageBody)
+	cacheDir := t.TempDir()
+	if err := os.Chmod(cacheDir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(cacheDir, 0o755) })
+	stateDir := filepath.Join(t.TempDir(), "state")
+	cfg := newConfig("live", cacheDir, srv.URL, 2)
+	cfg.StateDir = stateDir
+	tr := NewTransport(cfg, nil)
+	var buf bytes.Buffer
+	w := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(w)
+	resp, err := tr.RoundTrip(post(t, srv.URL+"/v1/x", `{"model":"muse-spark-1.3"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	readBody(t, resp)
+	if spent := spentIn(t, stateDir); spent < 0.003375-1e-9 || spent > 0.003375+1e-9 {
+		t.Fatalf("spent %v, want 0.003375", spent)
+	}
+	if _, err := os.Stat(budgetPath(cacheDir)); !os.IsNotExist(err) {
+		t.Fatalf("budget file in the cache dir: %v", err)
+	}
+	if strings.Contains(buf.String(), "budget store not written") {
+		t.Fatalf("log: %s", buf.String())
+	}
+}
+
+func TestTransportParallel(t *testing.T) {
+	var inFlight, maxInFlight atomic.Int32
+	both := make(chan struct{})
+	var once sync.Once
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		n := inFlight.Add(1)
+		for {
+			m := maxInFlight.Load()
+			if n <= m || maxInFlight.CompareAndSwap(m, n) {
+				break
+			}
+		}
+		if n == 2 {
+			once.Do(func() { close(both) })
+		}
+		select {
+		case <-both:
+		case <-time.After(3 * time.Second):
+		}
+		inFlight.Add(-1)
+		fmt.Fprint(w, usageBody)
+	}))
+	t.Cleanup(srv.Close)
+	dir := t.TempDir()
+	tr := NewTransport(newConfig("live", dir, srv.URL, 2), nil)
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i := range 2 {
+		wg.Go(func() {
+			resp, err := tr.RoundTrip(post(t, srv.URL+"/v1/x", `{"model":"muse-spark-1.3"}`))
+			if err == nil {
+				_, _ = io.ReadAll(resp.Body)
+				_ = resp.Body.Close()
+			}
+			errs[i] = err
+		})
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if m := maxInFlight.Load(); m != 2 {
+		t.Fatalf("maximum in flight %d, want 2", m)
+	}
+	if spent := spentIn(t, dir); spent < 0.00675-1e-9 || spent > 0.00675+1e-9 {
+		t.Fatalf("spent %v, want 0.00675", spent)
 	}
 }
 

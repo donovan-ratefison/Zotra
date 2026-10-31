@@ -27,6 +27,9 @@ services:
       ZOTRA_ADDR: ":8080"
       ZOTRA_AI_MODE: ${ZOTRA_AI_MODE:-replay}
       ZOTRA_AI_CACHE_DIR: /app/examples/ai-replay
+      ZOTRA_AI_STATE_DIR: /home/nonroot/ai-state
+    volumes:
+      - ai-state:/home/nonroot
     ports:
       - "127.0.0.1:${ZOTRA_PORT:-8080}:8080"
     depends_on:
@@ -48,3 +51,4 @@ services:
 
 volumes:
   db-data:
+  ai-state:

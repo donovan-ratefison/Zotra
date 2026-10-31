@@ -134,7 +134,7 @@ func (d apiDeps) updatePolicy(w http.ResponseWriter, r *http.Request) {
 	}
 	ansBody, err := d.ai.ChatCompletion(r.Context(), messages, "policy_update", updatePolicySchema)
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "ai_unavailable", aiErrorText(err))
+		writeAIError(w, err)
 		return
 	}
 	var answer struct {

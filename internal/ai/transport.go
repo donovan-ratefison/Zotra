@@ -22,8 +22,14 @@ import (
 type Transport struct {
 	cfg  Config
 	next http.RoundTripper
-	mu   sync.Mutex
 }
+
+// ErrReplayMiss is the error of a replay request with no cached
+// response.
+var ErrReplayMiss = errors.New("replay: no cached response")
+
+// budgetMu guards the budget file for all transports of the process.
+var budgetMu sync.Mutex
 
 // cacheEntry is one cached response, as stored in <CacheDir>/<key>.json.
 type cacheEntry struct {
@@ -32,7 +38,7 @@ type cacheEntry struct {
 	Body    string      `json:"body"`
 }
 
-// budgetEntry is the content of <CacheDir>/budget.json.
+// budgetEntry is the content of <StateDir>/budget.json.
 type budgetEntry struct {
 	Date  string  `json:"date"`
 	Spent float64 `json:"spent"`
@@ -75,7 +81,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			return resp, nil
 		}
 		if t.cfg.Mode == "replay" {
-			return nil, fmt.Errorf("replay: no cached response for %s", key)
+			return nil, fmt.Errorf("%w for %s", ErrReplayMiss, key)
 		}
 	}
 
@@ -98,15 +104,16 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-// realCall makes one real call under the budget mutex, from the
-// guard to the budget write. Two concurrent real calls therefore
-// cannot lose a cost.
+// realCall makes one real call. The budget mutex guards two short
+// steps: the guard before the call, and the budget write after the
+// answer. The network call runs without the lock, so calls can run at
+// the same time.
+// shortcut: calls that run at the same time all pass the guard, so the day can end above the budget by their cost. Add a reservation if this matters.
 func (t *Transport) realCall(req *http.Request, body []byte) (*http.Response, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
 	today := time.Now().UTC().Format("2006-01-02")
+	budgetMu.Lock()
 	spent := t.spentToday(today)
+	budgetMu.Unlock()
 	if spent >= t.cfg.BudgetUSD {
 		return nil, fmt.Errorf("ai: budget of %.2f USD reached for %s", t.cfg.BudgetUSD, today)
 	}
@@ -130,8 +137,10 @@ func (t *Transport) realCall(req *http.Request, body []byte) (*http.Response, er
 	if resp.StatusCode < 500 {
 		cost = costOf(body, respBody)
 	}
-	spent += cost
+	budgetMu.Lock()
+	spent = t.spentToday(today) + cost
 	t.writeBudget(today, spent)
+	budgetMu.Unlock()
 	log.Printf("ai: model %s cost $%.4f (spent $%.4f of $%.2f)",
 		modelOf(body), cost, spent, t.cfg.BudgetUSD)
 	return resp, nil
@@ -140,7 +149,7 @@ func (t *Transport) realCall(req *http.Request, body []byte) (*http.Response, er
 // spentToday reads the budget file. An unreadable or absent file, or
 // a date that is not today, starts a fresh day at 0.
 func (t *Transport) spentToday(today string) float64 {
-	b, err := os.ReadFile(filepath.Join(t.cfg.CacheDir, "budget.json"))
+	b, err := os.ReadFile(filepath.Join(t.cfg.StateDir, "budget.json"))
 	if err != nil {
 		return 0
 	}
@@ -154,7 +163,7 @@ func (t *Transport) spentToday(today string) float64 {
 // writeBudget writes the budget file after each real call, also when
 // the cost is 0.
 func (t *Transport) writeBudget(today string, spent float64) {
-	if err := os.MkdirAll(t.cfg.CacheDir, 0o755); err != nil {
+	if err := os.MkdirAll(t.cfg.StateDir, 0o755); err != nil {
 		log.Printf("ai: budget store not written: %v", err)
 		return
 	}
@@ -163,7 +172,7 @@ func (t *Transport) writeBudget(today string, spent float64) {
 		log.Printf("ai: budget store not written: %v", err)
 		return
 	}
-	if werr := writeFile(filepath.Join(t.cfg.CacheDir, "budget.json"), b); werr != nil {
+	if werr := writeFile(filepath.Join(t.cfg.StateDir, "budget.json"), b); werr != nil {
 		log.Printf("ai: budget store not written: %v", werr)
 	}
 }

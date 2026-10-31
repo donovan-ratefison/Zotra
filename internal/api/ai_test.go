@@ -9,10 +9,12 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"reflect"
 	"slices"
@@ -21,6 +23,7 @@ import (
 
 	"cel.dev/cel-go/cel"
 
+	"github.com/donovan-ratefison/zotra/internal/ai"
 	"github.com/donovan-ratefison/zotra/internal/process"
 	"github.com/donovan-ratefison/zotra/internal/rules"
 )
@@ -1024,5 +1027,28 @@ func TestPolicyProvider401(t *testing.T) {
 	checkUnavailable(t, postPolicy(t, fixtureRequest()), "status 401", "invalid key")
 	if *count != 1 {
 		t.Errorf("requests = %d, want 1", *count)
+	}
+}
+
+func TestWriteAIError(t *testing.T) {
+	const miss = "This request is not in the recorded demo answers. To use the live AI, " +
+		"set ZOTRA_AI_API_KEY and ZOTRA_AI_MODE=live in .env, then restart."
+	cases := []struct {
+		err     error
+		code    string
+		message string
+	}{
+		{&url.Error{Op: "Post", URL: "https://api.meta.ai/v1/responses", Err: errors.New("ai: off")},
+			"ai_unavailable", "The AI layer is off."},
+		{&url.Error{Op: "Post", URL: "https://api.meta.ai/v1/responses",
+			Err: fmt.Errorf("%w for %s", ai.ErrReplayMiss, "abc")},
+			"ai_not_recorded", miss},
+		{errors.New("ai: budget of 2.00 USD reached for 2026-11-01"),
+			"ai_unavailable", "ai: budget of 2.00 USD reached for 2026-11-01"},
+	}
+	for _, c := range cases {
+		rec := httptest.NewRecorder()
+		writeAIError(rec, c.err)
+		checkError(t, rec, http.StatusServiceUnavailable, c.code, c.message)
 	}
 }

@@ -291,8 +291,7 @@ func (d apiDeps) generateTests(w http.ResponseWriter, r *http.Request) {
 		ansBody, err := client.ChatCompletion(r.Context(), messages,
 			"generate_tests", generateTestsSchema())
 		if err != nil {
-			writeError(w, http.StatusServiceUnavailable, "ai_unavailable",
-				fmt.Sprintf("the AI layer is not available: %v", err))
+			writeAIError(w, err)
 			return
 		}
 		content, ok := answerContent(ansBody)

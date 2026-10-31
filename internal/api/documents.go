@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/donovan-ratefison/zotra/internal/ai"
@@ -227,8 +228,7 @@ func (d apiDeps) documentRead(w http.ResponseWriter, r *http.Request) {
 		doc.MIME, data, "read_fields", readfields.SchemaFor(fields))
 	aiBody, err := ai.New(cfg.Document()).PostChat(r.Context(), payload)
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, "ai_unavailable",
-			fmt.Sprintf("the AI layer is not available: %v", err))
+		writeAIError(w, err)
 		return
 	}
 	values, err := readfields.ParseValues(aiBody, fields)
@@ -244,7 +244,9 @@ func (d apiDeps) documentRead(w http.ResponseWriter, r *http.Request) {
 
 // documentZones asks SAM 3.1 for the zones of one scan. It sends one
 // Responses request for each noun phrase of sam.Phrases, so the cache
-// holds each request under its own key, and joins the zones in order.
+// holds each request under its own key. The requests run at the same
+// time. The zones join in the order of sam.Phrases, and the first
+// error in that order gives the answer.
 func (d apiDeps) documentZones(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	doc, err := d.st.GetDocument(r.Context(), id)
@@ -259,16 +261,23 @@ func (d apiDeps) documentZones(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg := ai.LoadConfig()
 	client := ai.New(cfg.Document())
+	bodies := make([][]byte, len(sam.Phrases))
+	errs := make([]error, len(sam.Phrases))
+	var wg sync.WaitGroup
+	for i, p := range sam.Phrases {
+		wg.Go(func() {
+			payload := sam.Request(cfg.SAMModel, p.Text, doc.MIME, data)
+			bodies[i], errs[i] = client.Responses(r.Context(), payload)
+		})
+	}
+	wg.Wait()
 	zones := []sam.Zone{}
-	for _, p := range sam.Phrases {
-		payload := sam.Request(cfg.SAMModel, p.Text, doc.MIME, data)
-		body, err := client.Responses(r.Context(), payload)
-		if err != nil {
-			writeError(w, http.StatusServiceUnavailable, "ai_unavailable",
-				fmt.Sprintf("the AI layer is not available: %v", err))
+	for i, p := range sam.Phrases {
+		if errs[i] != nil {
+			writeAIError(w, errs[i])
 			return
 		}
-		found, err := sam.ParseZones(body, p.Label)
+		found, err := sam.ParseZones(bodies[i], p.Label)
 		if err != nil {
 			writeError(w, http.StatusBadGateway, "bad_ai_output", err.Error())
 			return

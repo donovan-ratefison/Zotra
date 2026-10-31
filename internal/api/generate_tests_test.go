@@ -600,8 +600,16 @@ func TestAIOff(t *testing.T) {
 
 	rec := postGenerate(t, seedVersionID)
 	checkError(t, rec, http.StatusServiceUnavailable, "ai_unavailable",
-		`the AI layer is not available: Post `+
-			`"https://api.meta.ai/v1/chat/completions": ai: off`)
+		"The AI layer is off.")
+}
+
+// 8b. Replay with an empty cache.
+func TestGenerateReplayMiss(t *testing.T) {
+	aiEnv(t)
+	newTestAPI(t)
+
+	rec := postGenerate(t, seedVersionID)
+	checkError(t, rec, http.StatusServiceUnavailable, "ai_not_recorded", msgReplayMiss)
 }
 
 // 9.

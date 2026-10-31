@@ -112,8 +112,7 @@ func (d apiDeps) policyToProcess(w http.ResponseWriter, r *http.Request) {
 		ansBody, err := d.ai.ChatCompletion(r.Context(), messages,
 			"process", policySchema())
 		if err != nil {
-			writeError(w, http.StatusServiceUnavailable, "ai_unavailable",
-				aiErrorText(err))
+			writeAIError(w, err)
 			return
 		}
 		var errs []process.Error
@@ -213,6 +212,19 @@ func withName(content, name string) string {
 		return content
 	}
 	return string(b)
+}
+
+// msgReplayMiss is the message of an ai_not_recorded answer.
+const msgReplayMiss = "This request is not in the recorded demo answers. To use the live AI, set ZOTRA_AI_API_KEY and ZOTRA_AI_MODE=live in .env, then restart."
+
+// writeAIError writes the 503 answer of one AI call error. A replay
+// miss gets its own code and a plain message.
+func writeAIError(w http.ResponseWriter, err error) {
+	if errors.Is(err, ai.ErrReplayMiss) {
+		writeError(w, http.StatusServiceUnavailable, "ai_not_recorded", msgReplayMiss)
+		return
+	}
+	writeError(w, http.StatusServiceUnavailable, "ai_unavailable", aiErrorText(err))
 }
 
 // aiErrorText maps one AI call error to the message of the 503
@@ -456,8 +468,7 @@ func (d apiDeps) explainCheck(w http.ResponseWriter, r *http.Request) {
 		ansBody, err := d.ai.ChatCompletion(r.Context(), messages,
 			"explain_check", explainSchema())
 		if err != nil {
-			writeError(w, http.StatusServiceUnavailable, "ai_unavailable",
-				aiErrorText(err))
+			writeAIError(w, err)
 			return
 		}
 		var errs []process.Error

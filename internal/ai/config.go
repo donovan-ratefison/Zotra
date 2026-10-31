@@ -16,6 +16,8 @@ type Config struct {
 	SAMModel  string
 	Mode      string
 	CacheDir  string
+	// The folder of the budget store.
+	StateDir  string
 	BudgetUSD float64
 	// The document calls (SAM zones and field reading). Empty: the
 	// text values.
@@ -54,6 +56,10 @@ func LoadConfig() Config {
 	}
 	if v := os.Getenv("ZOTRA_AI_CACHE_DIR"); v != "" {
 		cfg.CacheDir = v
+	}
+	cfg.StateDir = cfg.CacheDir
+	if v := os.Getenv("ZOTRA_AI_STATE_DIR"); v != "" {
+		cfg.StateDir = v
 	}
 	if v := os.Getenv("ZOTRA_AI_BUDGET_USD"); v != "" {
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
