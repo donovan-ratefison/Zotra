@@ -73,7 +73,7 @@ func auditEvents(caseID, versionID string, n int, at time.Time) []engine.Event {
 // seedAuditCase appends n events of one case at the given time.
 func seedAuditCase(t *testing.T, st *store.Store, versionID string, n int, at time.Time) string {
 	t.Helper()
-	caseID := createCase(t, versionID, true)
+	caseID := createCase(t, versionID, false)
 	if err := st.AppendEvents(context.Background(), caseID,
 		auditEvents(caseID, versionID, n, at)); err != nil {
 		t.Fatalf("append audit events: %v", err)
@@ -150,7 +150,7 @@ func TestAuditVerifyFindsBrokenChain(t *testing.T) {
 	seedCase(t, seedVersionID, []cmdRow{cmdStart})
 	seedCase(t, seedVersionID, []cmdRow{cmdStart})
 	now := time.Now().UTC().Truncate(time.Second)
-	bad := createCase(t, seedVersionID, true)
+	bad := createCase(t, seedVersionID, false)
 	broken := []engine.Event{
 		{CaseID: bad, Seq: 1, Type: "case_created", At: now, Actor: "system",
 			Payload: json.RawMessage(
@@ -202,5 +202,38 @@ func TestAuditVerifyIntactChains(t *testing.T) {
 	}
 	if body.Broken == nil || len(body.Broken) != 0 {
 		t.Errorf("broken = %v, want []", body.Broken)
+	}
+}
+
+// T4 and T5: the audit list and total skip the test case; the chain
+// check still reads both cases.
+func TestAuditSkipsTestCase(t *testing.T) {
+	newSupTestAPI(t)
+	realCase := analysisCaseOf(t, false)
+	test := analysisCaseOf(t, true)
+
+	rec := do(t, "GET", "/api/audit?limit=500", "", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	body := decodeAudit(t, rec)
+	if body.Total != 11 || len(body.Events) != 11 {
+		t.Errorf("total = %d, events = %d, want 11 and 11",
+			body.Total, len(body.Events))
+	}
+	for i, e := range body.Events {
+		if e.CaseID != realCase {
+			t.Errorf("events[%d].case_id = %s, want %s (not the test case %s)",
+				i, e.CaseID, realCase, test)
+		}
+	}
+
+	rec = do(t, "GET", "/api/audit/verify", "", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("verify status = %d: %s", rec.Code, rec.Body.String())
+	}
+	verify := decodeVerify(t, rec)
+	if verify.Cases != 2 || verify.Events != 22 || len(verify.Broken) != 0 {
+		t.Errorf("verify = %+v, want 2 cases, 22 events, no break", verify)
 	}
 }

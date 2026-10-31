@@ -20,7 +20,7 @@ type inboxCase struct {
 
 // listInbox answers the user and its open cases. Cases with no
 // events wait for start and never appear. A case that cannot fold is
-// skipped, so the inbox stays usable.
+// skipped, so the inbox stays usable. Test cases are out.
 func (d apiDeps) listInbox(w http.ResponseWriter, r *http.Request) {
 	user, ok := userOf(w, r, d.st)
 	if !ok {
@@ -33,6 +33,9 @@ func (d apiDeps) listInbox(w http.ResponseWriter, r *http.Request) {
 	}
 	items := []inboxCase{}
 	for _, c := range cases {
+		if c.IsTest {
+			continue
+		}
 		def, _, st, err := d.foldCaseState(r.Context(), c)
 		if err != nil {
 			slog.Warn("inbox: skip case", "case", c.ID, "error", err)

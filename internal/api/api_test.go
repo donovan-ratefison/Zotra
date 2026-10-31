@@ -201,11 +201,17 @@ func createCase(t *testing.T, versionID string, isTest bool) string {
 	return cbody["case"].(map[string]any)["id"].(string)
 }
 
-// analysisCase creates a case on the seeded version and runs start
-// plus the entry submit. The case sits on analysis with 11 events.
+// analysisCase creates a real case on the seeded version and runs
+// start plus the entry submit. The case sits on analysis with 11 events.
 func analysisCase(t *testing.T) string {
 	t.Helper()
-	caseID := createCase(t, seedVersionID, true)
+	return analysisCaseOf(t, false)
+}
+
+// analysisCaseOf is analysisCase for a real case or a test case.
+func analysisCaseOf(t *testing.T, isTest bool) string {
+	t.Helper()
+	caseID := createCase(t, seedVersionID, isTest)
 	for _, cmd := range []struct{ body, user string }{
 		{`{"type":"start","data":{}}`, "u-advisor"},
 		{`{"type":"submit","values":` + entryValues() + `}`, "u-advisor"},
@@ -634,6 +640,22 @@ func TestCommandRefusals(t *testing.T) {
 	rec = do(t, "POST", "/api/cases/ghost/commands",
 		`{"type":"decide","decision":"favorable"}`, "u-analyst")
 	checkError(t, rec, http.StatusNotFound, "not_found", "no case ghost")
+}
+
+// T1: a test case at the same step stays out of the inbox.
+func TestInboxSkipsTestCase(t *testing.T) {
+	newTestAPI(t)
+	realCase := analysisCaseOf(t, false)
+	analysisCaseOf(t, true)
+
+	rec := do(t, "GET", "/api/inbox", "", "u-analyst")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("inbox: status %d: %s", rec.Code, rec.Body.String())
+	}
+	cases := decode(t, rec)["cases"].([]any)
+	if len(cases) != 1 || cases[0].(map[string]any)["id"] != realCase {
+		t.Errorf("cases = %v, want the real case %s only", cases, realCase)
+	}
 }
 
 // 7.

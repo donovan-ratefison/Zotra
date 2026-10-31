@@ -1,7 +1,8 @@
 package api
 
-// The audit routes: the newest events of every case, and the hash
-// chain check of every case. The view is read only.
+// The audit routes: the newest events of the real cases (test cases
+// are out), and the hash chain check of every case. The view is read
+// only.
 
 import (
 	"net/http"
@@ -12,7 +13,8 @@ import (
 )
 
 // audit answers GET /api/audit?limit=N. An absent limit gives 50; a
-// present limit must parse as an integer from 1 to 500.
+// present limit must parse as an integer from 1 to 500. Test cases are
+// out of the list and of the total.
 func (d apiDeps) audit(w http.ResponseWriter, r *http.Request) {
 	limit := 50
 	if raw := r.URL.Query().Get("limit"); raw != "" {

@@ -482,13 +482,15 @@ type EventRow struct {
 	Reference string `json:"reference"`
 }
 
-// ListRecentEvents returns the newest events of every case, ordered by
-// at DESC then seq DESC, at most limit, with the case reference.
+// ListRecentEvents returns the newest events of the real cases (not the
+// test cases), ordered by at DESC then seq DESC, at most limit, with the
+// case reference.
 func (s *Store) ListRecentEvents(ctx context.Context, limit int) ([]EventRow, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT e.case_id, e.seq, e.type, e.at, e.actor, e.payload,
 		       e.prev_hash, e.hash, c.reference
 		FROM events e JOIN cases c ON e.case_id = c.id
+		WHERE NOT c.is_test
 		ORDER BY e.at DESC, e.seq DESC LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
@@ -507,10 +509,12 @@ func (s *Store) ListRecentEvents(ctx context.Context, limit int) ([]EventRow, er
 	return recent, rows.Err()
 }
 
-// CountEvents returns the count of all events of all cases.
+// CountEvents returns the count of the events of the real cases (not the
+// test cases).
 func (s *Store) CountEvents(ctx context.Context) (int, error) {
 	var n int
-	err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM events`).Scan(&n)
+	err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM events e
+		JOIN cases c ON e.case_id = c.id WHERE NOT c.is_test`).Scan(&n)
 	return n, err
 }
 

@@ -109,9 +109,9 @@ func supClosedEvents(caseID, versionID string, at time.Time) []engine.Event {
 func seedTwoLateCases(t *testing.T, st *store.Store) (string, string) {
 	t.Helper()
 	now := time.Now().UTC().Truncate(time.Second)
-	a := createCase(t, seedVersionID, true)
+	a := createCase(t, seedVersionID, false)
 	supChain(t, st, a, seedVersionID, now.Add(-25*time.Hour-30*time.Minute))
-	b := createCase(t, seedVersionID, true)
+	b := createCase(t, seedVersionID, false)
 	supChain(t, st, b, seedVersionID, now.Add(-26*time.Hour-30*time.Minute))
 	return a, b
 }
@@ -178,7 +178,7 @@ func TestSupervisionSkipsClosedCase(t *testing.T) {
 	st := newSupTestAPI(t)
 	seedTwoLateCases(t, st)
 	now := time.Now().UTC().Truncate(time.Second)
-	closed := createCase(t, seedVersionID, true)
+	closed := createCase(t, seedVersionID, false)
 	if err := st.AppendEvents(context.Background(), closed,
 		supClosedEvents(closed, seedVersionID, now.Add(-27*time.Hour))); err != nil {
 		t.Fatalf("append closed walk: %v", err)
@@ -207,7 +207,7 @@ func TestSupervisionSkipsClosedCase(t *testing.T) {
 func TestSupervisionPeopleLoad(t *testing.T) {
 	st := newSupTestAPI(t)
 	now := time.Now().UTC().Truncate(time.Second)
-	a := createCase(t, seedVersionID, true)
+	a := createCase(t, seedVersionID, false)
 	events := supEvents(a, seedVersionID, now)
 	events = append(events, engine.Event{
 		CaseID: a, Seq: 4, Type: "step_assigned", At: now, Actor: "u-advisor",
@@ -217,7 +217,7 @@ func TestSupervisionPeopleLoad(t *testing.T) {
 	if err := st.AppendEvents(context.Background(), a, events); err != nil {
 		t.Fatalf("append chain A: %v", err)
 	}
-	b := createCase(t, seedVersionID, true)
+	b := createCase(t, seedVersionID, false)
 	supChain(t, st, b, seedVersionID, now)
 
 	rec := do(t, "GET", "/api/versions/"+seedVersionID+"/supervision", "", "")
@@ -238,7 +238,7 @@ func TestSupervisionNullDeadlineNeverLate(t *testing.T) {
 	st := newSupTestAPI(t)
 	versionID := createProcessVersion(t, nullDeadlineDefinition(t), "No deadline")
 	now := time.Now().UTC().Truncate(time.Second)
-	c := createCase(t, versionID, true)
+	c := createCase(t, versionID, false)
 	supChain(t, st, c, versionID, now.Add(-30*time.Hour))
 
 	rec := do(t, "GET", "/api/versions/"+versionID+"/supervision", "", "")
@@ -296,7 +296,7 @@ func TestSupervisionUnknownVersion(t *testing.T) {
 func TestSupervisionSkipsEventlessCase(t *testing.T) {
 	st := newSupTestAPI(t)
 	seedTwoLateCases(t, st)
-	createCase(t, seedVersionID, true)
+	createCase(t, seedVersionID, false)
 
 	rec := do(t, "GET", "/api/versions/"+seedVersionID+"/supervision", "", "")
 	if rec.Code != http.StatusOK {
@@ -318,7 +318,7 @@ func TestSupervisionReturned(t *testing.T) {
 	st := newSupTestAPI(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	x := seedCaseX(t, st, now, false)
-	z := createCase(t, seedVersionID, true)
+	z := createCase(t, seedVersionID, false)
 	supChain(t, st, z, seedVersionID, now)
 
 	rec := do(t, "GET", "/api/versions/"+seedVersionID+"/supervision", "", "")
@@ -335,5 +335,29 @@ func TestSupervisionReturned(t *testing.T) {
 			t.Errorf("case %s: node %q returned %v, want entry %v",
 				c.CaseID, c.NodeID, c.Returned, want[c.CaseID])
 		}
+	}
+}
+
+// T2: a test case at the same step stays out of the cases and the
+// counts.
+func TestSupervisionSkipsTestCase(t *testing.T) {
+	st := newSupTestAPI(t)
+	at := time.Now().UTC().Truncate(time.Second).Add(-2 * time.Hour)
+	realCase := createCase(t, seedVersionID, false)
+	supChain(t, st, realCase, seedVersionID, at)
+	test := createCase(t, seedVersionID, true)
+	supChain(t, st, test, seedVersionID, at)
+
+	rec := do(t, "GET", "/api/versions/"+seedVersionID+"/supervision", "", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	body := decodeSupervision(t, rec)
+	checkEntryNode(t, body, 1, 0, 2)
+	if body.TotalOpen != 1 || body.TotalLate != 0 {
+		t.Errorf("totals = %d/%d, want 1/0", body.TotalOpen, body.TotalLate)
+	}
+	if len(body.Cases) != 1 || body.Cases[0].CaseID != realCase {
+		t.Errorf("cases = %+v, want the real case %s only", body.Cases, realCase)
 	}
 }

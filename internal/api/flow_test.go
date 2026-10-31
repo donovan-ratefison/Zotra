@@ -69,7 +69,7 @@ func submitted(node, user string) flowStep {
 // seedCaseR seeds the released case: lead time 30 h.
 func seedCaseR(t *testing.T, st *store.Store, now time.Time) {
 	t.Helper()
-	c := createCase(t, seedVersionID, true)
+	c := createCase(t, seedVersionID, false)
 	flowAppend(t, st, c, 1, now.Add(-100*time.Hour),
 		created(`{"amount":80000}`), edge("e01"), enter("entry"))
 	flowAppend(t, st, c, 4, now.Add(-70*time.Hour),
@@ -87,7 +87,7 @@ func seedCaseR(t *testing.T, st *store.Store, now time.Time) {
 // seedCaseF seeds the refused case: lead time 20 h.
 func seedCaseF(t *testing.T, st *store.Store, now time.Time) {
 	t.Helper()
-	c := createCase(t, seedVersionID, true)
+	c := createCase(t, seedVersionID, false)
 	events := supClosedEvents(c, seedVersionID, now.Add(-60*time.Hour))
 	events[0].At = now.Add(-80 * time.Hour)
 	if err := st.AppendEvents(context.Background(), c, events); err != nil {
@@ -99,7 +99,7 @@ func seedCaseF(t *testing.T, st *store.Store, now time.Time) {
 // false, it stops after seq 7, on entry.
 func seedCaseX(t *testing.T, st *store.Store, now time.Time, full bool) string {
 	t.Helper()
-	c := createCase(t, seedVersionID, true)
+	c := createCase(t, seedVersionID, false)
 	flowAppend(t, st, c, 1, now.Add(-60*time.Hour),
 		created(`{}`), edge("e01"), enter("entry"), edge("e02"), enter("complete"))
 	flowAppend(t, st, c, 6, now.Add(-50*time.Hour), edge("e04"), enter("entry"))
@@ -214,7 +214,7 @@ func TestFlowPeriod(t *testing.T) {
 // 5.
 func TestFlowEmptyPeriod(t *testing.T) {
 	newSupTestAPI(t)
-	createCase(t, seedVersionID, true)
+	createCase(t, seedVersionID, false)
 	checkFlow(t, getFlow(t, "?days=90"), 90, 0,
 		[]flowEnd{{"released", 0, 0}, {"refused", 0, 0}},
 		map[string]int{}, 0, flowToday{})
@@ -255,4 +255,21 @@ func TestFlowUnknownVersion(t *testing.T) {
 		rec := do(t, "GET", path, "", "")
 		checkError(t, rec, http.StatusNotFound, "not_found", "no version ghost")
 	}
+}
+
+// T3: a closed test case stays out of the closed count and the passes.
+func TestFlowSkipsTestCase(t *testing.T) {
+	st := newSupTestAPI(t)
+	now := flowNow()
+	seedCaseR(t, st, now)
+	test := createCase(t, seedVersionID, true)
+	if err := st.AppendEvents(context.Background(), test,
+		supClosedEvents(test, seedVersionID, now.Add(-time.Hour))); err != nil {
+		t.Fatalf("append test case: %v", err)
+	}
+	checkFlow(t, getFlow(t, "?days=30"), 30, 1,
+		[]flowEnd{{"released", 1, 30}, {"refused", 0, 0}},
+		map[string]int{"e01": 1, "e02": 1, "e03": 1, "e05": 1, "e08": 1,
+			"e12": 1, "e13": 1, "e14": 1},
+		0, flowToday{})
 }

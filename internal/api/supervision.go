@@ -50,7 +50,8 @@ type nodeCount struct {
 	late int
 }
 
-// supervision answers GET /api/versions/{id}/supervision.
+// supervision answers GET /api/versions/{id}/supervision. Test cases
+// are out.
 func (d apiDeps) supervision(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	v, err := d.st.GetVersion(r.Context(), id)
@@ -83,7 +84,7 @@ func (d apiDeps) supervision(w http.ResponseWriter, r *http.Request) {
 	totalOpen, totalLate := 0, 0
 
 	for _, c := range cases {
-		if c.VersionID != id {
+		if c.IsTest || c.VersionID != id {
 			continue
 		}
 		_, events, st, err := d.foldCaseState(r.Context(), c)

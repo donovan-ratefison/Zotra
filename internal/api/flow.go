@@ -4,7 +4,7 @@ package api
 // figures of one version for the live supervision: the closed cases
 // per end with the average lead time, the passes per edge, the
 // returns, and the work of today. The route reads the events of
-// each case of the version, test cases included.
+// each real case of the version. Test cases are out.
 
 import (
 	"encoding/json"
@@ -112,7 +112,7 @@ func (d apiDeps) flow(w http.ResponseWriter, r *http.Request) {
 	back := backEdges(def)
 
 	for _, c := range cases {
-		if c.VersionID != id {
+		if c.IsTest || c.VersionID != id {
 			continue
 		}
 		events, err := d.st.ListEvents(r.Context(), c.ID)
