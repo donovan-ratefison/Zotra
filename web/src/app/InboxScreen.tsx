@@ -29,9 +29,17 @@ export function moneyText(value: unknown): string {
   return typeof value === "number" ? eur.format(value) : "-";
 }
 
-// utcText gives the delivered UTC date form (the rule of lot 5.2).
-function utcText(iso: string): string {
-  return new Date(iso).toLocaleString("en-IE", { timeZone: "UTC" });
+// dayTimeText gives the short UTC date form: day, month and time,
+// with the seconds only when withSeconds is true.
+export function dayTimeText(iso: string, withSeconds: boolean): string {
+  return new Date(iso).toLocaleString("en-IE", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    ...(withSeconds ? { second: "2-digit" } : {}),
+    timeZone: "UTC",
+  });
 }
 
 // InboxRow renders one inbox row. Its case query feeds the client,
@@ -108,7 +116,7 @@ function InboxRow({
       <td className="px-4 py-3 text-right text-sm">{amount}</td>
       <td className="px-4 py-3 text-sm">{nodeName}</td>
       <td className="px-4 py-3 text-sm text-muted-foreground">
-        {utcText(row.created_at)}
+        {dayTimeText(row.created_at, false)}
       </td>
       <td className="px-4 py-3 text-right">
         {state === undefined ? (

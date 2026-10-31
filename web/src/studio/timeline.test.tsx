@@ -416,6 +416,39 @@ describe("event labels", () => {
     ).toBe("Case closed: approved");
     expect(eventLabel(testDefinition, ev(3, "weird", {}))).toBe("weird");
   });
+
+  const sourceDef: ProcessDefinition = {
+    ...testDefinition,
+    sources: [
+      {
+        id: "blacklist",
+        name: "Credit blacklist",
+        url: "http://127.0.0.1:8097/blacklist",
+        test_values: { listed: false },
+      },
+    ],
+  };
+
+  test("pol-3 row D8: a fetched source gives its name", () => {
+    expect(
+      eventLabel(sourceDef, ev(3, "source_fetched", {
+        node_id: "analysis",
+        source_id: "blacklist",
+        values: { listed: false },
+      })),
+    ).toBe("Fetched Credit blacklist");
+  });
+
+  test("pol-3 row D9: an unknown or missing source gives the raw id", () => {
+    expect(
+      eventLabel(sourceDef, ev(3, "source_fetched", {
+        node_id: "analysis",
+        source_id: "ghost",
+        values: { listed: false },
+      })),
+    ).toBe("Fetched ghost");
+    expect(eventLabel(sourceDef, ev(3, "source_fetched", {}))).toBe("Fetched ");
+  });
 });
 
 describe("timeline", () => {

@@ -24,12 +24,7 @@ import {
 } from "../studio/doc-api";
 import { StepScreen } from "../studio/StepScreen";
 import { Button } from "@/ui/button";
-import { moneyText, pickField } from "./InboxScreen";
-
-// utcText gives the delivered UTC date form (the rule of lot 5.2).
-function utcText(iso: string): string {
-  return new Date(iso).toLocaleString("en-IE", { timeZone: "UTC" });
-}
+import { dayTimeText, moneyText, pickField } from "./InboxScreen";
 
 // Loading is the pending stage of the case or of its version.
 function Loading() {
@@ -209,7 +204,7 @@ export function CaseScreen({
               {clientName}
             </h1>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              {`Created ${utcText(caseRow.created_at)}`}
+              {`Created ${dayTimeText(caseRow.created_at, false)}`}
             </p>
           </div>
           <div className="flex flex-wrap items-start gap-x-6 gap-y-2">

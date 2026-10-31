@@ -7,15 +7,12 @@ import { Button } from "@/ui/button";
 import type { AuditEvent, AuditVerify } from "./sup-api";
 import type { UserDTO } from "../studio/case-api";
 import type { ProcessDefinition } from "../studio/types";
+import { dayTimeText } from "./InboxScreen";
 
-// utcText gives the delivered UTC date form (the rule of lot 5.2).
-function utcText(iso: string): string {
-  return new Date(iso).toLocaleString("en-IE", { timeZone: "UTC" });
-}
-
-// actorOf gives the name of an actor, the raw actor when the users
-// list does not hold it (system stays system).
+// actorOf gives the name of an actor: "System" for the system actor,
+// the raw actor when the users list does not hold it.
 function actorOf(users: UserDTO[], actor: string): string {
+  if (actor === "system") return "System";
   return users.find((user) => user.id === actor)?.name ?? actor;
 }
 
@@ -90,10 +87,10 @@ export function AuditScreen({
             <tbody>
               {audit.events.map((event) => (
                 <tr key={`${event.case_id}-${event.seq}`} className="border-b last:border-b-0">
-                  <td className="px-4 py-3 text-sm text-muted-foreground">
-                    {utcText(event.at)}
+                  <td className="whitespace-nowrap px-4 py-3 text-sm text-muted-foreground">
+                    {dayTimeText(event.at, true)}
                   </td>
-                  <td className="px-4 py-3 font-mono text-[13px]">
+                  <td className="whitespace-nowrap px-4 py-3 font-mono text-[13px]">
                     {event.reference}
                   </td>
                   <td className="px-4 py-3 text-sm">

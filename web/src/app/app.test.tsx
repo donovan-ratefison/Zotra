@@ -13,7 +13,7 @@ import { ApiError } from "../studio/api";
 import { fetchInbox } from "./app-api";
 import { AppShell, brandVars, hslOf } from "./AppShell";
 import { CaseScreen } from "./CaseScreen";
-import { InboxScreen, moneyText, pickField } from "./InboxScreen";
+import { dayTimeText, InboxScreen, moneyText, pickField } from "./InboxScreen";
 import type { InboxCase, InboxUser } from "./app-api";
 import type { CaseState, UserDTO } from "../studio/case-api";
 import type {
@@ -352,6 +352,14 @@ describe("inbox screen", () => {
     expect(html).toContain("Application entry");
     expect(html).toContain("Take the case");
     expect(html).toContain("Open a case to work on its step.");
+    expect(html).toContain("27 Oct, 12:00");
+    expect(html).not.toContain("27/10/2026");
+  });
+
+  test("pol-3 rows D1 to D3: dayTimeText gives the short UTC date", () => {
+    expect(dayTimeText("2026-10-27T12:00:00Z", false)).toBe("27 Oct, 12:00");
+    expect(dayTimeText("2026-10-27T12:00:01Z", true)).toBe("27 Oct, 12:00:01");
+    expect(dayTimeText("2026-01-05T00:04:09Z", true)).toBe("5 Jan, 00:04:09");
   });
 
   test("6.2 row 9: an empty inbox says so", () => {
@@ -481,6 +489,7 @@ describe("case screen", () => {
     expect(html).toContain("Application entry");
     expect(html).toContain("Acting as Demo Advisor");
     expect(html).toContain("Take the step");
+    expect(html).toContain("Created 27 Oct, 12:00");
     expect(html).not.toContain("Act as");
     expect(html).not.toContain("Documents");
   });

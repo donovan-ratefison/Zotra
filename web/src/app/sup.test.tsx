@@ -362,7 +362,8 @@ describe("audit screen", () => {
     expect(html).toContain("CASE-2026-0001");
     expect(html).toContain("Demo Advisor");
     expect(html).toContain("Data submitted on Application entry");
-    expect(html).toContain("27/10/2026, 12:00:01");
+    expect(html).toContain("27 Oct, 12:00:01");
+    expect(html).not.toContain("27/10/2026");
     expect(html).toContain(">y</td>");
     expect(html).toContain(">x</td>");
     expect(html).toContain("1 of 1284 events.");
@@ -370,11 +371,22 @@ describe("audit screen", () => {
     expect(html).not.toContain("Chain broken");
   });
 
-  test("6.3 row W7b: an actor outside the users list renders raw", () => {
+  test("6.3 row W7b, pol-3 row D7: the system actor reads System, another unknown actor stays raw", () => {
     const html = renderAudit(
       { events: [{ ...auditEvent, actor: "system" }], total: 1284 },
     );
-    expect(html).toContain(">system</td>");
+    expect(html).toContain(">System</td>");
+    expect(html).not.toContain(">system</td>");
+    const raw = renderAudit(
+      { events: [{ ...auditEvent, actor: "u-ghost" }], total: 1284 },
+    );
+    expect(raw).toContain(">u-ghost</td>");
+  });
+
+  test("pol-3 row D6: the time and case cells stay on one line", () => {
+    const html = renderAudit();
+    expect(html).toMatch(/<td class="whitespace-nowrap[^"]*">27 Oct, 12:00:01<\/td>/);
+    expect(html).toMatch(/<td class="whitespace-nowrap[^"]*">CASE-2026-0001<\/td>/);
   });
 
   test("6.3 row W8: the verify banner shows the ok text or the break", () => {

@@ -4,9 +4,9 @@
 import type { CaseEvent } from "./case-api";
 import type { ProcessDefinition } from "./types";
 
-// eventLabel gives the text of one event. A node or edge id that the
-// definition does not hold gives the raw id in the same text; any
-// other type gives the raw type.
+// eventLabel gives the text of one event. A node, edge or source id
+// that the definition does not hold gives the raw id in the same text;
+// any other type gives the raw type.
 export function eventLabel(
   def: ProcessDefinition,
   e: CaseEvent,
@@ -41,6 +41,10 @@ export function eventLabel(
       return `Signature added on ${nodeName(p.node_id)}`;
     case "case_closed":
       return `Case closed: ${String(p.result ?? "")}`;
+    case "source_fetched": {
+      const source = def.sources.find((s) => s.id === p.source_id);
+      return `Fetched ${source?.name ?? String(p.source_id ?? "")}`;
+    }
     default:
       return e.type;
   }
