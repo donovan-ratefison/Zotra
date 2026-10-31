@@ -9,6 +9,8 @@ import { getVersion, listProcesses, listVersions, ApiError } from "./api";
 import {
   bends,
   bestCandidate,
+  chipRowWidth,
+  citationCount,
   crossings,
   diagramEdgeText,
   edgePillText,
@@ -20,6 +22,7 @@ import {
   layoutProblems,
   layoutProcess,
   nextCandidate,
+  nodeLabelSize,
   PILL_HEIGHT,
   PILL_MARGIN,
   pillPlacement,
@@ -45,6 +48,7 @@ import seedJson from "../../../internal/store/seed/example-process.json";
 import aiHomeJson from "./testdata/ai-home.json";
 import aiConstructionJson from "./testdata/ai-construction.json";
 import aiSmeJson from "./testdata/ai-sme.json";
+import aiOverdraftFrJson from "./testdata/ai-overdraft-fr.json";
 import type {
   NodeType,
   ProcessDefinition,
@@ -456,6 +460,8 @@ const seedDefinition = seedJson as ProcessDefinition;
 const aiHome = aiHomeJson as ProcessDefinition;
 const aiConstruction = aiConstructionJson as ProcessDefinition;
 const aiSme = aiSmeJson as ProcessDefinition;
+// The French overdraft process of the jury test: every node is cited.
+const fr = aiOverdraftFrJson as ProcessDefinition;
 
 // The right edge of the widest row of a grid layout.
 function widestRow(grid: NonNullable<ReturnType<typeof gridLayout>>): number {
@@ -742,9 +748,11 @@ describe("diagram layout guard", () => {
       aiHome,
       aiConstruction,
       aiSme,
+      fr,
     ];
     for (const def of fixtures) {
       expect(gridLayout(def), def.name).not.toBeNull();
+      expect(gridLayout(def, Infinity), def.name).not.toBeNull();
       const { nodes } = await layoutProcess(def);
       // The grid path tags every node with a label position; the ELK
       // path does not.
@@ -1883,5 +1891,108 @@ describe("12.14 layout after a new gateway", () => {
       .toEqual(["label g x node t"]);
     expect(layoutProblems(hl([hand("g", "complete", "Go?", 100, 100, "below")], [link([[126, 150], [126, 250]], "Yes", [126, 160])])))
       .toEqual(["label g x pill x"]);
+  });
+});
+
+// fr after one assistant change: a jurist verifies the guarantees
+// before the committee decision.
+function frGuarantees(): ProcessDefinition {
+  const committee = fr.nodes.find((n) => n.id === "committee_decision")!;
+  return {
+    ...fr,
+    roles: [...fr.roles, { id: "jurist", name: "Jurist", department: "Legal" }],
+    nodes: [...fr.nodes, {
+      ...committee,
+      id: "verify_guarantees",
+      name: "Verify guarantees",
+      role: "jurist",
+      decisions: [],
+      deadline_hours: 48,
+      citations: [],
+    }],
+    edges: [
+      ...fr.edges.map((e) => e.id === "e6" ? { ...e, to: "verify_guarantees" } : e),
+      { id: "e12", from: "verify_guarantees", to: "committee_decision", label: "Submit to committee", decision: null, condition: null, is_default: false },
+    ],
+  };
+}
+
+describe("J5 French overdraft layout", () => {
+  const node = (id: string) => fr.nodes.find((n) => n.id === id)!;
+  const centerX = (l: Layout, id: string) => {
+    const n = l.nodes.find((m) => m.id === id)!;
+    return n.position.x + n.width! / 2;
+  };
+
+  test("J5-1a: a cited start counts the chip row", () => {
+    expect(nodeLabelSize(node("start"))).toEqual({ w: 47, h: 33 });
+  });
+
+  test("J5-1b: a cited gateway counts the chip row", () => {
+    const size = nodeLabelSize(node("routing"));
+    expect(size.w).toBeCloseTo(106.4, 6);
+    expect(size.h).toBe(33);
+  });
+
+  test("J5-1c: a long cited end name keeps the 120 px cap", () => {
+    expect(nodeLabelSize(node("end_approved"))).toEqual({ w: 120, h: 33 });
+  });
+
+  test("J5-1d: more than four chips add the count and keep the cap", () => {
+    const end = { ...node("end_refused"), name: "End", citations: ["p1-2", "p1-3", "p2-10", "p12-4", "p3-1", "p3-2"] };
+    expect(chipRowWidth(end)).toBe(172);
+    expect(nodeLabelSize(end)).toEqual({ w: 120, h: 33 });
+  });
+
+  test("J5-1e: the citations of a check count", () => {
+    const check = { ...node("analysis").checks[0]!, citations: ["p2-1"] };
+    const routing = { ...node("routing"), citations: [], checks: [check] };
+    expect(citationCount(routing)).toBe(1);
+    expect(nodeLabelSize(routing).h).toBe(33);
+  });
+
+  test("J5-1f: refused, a node with no citation keeps the name size", () => {
+    const end = { ...node("end_approved"), citations: [] };
+    expect(nodeLabelSize(end)).toEqual(labelSize("Overdraft granted"));
+    expect(nodeLabelSize(end)).toEqual({ w: 120, h: 30 });
+  });
+
+  test("J5-3: the main path on row 0, the ends under the node before them", () => {
+    const grid = gridLayout(fr)!;
+    const cell = (id: string) => grid.cells.get(id)!;
+    for (const id of ["start", "collect", "analysis", "routing", "branch_decision", "setup"]) {
+      expect(cell(id).row, id).toBe(0);
+    }
+    expect(cell("end_approved").row).toBe(1);
+    expect(cell("end_approved").cx).toBeCloseTo(1159.2, 6);
+    expect(cell("end_approved").cx).toBe(cell("setup").cx);
+    expect(cell("end_refused").row).toBe(1);
+    expect(cell("end_refused").cx).toBeCloseTo(936, 6);
+    expect(cell("end_refused").cx).toBeCloseTo(cell("branch_decision").cx, 6);
+    expect(cell("committee_decision").row).toBe(1);
+    expect(cell("committee_decision").cx).toBeCloseTo(718, 6);
+    expect(cell("committee_decision").cx).toBeCloseTo(cell("routing").cx, 6);
+  });
+
+  test("J5-4: the ends sit on the right of the main path", async () => {
+    const l = await layoutProcess(fr);
+    expect(l.width).toBeCloseTo(1307.6, 6);
+    expect(centerX(l, "end_approved")).toBeCloseTo(1167.2, 6);
+    for (const id of ["start", "collect", "analysis", "routing", "branch_decision", "setup"]) {
+      expect(centerX(l, "end_approved"), id).toBeGreaterThanOrEqual(centerX(l, id));
+    }
+    expect(centerX(l, "end_refused")).toBeCloseTo(944, 6);
+    expect(centerX(l, "routing")).toBeCloseTo(726, 6);
+    expect(centerX(l, "end_refused")).toBeGreaterThan(centerX(l, "routing"));
+  });
+
+  test("J5-5: no label or pill over a node, a label or a pill, before and after the change", async () => {
+    for (const def of [fr, frGuarantees()]) {
+      const list = await layoutCandidates(def);
+      expect(list).toHaveLength(3);
+      for (const l of list) {
+        expect(layoutProblems(l), def.name).toEqual([]);
+      }
+    }
   });
 });

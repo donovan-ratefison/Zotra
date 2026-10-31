@@ -266,7 +266,7 @@ function labelWidth(text: string): number {
 // The part of a node label that sticks out at each side of its
 // shape. A task carries its name inside the card.
 function overhang(node: ProcessNode): number {
-  return node.type === "task" ? 0 : Math.max(0, (labelSize(node.name).w - NODE_SIZE[node.type].width) / 2);
+  return node.type === "task" ? 0 : Math.max(0, (nodeLabelSize(node).w - NODE_SIZE[node.type].width) / 2);
 }
 
 // The free space between two nodes of one row: the grid gap, and room
@@ -420,10 +420,12 @@ function boxesOverlap(a: Box, b: Box): boolean {
   return overlapArea(a.x, a.y, a.w, a.h, b) > 0;
 }
 
-// The box of the name of a start, gateway or end node.
+// The box of the name of a start, gateway or end node. A cited node
+// keeps its name on one line, with the chip row under it.
 function nodeLabelBox(node: ProcessNode, c: Cell, pos: LabelPos): Box {
-  const w = Math.min(120, labelWidth(node.name));
-  const h = Math.max(1, Math.ceil(labelWidth(node.name) / 120)) * 15;
+  const cited = citationCount(node) > 0;
+  const w = Math.min(120, Math.max(labelWidth(node.name), cited ? chipRowWidth(node) : 0));
+  const h = cited ? 15 + CHIP_ROW : Math.max(1, Math.ceil(labelWidth(node.name) / 120)) * 15;
   if (pos === "above") {
     return { x: c.cx - w / 2, y: c.cy - c.h / 2 - 4 - h, w, h };
   }
@@ -825,9 +827,17 @@ export function gridLayout(def: ProcessDefinition, budget = ROW_BUDGET): GridLay
   // 10. The link texts: on the first horizontal stretch that holds
   // the text, at its middle, then at its quarters, else beside the
   // first vertical stretch long enough, at the same three positions,
-  // never on a node, a node label or another text.
+  // never on a node, a node label or another text. The rendered pill
+  // is wider than the text box, so a try is also free only when its
+  // pill overlaps no placed pill.
   const anchors = new Map<string, DiagramPoint | null>();
   const SPOTS = [0.5, 0.25, 0.75];
+  // The placed pills, as layoutProblems measures them.
+  const pills: Box[] = [];
+  const pillOf = (b: Box, text: string): Box => {
+    const pw = estimatePillWidth(text);
+    return { x: b.x + b.w / 2 - pw / 2, y: b.y + LABEL_H / 2 - PILL_HEIGHT / 2, w: pw, h: PILL_HEIGHT };
+  };
   for (const r of routes) {
     const text = diagramEdgeText(r.edge, def);
     if (text === null) {
@@ -871,11 +881,14 @@ export function gridLayout(def: ProcessDefinition, budget = ROW_BUDGET): GridLay
         }
       }
     }
-    const spot = tries.find((b) => !obstacles.some((o) => boxesOverlap(b, o)));
+    const spot = tries.find((b) =>
+      !obstacles.some((o) => boxesOverlap(b, o)) &&
+      !pills.some((o) => boxesOverlap(pillOf(b, text), o)));
     if (spot === undefined) {
       return null;
     }
     obstacles.push(spot);
+    pills.push(pillOf(spot, text));
     anchors.set(r.edge.id, { x: spot.x + w / 2, y: spot.y + LABEL_H / 2 });
   }
   return { cells, points, anchors, labelPos };
@@ -908,8 +921,36 @@ export function labelSize(name: string): { w: number; h: number } {
   return { w: Math.min(120, est), h: Math.max(1, Math.ceil(est / 120)) * 15 };
 }
 
+// The citation chip row under the name of a cited start, gateway or
+// end node (CitationChips of diagram.tsx): 4 px of margin and a row of
+// 14 px. A cited name keeps one line. A chip of an id of n characters
+// is at most 6n + 9 px wide, with a gap of 4 px; the "+n" count of
+// more than four ids adds 16 px.
+export const CHIP_ROW = 18;
+
+export function citationCount(node: ProcessNode): number {
+  return node.citations.length + node.checks.reduce((n, c) => n + c.citations.length, 0);
+}
+
+export function chipRowWidth(node: ProcessNode): number {
+  const ids = [...node.citations, ...node.checks.flatMap((c) => c.citations)];
+  const shown = ids.slice(0, 4);
+  return shown.reduce((w, id) => w + id.length * 6 + 9, 0) + 4 * Math.max(0, shown.length - 1) +
+    (ids.length > 4 ? 16 : 0);
+}
+
+// The label box size of a node: the name, and the chip row when the
+// node carries citations.
+export function nodeLabelSize(node: ProcessNode): { w: number; h: number } {
+  const size = labelSize(node.name);
+  return citationCount(node) === 0
+    ? size
+    : { w: Math.min(120, Math.max(size.w, chipRowWidth(node))), h: 15 + CHIP_ROW };
+}
+
+// The label box under a node: the name and the chip row.
 export function labelBox(node: ProcessNode, nodeBox: Box): Box {
-  const { w, h } = labelSize(node.name);
+  const { w, h } = nodeLabelSize(node);
   return {
     x: nodeBox.x + nodeBox.w / 2 - w / 2,
     y: nodeBox.y + nodeBox.h + 4,
@@ -975,7 +1016,7 @@ export function toElkGraph(def: ProcessDefinition): ElkNode {
       }))),
     },
     children: def.nodes.map((node) => {
-      const size = labelSize(node.name);
+      const size = nodeLabelSize(node);
       return {
         id: node.id,
         width: NODE_SIZE[node.type].width,
@@ -1359,7 +1400,7 @@ export function layoutProblems(layout: Layout): string[] {
     boxes.push([`node ${n.id}`, box]);
     const node = n.data.node;
     if (node.type !== "task") {
-      const { w, h } = labelSize(node.name);
+      const { w, h } = nodeLabelSize(node);
       const cx = box.x + box.w / 2;
       const pos = n.data.labelPos ?? "below";
       boxes.push([`label ${n.id}`, {

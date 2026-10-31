@@ -1,0 +1,458 @@
+{
+ "name": "decouvert-entreprise-fr",
+ "edges": [
+  {
+   "id": "e1",
+   "to": "collect",
+   "from": "start",
+   "label": "Start application",
+   "decision": null,
+   "condition": null,
+   "is_default": false
+  },
+  {
+   "id": "e2",
+   "to": "analysis",
+   "from": "collect",
+   "label": "Submit for analysis",
+   "decision": null,
+   "condition": null,
+   "is_default": false
+  },
+  {
+   "id": "e3",
+   "to": "routing",
+   "from": "analysis",
+   "label": "Favorable",
+   "decision": "favorable",
+   "condition": null,
+   "is_default": false
+  },
+  {
+   "id": "e4",
+   "to": "end_refused",
+   "from": "analysis",
+   "label": "Unfavorable",
+   "decision": "unfavorable",
+   "condition": null,
+   "is_default": false
+  },
+  {
+   "id": "e5",
+   "to": "branch_decision",
+   "from": "routing",
+   "label": "Up to 50000 EUR",
+   "decision": null,
+   "condition": "requested_amount <= 50000.0",
+   "is_default": false
+  },
+  {
+   "id": "e6",
+   "to": "committee_decision",
+   "from": "routing",
+   "label": "Above 50000 EUR",
+   "decision": null,
+   "condition": null,
+   "is_default": true
+  },
+  {
+   "id": "e7",
+   "to": "setup",
+   "from": "branch_decision",
+   "label": "Approved",
+   "decision": "approved",
+   "condition": null,
+   "is_default": false
+  },
+  {
+   "id": "e8",
+   "to": "end_refused",
+   "from": "branch_decision",
+   "label": "Rejected",
+   "decision": "rejected",
+   "condition": null,
+   "is_default": false
+  },
+  {
+   "id": "e9",
+   "to": "setup",
+   "from": "committee_decision",
+   "label": "Approved",
+   "decision": "approved",
+   "condition": null,
+   "is_default": false
+  },
+  {
+   "id": "e10",
+   "to": "end_refused",
+   "from": "committee_decision",
+   "label": "Rejected",
+   "decision": "rejected",
+   "condition": null,
+   "is_default": false
+  },
+  {
+   "id": "e11",
+   "to": "end_approved",
+   "from": "setup",
+   "label": "Limit registered",
+   "decision": null,
+   "condition": null,
+   "is_default": false
+  }
+ ],
+ "nodes": [
+  {
+   "id": "start",
+   "name": "Start",
+   "role": null,
+   "type": "start",
+   "checks": [],
+   "citations": [
+    "p1-2"
+   ],
+   "decisions": [],
+   "documents": [],
+   "signature": false,
+   "end_result": null,
+   "source_ids": [],
+   "deadline_hours": null,
+   "scope_overrides": []
+  },
+  {
+   "id": "collect",
+   "name": "Collect application",
+   "role": "relationship_manager",
+   "type": "task",
+   "checks": [
+    {
+     "id": "c1",
+     "message": "Client must have at least 12 months tenure",
+     "citations": [
+      "p1-2"
+     ],
+     "expression": "client_tenure_months >= 12",
+     "plain_text": "Company must be a client for at least 12 months"
+    }
+   ],
+   "citations": [
+    "p1-2"
+   ],
+   "decisions": [],
+   "documents": [
+    "supporting_documents"
+   ],
+   "signature": false,
+   "end_result": null,
+   "source_ids": [],
+   "deadline_hours": null,
+   "scope_overrides": []
+  },
+  {
+   "id": "analysis",
+   "name": "Credit analysis",
+   "role": "credit_analyst",
+   "type": "task",
+   "checks": [
+    {
+     "id": "c2",
+     "message": "Four supporting documents are required",
+     "citations": [
+      "p1-2"
+     ],
+     "expression": "size(supporting_documents) >= 4",
+     "plain_text": "Kbis, two balance sheets, bank statements and cash forecast must be provided"
+    },
+    {
+     "id": "c3",
+     "message": "Requested amount must be between 5000 EUR and 200000 EUR",
+     "citations": [
+      "p1-2"
+     ],
+     "expression": "requested_amount >= 5000.0 && requested_amount <= 200000.0",
+     "plain_text": "Overdraft is from 5000 to 200000 EUR"
+    },
+    {
+     "id": "c4",
+     "message": "Overdraft must not exceed 10 percent of annual turnover",
+     "citations": [
+      "p1-2"
+     ],
+     "expression": "requested_amount <= 0.1 * annual_turnover",
+     "plain_text": "Amount does not exceed 10 percent of turnover"
+    },
+    {
+     "id": "c5",
+     "message": "No payment incident in the last six months is allowed",
+     "citations": [
+      "p1-2"
+     ],
+     "expression": "!has_payment_incident",
+     "plain_text": "No payment incident for six months"
+    },
+    {
+     "id": "c6",
+     "message": "Equity must be positive",
+     "citations": [
+      "p1-2"
+     ],
+     "expression": "equity_amount > 0.0",
+     "plain_text": "Positive equity"
+    }
+   ],
+   "citations": [
+    "p1-2"
+   ],
+   "decisions": [
+    "favorable",
+    "unfavorable"
+   ],
+   "documents": [],
+   "signature": false,
+   "end_result": null,
+   "source_ids": [],
+   "deadline_hours": 72,
+   "scope_overrides": []
+  },
+  {
+   "id": "routing",
+   "name": "Amount routing",
+   "role": null,
+   "type": "gateway",
+   "checks": [],
+   "citations": [
+    "p1-2"
+   ],
+   "decisions": [],
+   "documents": [],
+   "signature": false,
+   "end_result": null,
+   "source_ids": [],
+   "deadline_hours": null,
+   "scope_overrides": []
+  },
+  {
+   "id": "branch_decision",
+   "name": "Branch manager decision",
+   "role": "branch_manager",
+   "type": "task",
+   "checks": [],
+   "citations": [
+    "p1-2"
+   ],
+   "decisions": [
+    "approved",
+    "rejected"
+   ],
+   "documents": [],
+   "signature": false,
+   "end_result": null,
+   "source_ids": [],
+   "deadline_hours": null,
+   "scope_overrides": []
+  },
+  {
+   "id": "committee_decision",
+   "name": "Credit committee decision",
+   "role": "credit_committee",
+   "type": "task",
+   "checks": [],
+   "citations": [
+    "p1-2"
+   ],
+   "decisions": [
+    "approved",
+    "rejected"
+   ],
+   "documents": [],
+   "signature": false,
+   "end_result": null,
+   "source_ids": [],
+   "deadline_hours": null,
+   "scope_overrides": []
+  },
+  {
+   "id": "setup",
+   "name": "Register limit",
+   "role": "back_office",
+   "type": "task",
+   "checks": [],
+   "citations": [
+    "p1-2"
+   ],
+   "decisions": [],
+   "documents": [],
+   "signature": true,
+   "end_result": null,
+   "source_ids": [],
+   "deadline_hours": 24,
+   "scope_overrides": []
+  },
+  {
+   "id": "end_approved",
+   "name": "Overdraft granted",
+   "role": null,
+   "type": "end",
+   "checks": [],
+   "citations": [
+    "p1-2"
+   ],
+   "decisions": [],
+   "documents": [],
+   "signature": false,
+   "end_result": "approved",
+   "source_ids": [],
+   "deadline_hours": null,
+   "scope_overrides": []
+  },
+  {
+   "id": "end_refused",
+   "name": "Overdraft refused",
+   "role": null,
+   "type": "end",
+   "checks": [],
+   "citations": [
+    "p1-2"
+   ],
+   "decisions": [],
+   "documents": [],
+   "signature": false,
+   "end_result": "refused",
+   "source_ids": [],
+   "deadline_hours": null,
+   "scope_overrides": []
+  }
+ ],
+ "roles": [
+  {
+   "id": "relationship_manager",
+   "name": "Relationship Manager",
+   "department": "Business"
+  },
+  {
+   "id": "credit_analyst",
+   "name": "Credit Analyst",
+   "department": "Risk"
+  },
+  {
+   "id": "branch_manager",
+   "name": "Branch Manager",
+   "department": "Business"
+  },
+  {
+   "id": "credit_committee",
+   "name": "Credit Committee",
+   "department": "Risk"
+  },
+  {
+   "id": "back_office",
+   "name": "Back Office",
+   "department": "Operations"
+  }
+ ],
+ "scope": [
+  {
+   "role": "relationship_manager",
+   "field": "client_tenure_months",
+   "access": "write"
+  },
+  {
+   "role": "relationship_manager",
+   "field": "requested_amount",
+   "access": "write"
+  },
+  {
+   "role": "relationship_manager",
+   "field": "annual_turnover",
+   "access": "write"
+  },
+  {
+   "role": "relationship_manager",
+   "field": "equity_amount",
+   "access": "write"
+  },
+  {
+   "role": "relationship_manager",
+   "field": "has_payment_incident",
+   "access": "write"
+  },
+  {
+   "role": "relationship_manager",
+   "field": "supporting_documents",
+   "access": "write"
+  },
+  {
+   "role": "credit_analyst",
+   "field": "requested_amount",
+   "access": "read"
+  },
+  {
+   "role": "branch_manager",
+   "field": "requested_amount",
+   "access": "read"
+  },
+  {
+   "role": "credit_committee",
+   "field": "requested_amount",
+   "access": "read"
+  },
+  {
+   "role": "back_office",
+   "field": "requested_amount",
+   "access": "read"
+  }
+ ],
+ "theme": {
+  "logo_url": null,
+  "brand_name": "Banque du Lac",
+  "primary_color": "#0f4c45"
+ },
+ "fields": [
+  {
+   "name": "client_tenure_months",
+   "type": "integer",
+   "label": "Client tenure in months",
+   "options": [],
+   "computed": null
+  },
+  {
+   "name": "requested_amount",
+   "type": "money",
+   "label": "Requested overdraft amount",
+   "options": [],
+   "computed": null
+  },
+  {
+   "name": "annual_turnover",
+   "type": "money",
+   "label": "Annual turnover",
+   "options": [],
+   "computed": null
+  },
+  {
+   "name": "equity_amount",
+   "type": "money",
+   "label": "Equity amount",
+   "options": [],
+   "computed": null
+  },
+  {
+   "name": "has_payment_incident",
+   "type": "boolean",
+   "label": "Payment incident in last 6 months",
+   "options": [],
+   "computed": null
+  },
+  {
+   "name": "supporting_documents",
+   "type": "document",
+   "label": "Supporting documents",
+   "options": [],
+   "computed": null
+  }
+ ],
+ "sources": [],
+ "currency": "EUR",
+ "schema_version": "1",
+ "policy_document_id": "PC-DE-007"
+}
