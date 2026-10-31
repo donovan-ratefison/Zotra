@@ -303,13 +303,10 @@ export function TimelineBar({ def, events, state, at, onSelect, userName }: {
         </span>
         <span className="ml-1 font-mono text-[11px] text-muted-foreground">{`(${n} of ${count})`}</span>
         <span className="flex-1" />
-        <span className="hidden text-[12.5px] text-muted-foreground lg:inline">
-          Click a past event to replay from it.
-        </span>
         <Hint label="About the timeline" side="top">
           One point stands for one step of the case. Hover a point to see
           its events. The grey points are the steps still to come on the
-          path to approval.
+          path to approval. Click a past event to replay from it.
         </Hint>
       </div>
       <TooltipProvider delayDuration={200}>

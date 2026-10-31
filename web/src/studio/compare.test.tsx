@@ -236,6 +236,12 @@ describe("ImpactBlock", () => {
     expect(block(undefined, null)).toContain("Counting the open cases…");
     expect(block({ ...sup, total_open: 0 }, null)).toContain("No open case on v2.");
   });
+  test("B2: open cases: the count and the (?)", () => {
+    const html = block(sup, null);
+    expect(html).toContain("open cases on v2");
+    expect(html).toContain('aria-label="About the impact"');
+    expect(html).not.toContain("until their end");
+  });
 });
 
 describe("HistoryBody compare", () => {
@@ -251,6 +257,8 @@ describe("HistoryBody compare", () => {
     expect(html).toContain('aria-label="Compare v1 with the shown version"');
     expect(html).toContain('aria-label="Compare v2 with the shown version"');
     expect(html).not.toContain("Compare v3");
+    expect(html).toContain('aria-label="About the versions"');
+    expect(html).not.toContain("stays on the version where it started");
   });
   test("H2: no prop: no Compare button", () => {
     expect(history()).not.toContain("Compare");
@@ -264,12 +272,14 @@ describe("SummaryBlock", () => {
         empty: false, busy: false, text: null, error: null, onSummarize: () => {}, ...p,
       }),
     );
-  const button = (html: string) => html.match(/<button[^>]*>/)![0];
-  test("S1: all null: the button is enabled, the muted line", () => {
+  // The last button is "Summarize with AI": the (?) comes first.
+  const button = (html: string) => html.match(/<button[^>]*>/g)!.at(-1)!;
+  test("S1: all null: the button is enabled, the (?) holds the line", () => {
     const html = block({});
     expect(html).toContain("Summarize with AI");
     expect(button(html)).not.toContain("disabled=\"\"");
-    expect(html).toContain("The AI writes a short summary of the changes.");
+    expect(html).toContain('aria-label="About the summary"');
+    expect(html).not.toContain("The AI writes a short summary");
   });
   test("S2: empty or busy: the button is disabled", () => {
     expect(button(block({ empty: true }))).toContain("disabled=\"\"");

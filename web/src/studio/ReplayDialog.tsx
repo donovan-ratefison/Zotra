@@ -9,6 +9,7 @@
 import { useState } from "react";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent } from "@/ui/dialog";
+import { Hint } from "@/ui/hint";
 import {
   Select,
   SelectContent,
@@ -59,14 +60,14 @@ export function ReplayDialogBody({ def, events, at, busy, error, onCreate, onClo
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-1.5">
         <h2 className="text-lg font-semibold leading-tight">
           {`Replay from event ${at}`}
         </h2>
-        <p className="text-sm text-muted-foreground">
+        <Hint label="About the replay copy">
           The copy runs the same commands in a new test case. Change a
           value below, or create the copy as is.
-        </p>
+        </Hint>
       </div>
       {submits.length === 0 ? (
         <p className="text-sm text-muted-foreground">

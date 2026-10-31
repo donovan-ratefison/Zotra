@@ -2,9 +2,10 @@
 // renderToString for the view, no jsdom.
 
 import { renderToString } from "react-dom/server";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, test } from "vitest";
 import { ApiError } from "./api";
-import { BankSettingsView, bankInput, bankTheme, isHexColor } from "./BankSettings";
+import { BankSettings, BankSettingsView, bankInput, bankTheme, isHexColor } from "./BankSettings";
 import type { Bank } from "./types";
 
 const seed: Bank = {
@@ -40,6 +41,19 @@ function button(html: string, text: string): string {
 }
 
 describe("bank settings", () => {
+  test("F1: the page title has a (?) and no explanation line", () => {
+    const client = new QueryClient();
+    client.setQueryData(["bank"], seed);
+    const html = renderToString(
+      <QueryClientProvider client={client}>
+        <BankSettings />
+      </QueryClientProvider>,
+    );
+    expect(html).toContain("Bank settings</h1>");
+    expect(html).toContain('aria-label="About the bank settings"');
+    expect(html).not.toContain("The bank profile of the delivered app");
+  });
+
   test("H1: isHexColor", () => {
     const inputs = ["#0f4c45", "#0F4C45", "#0f4c4", "0f4c45", "#0f4c45 ", "#gggggg", ""];
     expect(inputs.map(isHexColor)).toEqual([true, true, false, false, false, false, false]);

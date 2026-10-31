@@ -19,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { Input } from "@/ui/input";
+import { Hint } from "@/ui/hint";
 import type { ProcessDefinition, VersionSummary } from "./types";
 
 // definitionFile names and serializes the export file of one version.
@@ -228,7 +229,13 @@ export function HistoryBody({ def, version, versions, onOpen, onCompare, onActio
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b px-5 pt-5 pb-3">
-        <h2 className="text-lg font-semibold leading-tight">Version history</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold leading-tight">Version history</h2>
+          <Hint label="About the versions">
+            A case in progress stays on the version where it started. Publish
+            makes a version active for new cases.
+          </Hint>
+        </div>
         <p className="text-[13px] text-muted-foreground">
           {`${def.name} · ${rows.length - drafts} ${rows.length - drafts === 1 ? "version" : "versions"}${drafts > 0 ? ` and ${drafts} ${drafts === 1 ? "draft" : "drafts"}` : ""}`}
         </p>
@@ -326,10 +333,6 @@ export function HistoryBody({ def, version, versions, onOpen, onCompare, onActio
           );
         })}
       </ol>
-      <p className="border-t px-5 py-3 text-[12px] text-muted-foreground">
-        A case in progress stays on the version where it started. Publish
-        makes a version active for new cases.
-      </p>
     </div>
   );
 }

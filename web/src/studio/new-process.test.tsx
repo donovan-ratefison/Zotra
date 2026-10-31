@@ -98,9 +98,8 @@ describe("new process from scratch", () => {
       createElement(ScratchDialogBody, { onCreated: () => {}, onClose: () => {} }),
     );
     expect(html).toContain("New process from scratch");
-    expect(html).toContain(
-      "Start with an empty draft. Add the steps with the toolbar, or ask the assistant to build them.",
-    );
+    expect(html).toContain('aria-label="About New from scratch"');
+    expect(html).not.toContain("Start with an empty draft");
     expect(html).toContain("Process name");
     expect(buttonOf(html, "Create")).toContain('disabled=""');
   });

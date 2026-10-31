@@ -194,6 +194,32 @@ function renderChecks(props: {
   );
 }
 
+describe("ChecksTab signature", () => {
+  test("F7: a step with a signature shows the title and the (?)", () => {
+    const def = {
+      ...testDefinition,
+      nodes: testDefinition.nodes.map((n) => (n.id === "entry" ? { ...n, signature: true } : n)),
+    };
+    const html = renderToString(
+      createElement(ChecksTab, {
+        def,
+        state: stateFixture,
+        events: eventsFixture,
+        nodeId: "entry",
+        caseId: null,
+        replaying: false,
+      }),
+    );
+    expect(html).toContain(">Signature<");
+    expect(html).toContain('aria-label="About the signature"');
+    expect(html).not.toContain("Simple signature");
+  });
+
+  test("F8: a step with no signature has no signature (?)", () => {
+    expect(renderChecks({})).not.toContain("About the signature");
+  });
+});
+
 describe("explainCheck", () => {
   test("3.5 row 13: a 200 answer resolves with both fields", async () => {
     const calls = stubFetch(200, answerFixture);

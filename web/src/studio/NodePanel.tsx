@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ChevronRight, Clock, MoreHorizontal, X } from "lucide-react";
 import { Button } from "@/ui/button";
+import { Hint } from "@/ui/hint";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -415,11 +416,14 @@ export function NodePanel({
           </section>
           <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2.5">
             <div className="flex flex-col gap-0.5">
-              <span className="text-[12.5px] font-medium">Signature</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[12.5px] font-medium">Signature</span>
+                <Hint label="About the signature">
+                  A signature puts the name, the date and time, and the document hash in the audit log.
+                </Hint>
+              </div>
               <span className="text-xs text-muted-foreground">
-                {node.signature
-                  ? "Required: name, date and time, document hash go to the audit log."
-                  : "Not required at this step."}
+                {node.signature ? "Required at this step." : "Not required at this step."}
               </span>
             </div>
             <Switch

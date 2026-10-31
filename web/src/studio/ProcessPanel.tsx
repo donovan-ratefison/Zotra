@@ -5,6 +5,7 @@
 
 import { CircleAlert, CircleCheck } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
+import { Hint } from "@/ui/hint";
 import { currencyLabel, currencyOptions } from "./format";
 import { mainPath, roleColor } from "./layout";
 import type { FieldType, ProcessDefinition } from "./types";
@@ -110,9 +111,12 @@ export function ProcessPanel({ def, onSelectNode, onHighlight, onCurrency }: {
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <header className="px-4 pt-3.5 pb-3">
         <p className="text-xs text-muted-foreground">Process</p>
-        <h2 className="text-[17px] font-semibold leading-tight">{def.name}</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-[17px] font-semibold leading-tight">{def.name}</h2>
+          <Hint label="About the process panel">Select a step to edit it.</Hint>
+        </div>
         <p className="mt-1 text-xs text-muted-foreground">
-          {`${def.nodes.length} steps, ${def.edges.length} links. Select a step to edit it.`}
+          {`${def.nodes.length} steps, ${def.edges.length} links.`}
         </p>
         <div className="mt-2 flex items-center justify-between gap-3">
           <span className="text-xs text-muted-foreground">Currency</span>

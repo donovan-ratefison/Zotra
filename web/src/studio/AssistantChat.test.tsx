@@ -225,6 +225,14 @@ describe("chatEvent", () => {
 });
 
 describe("ChatPanelView", () => {
+  test("F13: open and collapsed bars hold the (?) and no explanation line", () => {
+    for (const html of [renderChat(EMPTY, draftVersion), renderChat(EMPTY, draftVersion, true)]) {
+      expect(html).toContain("AI assistant");
+      expect(html).toContain('aria-label="About the AI assistant"');
+      expect(html).not.toContain("Without AI, you can still");
+    }
+  });
+
   test("draft with an empty thread: the composer is open with the hint", () => {
     const html = renderChat(EMPTY, draftVersion);
     expect(html).toContain('aria-label="Message to the AI assistant"');

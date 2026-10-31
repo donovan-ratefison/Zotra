@@ -11,6 +11,7 @@ import type { Bank, Theme } from "./types";
 import { brandVars } from "../app/AppShell";
 import { BrandLoader } from "@/components/BrandLoader";
 import { Button } from "@/ui/button";
+import { Hint } from "@/ui/hint";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
 
@@ -277,10 +278,12 @@ export function BankSettings() {
         </nav>
       </header>
       <main className="mx-auto w-full max-w-[960px] p-6">
-        <h1 className="text-lg font-semibold">Bank settings</h1>
-        <p className="text-sm text-muted-foreground">
-          The bank profile of the delivered app: name, logo and colors. A change creates no process version.
-        </p>
+        <div className="flex items-center gap-2">
+          <h1 className="text-lg font-semibold">Bank settings</h1>
+          <Hint label="About the bank settings" side="bottom">
+            The bank profile of the delivered app: name, logo and colors. A change creates no process version.
+          </Hint>
+        </div>
         <BankSettingsView
           bank={bank.data}
           error={bank.error}

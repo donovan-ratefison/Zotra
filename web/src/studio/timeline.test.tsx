@@ -506,6 +506,12 @@ describe("timeline", () => {
     ev(3, "edge_taken", { edge_id: "e1" }),
   ];
 
+  test("F12: the replay line is in the (?) of the timeline", () => {
+    const html = renderTimeline(threeEvents, null);
+    expect(html).toContain('aria-label="About the timeline"');
+    expect(html).not.toContain("Click a past event");
+  });
+
   test("3.2 row 9: no events gives no point and the empty text", () => {
     const html = renderTimeline([], null);
     expect(html).toContain("No events yet.");

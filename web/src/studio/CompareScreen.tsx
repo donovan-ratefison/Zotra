@@ -22,6 +22,7 @@ import { ProcessDiagram } from "./diagram";
 import { newestPublished } from "./version-actions";
 import { changedIds, diffChips, diffDefinitions, type DiffRow } from "./diff";
 import { Button } from "@/ui/button";
+import { Hint } from "@/ui/hint";
 import {
   Select,
   SelectContent,
@@ -284,16 +285,13 @@ export function SummaryBlock({ empty, busy, text, error, onSummarize }: {
     body = <p className="text-[13px]">{text}</p>;
   } else if (error !== null) {
     body = <p className="text-[13px]" style={{ color: RED }}>{`The summary did not load. ${error}`}</p>;
-  } else if (!busy) {
-    body = (
-      <p className="text-[13px] text-muted-foreground">
-        The AI writes a short summary of the changes.
-      </p>
-    );
   }
   return (
     <section aria-label="Summary" className="flex flex-col gap-2">
-      <h2 className="pt-2 text-[16px] font-semibold">Summary</h2>
+      <div className="flex items-center gap-2 pt-2">
+        <h2 className="text-[16px] font-semibold">Summary</h2>
+        <Hint label="About the summary">The AI writes a short summary of the changes.</Hint>
+      </div>
       <Button
         variant="outline"
         size="sm"
@@ -332,9 +330,6 @@ export function ImpactBlock({ baseNumber, sup, error, def }: {
             <span className="text-[28px] leading-none font-semibold">{sup.total_open}</span>
             <span className="text-[13px] text-muted-foreground">{`open cases on v${baseNumber}`}</span>
           </p>
-          <p className="text-[13px] text-muted-foreground">
-            {`They stay on v${baseNumber} until their end. New cases start on the published version.`}
-          </p>
         </div>
         <ul className="grid flex-1 grid-cols-3 content-start gap-x-6 gap-y-2 text-[12.5px]">
           {impactRows(sup, def).map((row) => (
@@ -349,10 +344,15 @@ export function ImpactBlock({ baseNumber, sup, error, def }: {
   }
   return (
     <section aria-label="Impact on open cases" className="flex flex-col gap-2 p-4">
-      <h2 className="flex items-center gap-2 text-[13px] font-semibold">
-        <Users aria-hidden="true" className="size-4" />
-        Impact on open cases
-      </h2>
+      <div className="flex items-center gap-1.5">
+        <h2 className="flex items-center gap-2 text-[13px] font-semibold">
+          <Users aria-hidden="true" className="size-4" />
+          Impact on open cases
+        </h2>
+        <Hint label="About the impact">
+          {`Open cases stay on v${baseNumber} until their end. New cases start on the published version.`}
+        </Hint>
+      </div>
       {body}
     </section>
   );

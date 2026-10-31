@@ -27,6 +27,7 @@ import {
 import { diffChips, diffDefinitions, type DiffRow } from "./diff";
 import { BrandLoader } from "@/components/BrandLoader";
 import { Button } from "@/ui/button";
+import { Hint } from "@/ui/hint";
 import { Checkbox } from "@/ui/checkbox";
 import { Switch } from "@/ui/switch";
 import type { ProcessDefinition, Version } from "./types";
@@ -631,6 +632,9 @@ export function ChatPanelView(props: {
       <div className="flex h-11 w-full items-center gap-2 px-4">
         <Sparkles size={14} style={{ color: VIOLET }} aria-hidden="true" />
         <span className="text-[13px] font-semibold">AI assistant</span>
+        <Hint label="About the AI assistant">
+          Without AI, you can still edit everything by hand.
+        </Hint>
         {collapsed && pending && (
           <span
             className="rounded-full border px-2 py-0.5 text-[11px]"
@@ -639,9 +643,6 @@ export function ChatPanelView(props: {
             1 proposal pending
           </span>
         )}
-        <span className="min-w-0 truncate text-[12px] text-zinc-500">
-          Without AI, you can still edit everything by hand.
-        </span>
         <span className="flex-1" />
         <Switch
           id="restate-first"

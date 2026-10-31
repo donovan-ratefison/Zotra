@@ -154,7 +154,9 @@ describe("PolicyDraftView", () => {
     for (const s of ["<del", "line-through", "<ins", "bg-yellow-100", "Reason: ", "New for step Credit committee."]) {
       expect(html).toContain(s);
     }
-    expect(html).toContain("The AI wrote this draft: the bank reviews it.");
+    expect(html).toContain("Changes since version 1.");
+    expect(html).toContain('aria-label="About the policy draft"');
+    expect(html).not.toContain("The AI wrote this draft: the bank reviews it.");
   });
 
   test("W6: empty lists and dropped items", () => {

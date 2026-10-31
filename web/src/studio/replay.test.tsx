@@ -292,9 +292,8 @@ describe("replay dialog body", () => {
   test("3.4 row 7: the title, the select with the first submit and its fields", () => {
     const html = renderBody();
     expect(html).toContain("Replay from event 6");
-    expect(html).toContain(
-      "The copy runs the same commands in a new test case.",
-    );
+    expect(html).toContain('aria-label="About the replay copy"');
+    expect(html).not.toContain("The copy runs the same commands");
     expect(html).toContain("Values to change");
     expect(html).toContain("Application entry · event 5");
     expect(html).toContain('aria-label="Amount"');

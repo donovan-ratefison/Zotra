@@ -7,6 +7,7 @@ import { Download } from "lucide-react";
 import { toast } from "sonner";
 import { BrandLoader } from "@/components/BrandLoader";
 import { Button } from "@/ui/button";
+import { Hint } from "@/ui/hint";
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/ui/dialog";
 import type { PolicyDraft } from "./ai-api";
 import { ApiError } from "./api";
@@ -88,9 +89,12 @@ export function PolicyDraftView({ status, draft, blocks, error }: {
   );
   return (
     <div className="flex flex-col gap-3 text-sm">
-      <p className="text-muted-foreground">
-        {`Changes since version ${draft.base_number}. The AI wrote this draft: the bank reviews it.`}
-      </p>
+      <div className="flex items-center gap-1.5 text-muted-foreground">
+        {`Changes since version ${draft.base_number}.`}
+        <Hint label="About the policy draft">
+          The AI wrote this draft. The bank reviews it before any use.
+        </Hint>
+      </div>
       {draft.changed.length === 0 && draft.added.length === 0 && (
         <p>The AI found no paragraph to update.</p>
       )}

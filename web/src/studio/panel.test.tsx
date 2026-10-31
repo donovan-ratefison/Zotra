@@ -302,6 +302,23 @@ describe("updateDraft", () => {
 });
 
 describe("panel render", () => {
+  test("F5: a step with a signature shows the short state and the (?)", () => {
+    const def = {
+      ...panelDefinition,
+      nodes: panelDefinition.nodes.map((n) => (n.id === "entry" ? { ...n, signature: true } : n)),
+    };
+    const html = renderNodePanel(draftVersion, { selectedNodeId: "entry", tab: "requirements" }, def);
+    expect(html).toContain("Required at this step.");
+    expect(html).toContain('aria-label="About the signature"');
+    expect(html).not.toContain("document hash go to the audit log");
+  });
+
+  test("F6: a step with no signature shows the not required state", () => {
+    const html = renderNodePanel(draftVersion, { selectedNodeId: "entry", tab: "requirements" });
+    expect(html).toContain("Not required at this step.");
+    expect(html).not.toContain("Required at this step.");
+  });
+
   test("21: the draft panel of a task shows the general tab and the hidden panes", () => {
     const html = renderNodePanel(draftVersion, {
       selectedNodeId: "entry",
@@ -458,7 +475,9 @@ describe("shell empty state", () => {
     });
     const html = renderShell(client);
     // With no step selected, the panel shows the process overview.
-    expect(html).toContain("Select a step to edit it.");
+    expect(html).toContain('aria-label="About the process panel"');
+    expect(html).toMatch(/\d+ steps, \d+ links\./);
+    expect(html).not.toContain("Select a step to edit it.");
     expect(html).toContain("Structure");
     expect(html).toContain("Roles");
     // fb-030 row P4: a draft in design mode can change the currency.

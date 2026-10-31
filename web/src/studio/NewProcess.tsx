@@ -7,6 +7,7 @@ import { FilePlus, Plus, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent } from "@/ui/dialog";
+import { Hint } from "@/ui/hint";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -96,12 +97,12 @@ export function ScratchDialogBody({
         void create();
       }}
     >
-      <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-1.5">
         <h2 className="text-lg font-semibold leading-none">New process from scratch</h2>
-        <p className="text-sm text-muted-foreground">
+        <Hint label="About New from scratch">
           Start with an empty draft. Add the steps with the toolbar, or ask the assistant to
           build them.
-        </p>
+        </Hint>
       </div>
       <div className="flex flex-col gap-2">
         <Label htmlFor="scratch-name">Process name</Label>

@@ -8,6 +8,7 @@ import { useState } from "react";
 import { Check, Sparkles } from "lucide-react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
+import { Hint } from "@/ui/hint";
 import { ApiError } from "./api";
 import {
   explainCheck,
@@ -219,13 +220,15 @@ export function ChecksTab({ def, state, events, nodeId, caseId = null, versionSt
       {node.signature && (
         <div className="flex flex-col gap-1.5 rounded-lg border p-3">
           <div className="flex items-center justify-between gap-2">
-            <h4 className="text-sm font-medium">Signature</h4>
+            <div className="flex items-center gap-1.5">
+              <h4 className="text-sm font-medium">Signature</h4>
+              <Hint label="About the signature">
+                Simple signature: name, time and document hash go to the audit
+                log.
+              </Hint>
+            </div>
             <Badge variant="secondary">To sign</Badge>
           </div>
-          <p className="text-sm text-muted-foreground">
-            Simple signature: name, time and document hash go to the audit
-            log.
-          </p>
         </div>
       )}
     </div>
