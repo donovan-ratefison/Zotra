@@ -3,11 +3,12 @@
 // list of differences and the changelog. The diff is the pure diff
 // of the proposal bar.
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ArrowLeftRight, Minus, Pencil, Plus, Users } from "lucide-react";
+import { ArrowLeft, ArrowLeftRight, Minus, Pencil, Plus, Sparkles, Users } from "lucide-react";
 import { fetchSupervision, type Supervision } from "../app/sup-api";
-import { getVersion } from "./api";
+import { summarizeChanges } from "./ai-api";
+import { ApiError, getVersion } from "./api";
 import {
   changeLines,
   comparePair,
@@ -48,6 +49,8 @@ function chipColor(chip: string): string | null {
 
 function noop() {}
 
+const NO_SUMMARY = { busy: false, text: null, error: null };
+
 export function CompareScreen({ versions, openId, baseId, onClose }: {
   versions: VersionSummary[];
   openId: string;
@@ -55,6 +58,18 @@ export function CompareScreen({ versions, openId, baseId, onClose }: {
   onClose: () => void;
 }) {
   const [pair, setPair] = useState(() => comparePair(versions, openId, baseId));
+  const [summary, setSummary] = useState<{
+    busy: boolean;
+    text: string | null;
+    error: string | null;
+  }>(NO_SUMMARY);
+  // run counts the pair changes: an answer of an older pair is dropped.
+  const run = useRef(0);
+  const changePair = (next: typeof pair) => {
+    run.current += 1;
+    setSummary(NO_SUMMARY);
+    setPair(next);
+  };
   const base = useQuery({
     queryKey: ["version", pair?.base],
     queryFn: () => getVersion(pair!.base),
@@ -105,7 +120,7 @@ export function CompareScreen({ versions, openId, baseId, onClose }: {
   const versionSelect = (side: "base" | "other", label: string) => (
     <Select
       value={pair[side]}
-      onValueChange={(id) => setPair(pickPair(pair, side, id, versions))}
+      onValueChange={(id) => changePair(pickPair(pair, side, id, versions))}
     >
       <SelectTrigger aria-label={label} size="sm" className="w-64">
         <SelectValue />
@@ -120,6 +135,24 @@ export function CompareScreen({ versions, openId, baseId, onClose }: {
     </Select>
   );
 
+  const summarize = (rows: DiffRow[]) => {
+    const mine = run.current;
+    setSummary({ busy: true, text: null, error: null });
+    summarizeChanges(changeLines(rows)).then(
+      (answer) => {
+        if (run.current === mine) {
+          setSummary({ busy: false, text: answer.summary, error: null });
+        }
+      },
+      (err: unknown) => {
+        if (run.current === mine) {
+          const error = err instanceof ApiError ? err.message : "Network error.";
+          setSummary({ busy: false, text: null, error });
+        }
+      },
+    );
+  };
+
   const stage = stageText(base, other);
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -131,7 +164,7 @@ export function CompareScreen({ versions, openId, baseId, onClose }: {
           variant="outline"
           size="icon-sm"
           aria-label="Swap the versions"
-          onClick={() => setPair(swapPair(pair))}
+          onClick={() => changePair(swapPair(pair))}
         >
           <ArrowLeftRight aria-hidden="true" />
         </Button>
@@ -216,6 +249,11 @@ export function CompareScreen({ versions, openId, baseId, onClose }: {
                 );
               })}
             </ul>
+            <SummaryBlock
+              empty={diff.rows.length === 0}
+              {...summary}
+              onSummarize={() => summarize(diff.rows)}
+            />
             <h2 className="pt-2 text-[16px] font-semibold">Changelog</h2>
             <pre
               aria-label="Changelog"
@@ -227,6 +265,45 @@ export function CompareScreen({ versions, openId, baseId, onClose }: {
         </div>
       )}
     </div>
+  );
+}
+
+// SummaryBlock shows the AI summary of the differences. The engine
+// computes the changes; the AI only summarizes them.
+export function SummaryBlock({ empty, busy, text, error, onSummarize }: {
+  empty: boolean;
+  busy: boolean;
+  text: string | null;
+  error: string | null;
+  onSummarize: () => void;
+}) {
+  let body;
+  if (text !== null) {
+    body = <p className="text-[13px]">{text}</p>;
+  } else if (error !== null) {
+    body = <p className="text-[13px]" style={{ color: RED }}>{`The summary did not load. ${error}`}</p>;
+  } else if (!busy) {
+    body = (
+      <p className="text-[13px] text-muted-foreground">
+        The AI writes a short summary of the changes.
+      </p>
+    );
+  }
+  return (
+    <section aria-label="Summary" className="flex flex-col gap-2">
+      <h2 className="pt-2 text-[16px] font-semibold">Summary</h2>
+      <Button
+        variant="outline"
+        size="sm"
+        className="self-start"
+        disabled={empty || busy}
+        onClick={onSummarize}
+      >
+        <Sparkles aria-hidden="true" />
+        {busy ? "Summarizing…" : "Summarize with AI"}
+      </Button>
+      {body}
+    </section>
   );
 }
 

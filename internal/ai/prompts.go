@@ -167,3 +167,10 @@ Ask questions only when the answer changes the result. Rules for "questions":
 - Tick the usual bank practice as the default. Four-eyes rule: a validation goes to another role than the role of the previous step. Give the reason of the default in one short line. "reason" is empty on the other options.
 - "kind" is "single" when one answer fits, "multi" when several answers fit. "other" is true when a free answer can fit.
 - Write in English. Do not use the em dash.`
+
+// CompareVersionsSystem is the system prompt of the compare summary.
+// The engine computes the changes; the model only summarizes them.
+const CompareVersionsSystem = `You summarize the changes between two versions of a credit process for a bank clerk.
+You receive one change on each line: "+" added, "-" removed, "~" changed.
+Write at most 5 short sentences in plain English. Use the names of the lines.
+Do not invent a change. Do not give advice.`

@@ -6,7 +6,7 @@ import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactFlowProvider } from "@xyflow/react";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import seedJson from "../../../examples/home-loan/process.json";
 import type { Supervision } from "../app/sup-api";
 import {
@@ -19,7 +19,9 @@ import {
   swapPair,
   versionText,
 } from "./compare";
-import { CompareScreen, ImpactBlock } from "./CompareScreen";
+import { summarizeChanges } from "./ai-api";
+import { ApiError } from "./api";
+import { CompareScreen, ImpactBlock, SummaryBlock } from "./CompareScreen";
 import { diffDefinitions } from "./diff";
 import { HistoryBody } from "./version-actions";
 import type { ProcessDefinition, Version, VersionSummary } from "./types";
@@ -246,5 +248,60 @@ describe("HistoryBody compare", () => {
   });
   test("H2: no prop: no Compare button", () => {
     expect(history()).not.toContain("Compare");
+  });
+});
+
+describe("SummaryBlock", () => {
+  const block = (p: Partial<Parameters<typeof SummaryBlock>[0]>) =>
+    renderToString(
+      createElement(SummaryBlock, {
+        empty: false, busy: false, text: null, error: null, onSummarize: () => {}, ...p,
+      }),
+    );
+  const button = (html: string) => html.match(/<button[^>]*>/)![0];
+  test("S1: all null: the button is enabled, the muted line", () => {
+    const html = block({});
+    expect(html).toContain("Summarize with AI");
+    expect(button(html)).not.toContain("disabled=\"\"");
+    expect(html).toContain("The AI writes a short summary of the changes.");
+  });
+  test("S2: empty or busy: the button is disabled", () => {
+    expect(button(block({ empty: true }))).toContain("disabled=\"\"");
+    const busy = block({ busy: true });
+    expect(busy).toContain("Summarizing…");
+    expect(button(busy)).toContain("disabled=\"\"");
+    expect(busy).not.toContain("The AI writes a short summary of the changes.");
+  });
+  test("S3: text: the paragraph", () => {
+    expect(block({ text: "One step was added." })).toContain("One step was added.");
+  });
+  test("S4: error: the red line", () => {
+    const html = block({ error: "AI down" });
+    expect(html).toContain("The summary did not load. AI down");
+    expect(html).toContain("color:#dc2626");
+  });
+});
+
+describe("summarizeChanges", () => {
+  const seen: { url: string; init: RequestInit }[] = [];
+  const stubFetch = (status: number, body: unknown) =>
+    vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
+      seen.push({ url, init });
+      return Promise.resolve({ ok: status < 400, status, json: async () => body });
+    });
+  afterEach(() => {
+    seen.length = 0;
+    vi.unstubAllGlobals();
+  });
+  test("S5: the request, the answer and the error", async () => {
+    stubFetch(200, { summary: "S" });
+    await expect(summarizeChanges(["+ a"])).resolves.toEqual({ summary: "S" });
+    expect(seen[0].url).toBe("/api/ai/compare-versions");
+    expect(seen[0].init.method).toBe("POST");
+    expect(seen[0].init.body).toBe('{"changes":["+ a"]}');
+    stubFetch(503, { error: { code: "ai_unavailable", message: "off" } });
+    const error = await summarizeChanges(["+ a"]).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).message).toBe("off");
   });
 });

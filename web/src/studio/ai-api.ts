@@ -166,3 +166,19 @@ export async function restateChange(
     questions: RestateQuestion[];
   };
 }
+
+// summarizeChanges asks the AI for a short plain-language summary of
+// the change lines of a version compare.
+export async function summarizeChanges(
+  changes: string[],
+): Promise<{ summary: string }> {
+  const res = await fetch("/api/ai/compare-versions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ changes }),
+  });
+  if (!res.ok) {
+    throw await apiError(res);
+  }
+  return (await res.json()) as { summary: string };
+}

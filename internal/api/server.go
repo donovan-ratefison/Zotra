@@ -89,6 +89,7 @@ func NewHandler(static fs.FS, version string, st *store.Store, feedbackDir strin
 		mux.HandleFunc("POST /api/ai/explain-check", d.explainCheck)
 		mux.HandleFunc("POST /api/ai/change-process", d.changeProcess)
 		mux.HandleFunc("POST /api/ai/restate-change", d.restateChange)
+		mux.HandleFunc("POST /api/ai/compare-versions", d.compareVersions)
 		mux.HandleFunc("POST /api/cases/{id}/documents", d.uploadDocument)
 		mux.HandleFunc("GET /api/cases/{id}/documents", d.listCaseDocuments)
 		mux.HandleFunc("GET /api/documents/{id}", d.readDocument)
