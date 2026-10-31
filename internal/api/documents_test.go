@@ -144,10 +144,17 @@ const samRecord = `<0f>0<|box;x1=454;y1=835;x2=719;y2=908;w=806;h=1131|><|mask;x
 // sam.Phrases, with one answer text each.
 func primeAll(t *testing.T, dir string, image []byte, signature, stamp, idCard string) {
 	t.Helper()
-	primeSAM(t, dir, "signature", "image/png", image, signature)
-	primeSAM(t, dir, "stamp", "image/png", image, stamp)
-	primeSAM(t, dir, "ID card", "image/png", image, idCard)
+	primeSAM(t, dir, "handwritten scribble", "image/png", image, signature)
+	primeSAM(t, dir, "circular stamp", "image/png", image, stamp)
+	primeSAM(t, dir, "identity card", "image/png", image, idCard)
 }
+
+// The live answers of the signature and stamp phrases, with the
+// confidence key c.
+const (
+	liveSignature = "<0f>0<|box;x1=129;y1=1428;x2=370;y2=1489;c=0.55;w=1240;h=1754|><|mask;x=0;y=0;data=AAA|>"
+	liveStamp     = "<0f>0<|box;x1=960;y1=1444;x2=1119;y2=1603;c=0.90;w=1240;h=1754|><|mask;x=0;y=0;data=AAA|>"
+)
 
 // wantBox asserts the label and the box of one decoded zone.
 func wantBox(t *testing.T, zone any, label string, x, y, width, height float64) {
@@ -335,6 +342,25 @@ func TestDocumentZonesThreePhrases(t *testing.T) {
 	wantBox(t, zones[2], "id", 10, 20, 30, 40)
 }
 
+// 15c. The live answers of the signature and stamp phrases.
+func TestDocumentZonesLive(t *testing.T) {
+	dir := aiEnv(t)
+	h := newTestAPI(t)
+	id := uploadForZones(t, h)
+	primeAll(t, dir, pngBytes(t), liveSignature, liveStamp, "")
+
+	rec := postZones(t, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("zones: status %d: %s", rec.Code, rec.Body.String())
+	}
+	zones := decode(t, rec)["zones"].([]any)
+	if len(zones) != 2 {
+		t.Fatalf("zones = %d, want 2: %s", len(zones), rec.Body.String())
+	}
+	wantBox(t, zones[0], "signature", 129, 1428, 242, 62)
+	wantBox(t, zones[1], "stamp", 960, 1444, 160, 160)
+}
+
 // 16.
 func TestDocumentZonesEmpty(t *testing.T) {
 	dir := aiEnv(t)
@@ -372,7 +398,7 @@ func TestDocumentZonesReplayMiss(t *testing.T) {
 	dir := aiEnv(t)
 	h := newTestAPI(t)
 	id := uploadForZones(t, h)
-	primeSAM(t, dir, "signature", "image/png", pngBytes(t), samRecord)
+	primeSAM(t, dir, "handwritten scribble", "image/png", pngBytes(t), samRecord)
 
 	rec := postZones(t, id)
 	checkError(t, rec, http.StatusServiceUnavailable, "ai_not_recorded", msgReplayMiss)
@@ -382,9 +408,9 @@ func TestDocumentZonesReplayMiss(t *testing.T) {
 // keep the order of the phrases.
 func TestDocumentZonesParallel(t *testing.T) {
 	answers := map[string]string{
-		"signature": samRecord,
-		"stamp":     `<|box;x1=10;y1=20;x2=39;y2=59|>`,
-		"ID card":   `<|box;x1=100;y1=200;x2=149;y2=299|>`,
+		"handwritten scribble": samRecord,
+		"circular stamp":       `<|box;x1=10;y1=20;x2=39;y2=59|>`,
+		"identity card":        `<|box;x1=100;y1=200;x2=149;y2=299|>`,
 	}
 	var count, inFlight, maxInFlight atomic.Int32
 	all := make(chan struct{})
@@ -413,7 +439,7 @@ func TestDocumentZonesParallel(t *testing.T) {
 		case <-all:
 		case <-time.After(3 * time.Second):
 		}
-		if phrase == "signature" {
+		if phrase == "handwritten scribble" {
 			time.Sleep(100 * time.Millisecond)
 		}
 		inFlight.Add(-1)
@@ -458,7 +484,7 @@ func TestDocumentZonesBadOutput(t *testing.T) {
 	h := newTestAPI(t)
 	id := uploadForZones(t, h)
 
-	primeSAM(t, dir, "signature", "image/png", pngBytes(t), "hello")
+	primeSAM(t, dir, "handwritten scribble", "image/png", pngBytes(t), "hello")
 
 	rec := postZones(t, id)
 	checkError(t, rec, http.StatusBadGateway, "bad_ai_output",
@@ -735,8 +761,8 @@ func TestDocumentEndpoint(t *testing.T) {
 		}
 		// The requests run at the same time, so their order is free.
 		slices.Sort(phrases)
-		if strings.Join(phrases, "|") != "ID card|signature|stamp" {
-			t.Errorf("input_text = %q, want ID card, signature, stamp", phrases)
+		if strings.Join(phrases, "|") != "circular stamp|handwritten scribble|identity card" {
+			t.Errorf("input_text = %q, want circular stamp, handwritten scribble, identity card", phrases)
 		}
 		if text.count != 0 {
 			t.Errorf("text saw %d requests, want 0", text.count)

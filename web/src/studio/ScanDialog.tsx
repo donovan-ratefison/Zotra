@@ -132,7 +132,12 @@ export function ScanDialogBody({ doc, mode, onSign, reading, readValues, onRead,
           <ZoneOverlay zones={zones ?? []} size={size} />
         </div>
       </div>
-      {zones !== undefined && (
+      {zones !== undefined && zones.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          No signature, stamp or ID card found.
+        </p>
+      )}
+      {zones !== undefined && zones.length > 0 && (
         <div className="flex flex-col gap-0.5">
           {zones.map((zone, i) => (
             <p key={i} className="text-[12px]">

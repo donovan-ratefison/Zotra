@@ -860,6 +860,30 @@ describe("scan dialog body", () => {
     const html = renderBody("view", signatureZones);
     expect(html).not.toContain("Read the fields");
   });
+
+  test("J2-W1: an empty zone list shows the no zone line", () => {
+    expect(renderBody("view", [])).toContain(
+      "No signature, stamp or ID card found.",
+    );
+  });
+
+  test("J2-W2: a found zone hides the no zone line", () => {
+    expect(renderBody("view", signatureZones)).not.toContain(
+      "No signature, stamp or ID card found.",
+    );
+  });
+
+  test("J2-W3: a pending zones query hides the no zone line", () => {
+    expect(renderBody("view", null)).not.toContain(
+      "No signature, stamp or ID card found.",
+    );
+  });
+
+  test("J2-W4: sign mode with no zone shows both lines", () => {
+    const html = renderBody("sign", []);
+    expect(html).toContain("No signature, stamp or ID card found.");
+    expect(html).toContain("No signature zone on this scan.");
+  });
 });
 
 describe("test screen wiring", () => {

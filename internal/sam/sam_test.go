@@ -146,7 +146,11 @@ func TestParseTextSplit(t *testing.T) {
 
 // S12.
 func TestPhrases(t *testing.T) {
-	want := []Phrase{{"signature", "signature"}, {"stamp", "stamp"}, {"ID card", "id"}}
+	want := []Phrase{
+		{"handwritten scribble", "signature"},
+		{"circular stamp", "stamp"},
+		{"identity card", "id"},
+	}
 	if len(Phrases) != len(want) {
 		t.Fatalf("Phrases = %+v, want %+v", Phrases, want)
 	}
@@ -154,5 +158,54 @@ func TestPhrases(t *testing.T) {
 		if Phrases[i] != p {
 			t.Errorf("phrase %d = %+v, want %+v", i, Phrases[i], p)
 		}
+	}
+}
+
+// The live answers of the new phrases (signature and stamp).
+const (
+	liveSignature = "<0f>0<|box;x1=129;y1=1428;x2=370;y2=1489;c=0.55;w=1240;h=1754|><|mask;x=0;y=0;data=AAA|>"
+	liveStamp     = "<0f>0<|box;x1=960;y1=1444;x2=1119;y2=1603;c=0.90;w=1240;h=1754|><|mask;x=0;y=0;data=AAA|>"
+)
+
+// J2-1.
+func TestParseLiveSignature(t *testing.T) {
+	wantZones(t, envelope(liveSignature), "signature",
+		Zone{Label: "signature", Box: Box{X: 129, Y: 1428, Width: 242, Height: 62}})
+}
+
+// J2-2.
+func TestParseLiveStamp(t *testing.T) {
+	wantZones(t, envelope(liveStamp), "stamp",
+		Zone{Label: "stamp", Box: Box{X: 960, Y: 1444, Width: 160, Height: 160}})
+}
+
+// J2-3.
+func TestParseLowConfidenceDropped(t *testing.T) {
+	wantZones(t, envelope(`<|box;x1=1;y1=2;x2=3;y2=4;c=0.29|>`), "id")
+}
+
+// J2-4.
+func TestParseConfidenceBoundary(t *testing.T) {
+	wantZones(t, envelope(`<|box;x1=1;y1=2;x2=3;y2=4;c=0.3|>`), "id",
+		Zone{Label: "id", Box: Box{X: 1, Y: 2, Width: 3, Height: 3}})
+}
+
+// J2-5.
+func TestParseBadConfidence(t *testing.T) {
+	wantZoneError(t, envelope(`<|box;x1=1;y1=2;x2=3;y2=4;c=oops|>`), noValid)
+}
+
+// J2-6.
+func TestParseKeepsStrongBox(t *testing.T) {
+	wantZones(t, envelope(`<|box;x1=1;y1=2;x2=3;y2=4;c=0.29|>,<|box;x1=5;y1=6;x2=7;y2=8;c=0.90|>`),
+		"stamp", Zone{Label: "stamp", Box: Box{X: 5, Y: 6, Width: 3, Height: 3}})
+}
+
+// J2-7.
+func TestRequestBytes(t *testing.T) {
+	got := string(Request("sam-3.1", "circular stamp", "image/png", []byte{1, 2, 3}))
+	want := `{"model":"sam-3.1","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"circular stamp"},{"type":"input_image","image_url":"data:image/png;base64,AQID"}]}],"metadata":{"include_confidence":"true","mask_encoding":"one_bit"}}`
+	if got != want {
+		t.Errorf("Request =\n%s\nwant\n%s", got, want)
 	}
 }
