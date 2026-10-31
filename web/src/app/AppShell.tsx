@@ -25,7 +25,7 @@ import {
 import { AuditScreen } from "./AuditScreen";
 import { CaseScreen } from "./CaseScreen";
 import { InboxScreen } from "./InboxScreen";
-import { initials, SupervisionScreen } from "./SupervisionScreen";
+import { initials, SupervisionScreen, type ReadRequest } from "./SupervisionScreen";
 import { TriageScreen } from "./TriageScreen";
 import { editableTarget } from "./triage";
 import {
@@ -268,6 +268,10 @@ export function AppShell() {
   // deck on the first id that is still in the inbox.
   const [triageFrom, setTriageFrom] = useState<string[]>([]);
   const [verify, setVerify] = useState<AuditVerify | null>(null);
+  // The read-only deck of a step panel, and the step that the panel
+  // shows again after it.
+  const [reading, setReading] = useState<ReadRequest | null>(null);
+  const [backStep, setBackStep] = useState<string | null>(null);
   const [verifyBusy, setVerifyBusy] = useState(false);
 
   function writeParam(key: string, value: string | null) {
@@ -314,6 +318,8 @@ export function AppShell() {
     history.replaceState(null, "", viewUrl(effectiveUserId, next));
     setCaseId("");
     setTriageFrom([]);
+    setReading(null);
+    setBackStep(null);
     setView(next);
   }
 
@@ -495,6 +501,20 @@ export function AppShell() {
       );
     } else if (supervisionQuery.isPending || flowQuery.isPending) {
       main = <Loading text="Loading" />;
+    } else if (reading !== null) {
+      main = (
+        <TriageScreen
+          userId={effectiveUserId}
+          users={users}
+          cases={reading.ids.map((id) => ({ id }))}
+          now={supervisionQuery.dataUpdatedAt}
+          onExit={() => setReading(null)}
+          start={[]}
+          onOpenCase={() => {}}
+          readOnly
+          startId={reading.startId}
+        />
+      );
     } else {
       main = (
         <SupervisionScreen
@@ -502,6 +522,11 @@ export function AppShell() {
           users={users}
           supervision={supervisionQuery.data}
           flow={flowQuery.data}
+          selectedNodeId={backStep}
+          onRead={(r) => {
+            setBackStep(r.nodeId);
+            setReading(r);
+          }}
         />
       );
     }

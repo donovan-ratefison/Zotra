@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ChevronRight, CircleCheck, CircleX, Link, Lock, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ChevronRight, CircleCheck, CircleX, Eye, Link, Lock, ShieldCheck } from "lucide-react";
 import { ApiError, getVersion } from "../studio/api";
 import {
   listEvents,
@@ -128,13 +128,17 @@ function Centered({ children }: { children: ReactNode }) {
 export function TriageScreen(props: {
   userId: string;
   users: UserDTO[];
-  cases: InboxCase[];
+  cases: Pick<InboxCase, "id">[];
   now: number;
   onExit: () => void;
   start: string[];
   onOpenCase: (ids: string[]) => void;
+  // Read only: the supervisor reads the cases of one step in the given
+  // order, from startId on. Nothing sends a command.
+  readOnly?: boolean;
+  startId?: string;
 }) {
-  const { cases, now } = props;
+  const { cases, now, readOnly = false } = props;
   // The order of the first full load. A sent case stays in the deck;
   // a new case waits for the next visit.
   const [frozen, setFrozen] = useState<string[] | null>(null);
@@ -172,16 +176,18 @@ export function TriageScreen(props: {
         return { id, row, state, events: eventQs[i]!.data!, version, node };
       })
     : [];
-  const derived = loaded
-    ? queueOrder(
+  const derived = !loaded
+    ? null
+    : readOnly
+      ? items.filter((it) => it.node !== null).map((it) => it.id)
+      : queueOrder(
         items.filter(inQueue).map((it) => ({
           id: it.id,
           reference: it.row.reference,
           created_at: it.row.created_at,
           msLeft: msLeft(enteredAt(it.events, it.node!.id), it.node!.deadline_hours, now),
         })),
-      )
-    : null;
+      );
 
   // Freeze during render (the React pattern for state derived from a
   // previous render), so the first full load fixes the deck order.
@@ -205,7 +211,9 @@ export function TriageScreen(props: {
       <Centered>
         <h1 className="text-lg font-semibold">Triage</h1>
         <p className="text-muted-foreground">No case waits for a decision.</p>
-        <Button variant="outline" onClick={props.onExit}>Back to the inbox</Button>
+        <Button variant="outline" onClick={props.onExit}>
+          {readOnly ? "Back to supervision" : "Back to the inbox"}
+        </Button>
       </Centered>
     );
   }
@@ -213,6 +221,7 @@ export function TriageScreen(props: {
   return (
     <Deck
       {...props}
+      readOnly={readOnly}
       queue={queue}
       sent={sent}
       onSent={(id, snap) => setSent((old) => ({ ...old, [id]: snap }))}
@@ -227,6 +236,8 @@ function Deck({
   onExit,
   start,
   onOpenCase,
+  readOnly,
+  startId,
   queue,
   sent,
   onSent,
@@ -237,13 +248,17 @@ function Deck({
   onExit: () => void;
   start: string[];
   onOpenCase: (ids: string[]) => void;
+  readOnly: boolean;
+  startId?: string;
   queue: Item[];
   sent: Record<string, Sent>;
   onSent: (id: string, snap: Sent) => void;
 }) {
   const queryClient = useQueryClient();
   // Read once: the deck mounts again after each return from the case.
-  const [index, setIndex] = useState(() => startIndex(queue.map((it) => it.id), start));
+  const [index, setIndex] = useState(() =>
+    readOnly ? Math.max(0, queue.findIndex((it) => it.id === startId)) : startIndex(queue.map((it) => it.id), start),
+  );
   const [busy, setBusy] = useState(false);
   // The open document row of the dialog (null: closed), and the last
   // one, so the focus goes back to it after a close.
@@ -299,7 +314,7 @@ function Deck({
   });
   const sentDecision = snap?.decision;
   const chain = useChainVerify();
-  const canSend = lock === null && sentDecision === undefined && !busy && chain.busy === null;
+  const canSend = !readOnly && lock === null && sentDecision === undefined && !busy && chain.busy === null;
   const rows = docs === null ? null : documentRows(def, events, node.id, docs);
   // A sent card keeps its snapshot: the events of the answer add one block.
   const extra = snap?.answer.events ?? [];
@@ -372,7 +387,9 @@ function Deck({
       if (action === "prev") setIndex((i) => Math.max(i - 1, 0));
       else if (action === "next") setIndex((i) => Math.min(i + 1, last));
       else if (action === "exit") onExit();
-      else if (action === "open") onOpenCase(openIds());
+      else if (action === "open") {
+        if (!readOnly) onOpenCase(openIds());
+      }
       else {
         const decision = node.decisions[action === "first" ? 0 : 1];
         if (decision !== undefined && canSend) void send(decision);
@@ -389,7 +406,7 @@ function Deck({
   const strings = def.fields.filter((f) => f.type === "string");
   const second = strings[1] === undefined ? undefined : state.data[strings[1].name];
   const assigned =
-    state.assignee === userId ? "Assigned to you" : state.assignee === "" ? "Not taken" : `Assigned to ${assigneeName}`;
+    state.assignee === userId && !readOnly ? "Assigned to you" : state.assignee === "" ? "Not taken" : `Assigned to ${assigneeName}`;
   const sub = [typeof second === "string" ? second : "", `${def.name} v${version.number}`, assigned]
     .filter((s) => s !== "")
     .join(" · ");
@@ -409,9 +426,21 @@ function Deck({
 
   return (
     <div className="min-h-full flex-1 bg-[#f1f1ef] px-7 pt-3.5 pb-5">
+      {readOnly && (
+        <div className="mb-2.5 flex h-9 items-center gap-2.5 rounded-lg border border-l-[3px] border-l-[#2563eb] bg-white pr-2 pl-3 text-[13px] shadow-sm">
+          <Eye className="size-4 text-[#2563eb]" />
+          <b className="font-semibold">Read only. You supervise this step.</b>
+          <span className="text-[12.5px] text-muted-foreground">Only the participant of the step can decide.</span>
+          <Button variant="outline" size="sm" className="ml-auto" onClick={onExit}>
+            <ArrowLeft className="size-3.5" />
+            Back to supervision
+            <Kbd>Esc</Kbd>
+          </Button>
+        </div>
+      )}
       <div className="mb-3.5 grid grid-cols-[1fr_auto_1fr] items-center gap-4">
         <div>
-          <h1 className="text-[18px] font-semibold tracking-tight">{`Triage: ${node.name}`}</h1>
+          <h1 className="text-[18px] font-semibold tracking-tight">{`${readOnly ? "Queue" : "Triage"}: ${node.name}`}</h1>
           <p className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
             <ShieldCheck className="size-3.5 text-primary" />
             Rules and humans decide. The AI only checks.
@@ -433,10 +462,14 @@ function Deck({
             {next === undefined ? "Last case" : `Next: ${clientOf(next)}, ${amountOf(next)}`}
           </small>
         </div>
-        <Button variant="outline" className="justify-self-end bg-white" onClick={onExit}>
-          Exit triage
-          <Kbd>Esc</Kbd>
-        </Button>
+        {readOnly ? (
+          <span />
+        ) : (
+          <Button variant="outline" className="justify-self-end bg-white" onClick={onExit}>
+            Exit triage
+            <Kbd>Esc</Kbd>
+          </Button>
+        )}
       </div>
 
       <div className="relative mx-auto w-[800px]">
@@ -629,7 +662,7 @@ function Deck({
           <Kbd>J</Kbd>
           Next
         </button>
-        {node.decisions.map((d, i) => (
+        {!readOnly && node.decisions.map((d, i) => (
           <button
             key={d}
             type="button"
@@ -654,10 +687,12 @@ function Deck({
           <Kbd>D</Kbd>
           Documents
         </button>
-        <button type="button" aria-keyshortcuts="O" className={keyClass} onClick={() => onOpenCase(openIds())}>
-          <Kbd>O</Kbd>
-          Open the case
-        </button>
+        {!readOnly && (
+          <button type="button" aria-keyshortcuts="O" className={keyClass} onClick={() => onOpenCase(openIds())}>
+            <Kbd>O</Kbd>
+            Open the case
+          </button>
+        )}
         <button
           type="button"
           aria-keyshortcuts="V"
@@ -700,7 +735,7 @@ function Deck({
         busy={chain.busy !== null}
         onVerify={verifyFront}
       />
-      <p
+      {!readOnly && <p
         role="status"
         className={`mt-2.5 flex min-h-[18px] items-center justify-center gap-1.5 text-[12.5px] ${
           sentDecision === undefined && lock !== null ? "text-red-700" : "text-muted-foreground"
@@ -722,7 +757,7 @@ function Deck({
             No blocker. All rules pass.
           </>
         )}
-      </p>
+      </p>}
     </div>
   );
 }

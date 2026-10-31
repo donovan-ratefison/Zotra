@@ -6,7 +6,7 @@
 // passes it down with the users list.
 
 import { useEffect, useState } from "react";
-import { Activity, ChevronRight, Split, TriangleAlert, X } from "lucide-react";
+import { Activity, ChevronRight, Eye, Split, TriangleAlert, X } from "lucide-react";
 import { moneyText, pickField } from "./InboxScreen";
 import { CaseFlowCard } from "./CaseFlow";
 import { FlowLegend, haloOf, LiveDiagram } from "./LiveFlow";
@@ -16,6 +16,13 @@ import type { UserDTO } from "../studio/case-api";
 import { layoutProcess } from "../studio/layout";
 import type { Layout } from "../studio/layout";
 import type { ProcessDefinition } from "../studio/types";
+
+// ReadRequest opens the cases of one step in the read-only deck.
+export interface ReadRequest {
+  nodeId: string;
+  ids: string[];
+  startId: string;
+}
 
 export interface TileFigure {
   label: string;
@@ -299,13 +306,15 @@ const LIST_GRID = "grid grid-cols-[170px_minmax(0,1fr)_72px_24px] items-center g
 
 // StepPanel is the side panel of the selected step: its figures, the
 // "Why it blocks" text and its open cases, oldest first.
-function StepPanel({ def, users, sup, nodeId, onClose }: {
+function StepPanel({ def, users, sup, nodeId, onClose, onRead }: {
   def: ProcessDefinition;
   users: UserDTO[];
   sup: Supervision;
   nodeId: string;
   onClose: () => void;
+  onRead: (r: ReadRequest) => void;
 }) {
+  const rows = stepCases(sup, nodeId);
   const node = def.nodes.find((n) => n.id === nodeId);
   const row = sup.nodes.find((n) => n.node_id === nodeId);
   const deadline = node?.deadline_hours ?? null;
@@ -384,14 +393,17 @@ function StepPanel({ def, users, sup, nodeId, onClose }: {
         <span />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-[18px] pb-2">
-        {stepCases(sup, nodeId).map((c) => {
+        {rows.map((c) => {
           const tone = node === undefined ? "ok" : haloOf(node, [c]).state;
           const name = c.assignee === "" ? "" : userNameOf(users, c.assignee);
           return (
-            <div
+            <button
+              type="button"
               key={c.case_id}
               data-case={c.case_id}
-              className={`h-[41px] border-b border-[#f4f4f5] last:border-b-0 ${LIST_GRID}`}
+              title={`Open ${c.reference} in read only`}
+              onClick={() => onRead({ nodeId, ids: rows.map((r) => r.case_id), startId: c.case_id })}
+              className={`-mx-2 h-[41px] w-[calc(100%+16px)] rounded-md border-b border-[#f4f4f5] px-2 text-left last:border-b-0 hover:bg-[#f4f4f3] ${LIST_GRID}`}
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
@@ -433,9 +445,13 @@ function StepPanel({ def, users, sup, nodeId, onClose }: {
                   {initials(name)}
                 </span>
               )}
-            </div>
+            </button>
           );
         })}
+      </div>
+      <div className="flex items-center gap-2 border-t px-[18px] py-[9px] text-[11.5px] text-muted-foreground">
+        <Eye aria-hidden className="size-3.5 text-primary" />
+        Select a case to open it in read only. Only the participant of the step decides.
       </div>
     </aside>
   );
@@ -448,6 +464,7 @@ export function SupervisionScreen({
   flow,
   selectedNodeId,
   initialTab = "live",
+  onRead,
 }: {
   def: ProcessDefinition;
   users: UserDTO[];
@@ -455,6 +472,7 @@ export function SupervisionScreen({
   flow: Flow;
   selectedNodeId?: string | null;
   initialTab?: "live" | "flow";
+  onRead: (r: ReadRequest) => void;
 }) {
   const [tab, setTab] = useState(initialTab);
   const [selected, setSelected] = useState<string | null>(
@@ -664,6 +682,7 @@ export function SupervisionScreen({
               sup={supervision}
               nodeId={selected}
               onClose={() => setSelected(null)}
+              onRead={onRead}
             />
           )}
         </>

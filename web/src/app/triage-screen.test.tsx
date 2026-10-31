@@ -110,6 +110,19 @@ function render(client: QueryClient, cases: InboxCase[] = [c1, c2, c3, c4], star
   );
 }
 
+// renderRO renders the read-only deck of a step panel.
+function renderRO(client: QueryClient, cases: InboxCase[], startId: string): string {
+  return renderToString(
+    createElement(
+      QueryClientProvider,
+      { client },
+      createElement(TriageScreen, {
+        userId: "u-analyst", users, cases, now, onExit: () => {}, start: [], onOpenCase: () => {}, readOnly: true, startId,
+      }),
+    ),
+  );
+}
+
 const F_ENABLED = /<button type="button" aria-keyshortcuts="F"/;
 const F_DISABLED = /<button type="button" disabled="" aria-keyshortcuts="F"/;
 
@@ -265,5 +278,47 @@ describe("triage screen", () => {
     const html = render(seed(), undefined, ["x", "c3"]);
     expect(html).toContain("Case 3 of 3");
     expect(html).toContain("Last case");
+  });
+});
+
+describe("read-only deck", () => {
+  test("R1: the banner, the queue title and no decision", () => {
+    const html = renderRO(seed(), [c1, c2, c3], "c2");
+    for (const text of [
+      "Read only. You supervise this step.",
+      "Only the participant of the step can decide.",
+      "Back to supervision",
+      "Queue: Credit analysis",
+      "Case 2 of 3",
+    ]) {
+      expect(html).toContain(text);
+    }
+    expect(html).toMatch(/<h2[^>]*>Voahangy Rasoanaivo<\/h2>/);
+    for (const text of ["Triage: Credit analysis", "Exit triage", 'aria-keyshortcuts="F"', 'role="status"', "Open the case"]) {
+      expect(html).not.toContain(text);
+    }
+  });
+
+  test("R2: the given order, not the deadline order", () => {
+    const html = renderRO(seed(), [c3, c1, c2], "c3");
+    expect(html).toContain("Case 1 of 3");
+    expect(html).toContain("Next: Hery Rasolofo");
+  });
+
+  test("R3: a step with no decision stays in the deck", () => {
+    const html = renderRO(seed(), [c4], "c4");
+    expect(html).toContain("Queue: Application entry");
+    expect(html).toContain("Case 1 of 1");
+  });
+
+  test("R4: the assignee name, also for the user", () => {
+    const html = renderRO(seed({ c1State: state("c1", hery, { assignee: "u-analyst" }) }), [c1], "c1");
+    expect(html).toContain("Assigned to Demo Analyst");
+    expect(html).not.toContain("Assigned to you");
+  });
+
+  test("R5: an unknown start id gives the first case", () => {
+    const html = renderRO(seed(), [c1, c2], "c9");
+    expect(html).toContain("Case 1 of 2");
   });
 });

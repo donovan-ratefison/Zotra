@@ -278,6 +278,7 @@ function renderSupervision(
       flow: flowFixture,
       selectedNodeId,
       initialTab,
+      onRead: () => {},
     }),
   );
 }
@@ -990,6 +991,12 @@ describe("step panel", () => {
     expect(html.indexOf("CASE-2026-0002")).toBeLessThan(html.indexOf("CASE-2026-0001"));
     expect(html).not.toContain("Time on step");
     expect(html).not.toContain("Select a step to see its cases.");
+  });
+
+  test("14.3b row R6: a panel row opens the case in read only", () => {
+    const html = renderSupervision(supAnswer, "entry");
+    expect(html).toMatch(/<button type="button" data-case="c2" title="Open CASE-2026-0002 in read only"/);
+    expect(html).toContain("Select a case to open it in read only. Only the participant of the step decides.");
   });
 
   test("14.3 row P2: a returned case shows its chip", () => {
