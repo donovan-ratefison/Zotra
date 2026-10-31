@@ -259,22 +259,36 @@ export function sendResultText(answer: Answer, def: ProcessDefinition, label: st
   return { ok: false, text: `Check ${id} failed: ${message}` };
 }
 
-const KEYS: Record<string, "prev" | "next" | "first" | "second" | "docs"> = {
+const KEYS: Record<string, "prev" | "next" | "first" | "second" | "docs" | "open"> = {
   k: "prev",
   j: "next",
   f: "first",
   u: "second",
   d: "docs",
+  o: "open",
 };
 
 export function triageAction(
   key: string,
   modified: boolean,
   editable: boolean,
-): "prev" | "next" | "first" | "second" | "docs" | "exit" | null {
+): "prev" | "next" | "first" | "second" | "docs" | "open" | "exit" | null {
   if (modified || editable) return null;
   if (key === "Escape") return "exit";
   return key.length === 1 ? (KEYS[key.toLowerCase()] ?? null) : null;
+}
+
+// startIndex gives the index in ids of the first start id that ids
+// holds, else 0. The deck opens on the card of the case screen.
+export function startIndex(ids: string[], start: string[]): number {
+  const id = start.find((s) => ids.includes(s));
+  return id === undefined ? 0 : ids.indexOf(id);
+}
+
+// leftStep is true when a command moved the case to another node or
+// status: the case screen then returns to the next card.
+export function leftStep(before: CaseState, after: CaseState): boolean {
+  return after.node_id !== before.node_id || after.status !== before.status;
 }
 
 export function editableTarget(target: { tagName?: string; isContentEditable?: boolean } | null): boolean {

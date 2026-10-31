@@ -100,12 +100,12 @@ function seed(s: Seed = {}): QueryClient {
   return client;
 }
 
-function render(client: QueryClient, cases: InboxCase[] = [c1, c2, c3, c4]): string {
+function render(client: QueryClient, cases: InboxCase[] = [c1, c2, c3, c4], start: string[] = []): string {
   return renderToString(
     createElement(
       QueryClientProvider,
       { client },
-      createElement(TriageScreen, { userId: "u-analyst", users, cases, now, onExit: () => {} }),
+      createElement(TriageScreen, { userId: "u-analyst", users, cases, now, onExit: () => {}, start, onOpenCase: () => {} }),
     ),
   );
 }
@@ -222,5 +222,31 @@ describe("triage screen", () => {
 
   test("T3: the dialog is closed at first render", () => {
     expect(render(seed())).not.toContain("Back to the case");
+  });
+
+  test("T4: the Open the case key is the last key", () => {
+    const html = render(seed());
+    expect(html).toContain('aria-keyshortcuts="O"');
+    expect(html).toContain(">O</kbd>Open the case</button>");
+    expect(html).toContain("Case 1 of 3");
+  });
+
+  test("T5: back keeps the card", () => {
+    const html = render(seed(), undefined, ["c2", "c3"]);
+    expect(html).toContain("Case 2 of 3");
+    expect(html).toContain(">Voahangy Rasoanaivo</h2>");
+    expect(html).toContain("Next: Lalao Randria");
+  });
+
+  test("T6: a send moves to the next card", () => {
+    const html = render(seed(), [c2, c3, c4], ["c2", "c3"]);
+    expect(html).toContain("Case 1 of 2");
+    expect(html).toContain(">Voahangy Rasoanaivo</h2>");
+  });
+
+  test("T7: a start id that is not in the queue", () => {
+    const html = render(seed(), undefined, ["x", "c3"]);
+    expect(html).toContain("Case 3 of 3");
+    expect(html).toContain("Last case");
   });
 });

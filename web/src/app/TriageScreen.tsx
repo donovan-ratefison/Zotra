@@ -41,6 +41,7 @@ import {
   sendDecision,
   sendResultText,
   shareOfIncome,
+  startIndex,
   triageAction,
 } from "./triage";
 import { TriageDocuments } from "./TriageDocuments";
@@ -121,6 +122,8 @@ export function TriageScreen(props: {
   cases: InboxCase[];
   now: number;
   onExit: () => void;
+  start: string[];
+  onOpenCase: (ids: string[]) => void;
 }) {
   const { cases, now } = props;
   // The order of the first full load. A sent case stays in the deck;
@@ -213,6 +216,8 @@ function Deck({
   users,
   now,
   onExit,
+  start,
+  onOpenCase,
   queue,
   sent,
   onSent,
@@ -221,12 +226,15 @@ function Deck({
   users: UserDTO[];
   now: number;
   onExit: () => void;
+  start: string[];
+  onOpenCase: (ids: string[]) => void;
   queue: Item[];
   sent: Record<string, Sent>;
   onSent: (id: string, snap: Sent) => void;
 }) {
   const queryClient = useQueryClient();
-  const [index, setIndex] = useState(0);
+  // Read once: the deck mounts again after each return from the case.
+  const [index, setIndex] = useState(() => startIndex(queue.map((it) => it.id), start));
   const [busy, setBusy] = useState(false);
   // The open document row of the dialog (null: closed), and the last
   // one, so the focus goes back to it after a close.
@@ -242,6 +250,8 @@ function Deck({
 
   const last = queue.length - 1;
   const front = queue[Math.min(index, last)]!;
+  // The front card first, then the cards after it.
+  const openIds = () => queue.slice(Math.min(index, last)).map((it) => it.id);
   const snap = sent[front.id];
   const docsQ = useQuery({
     queryKey: ["documents", front.id],
@@ -327,6 +337,7 @@ function Deck({
       if (action === "prev") setIndex((i) => Math.max(i - 1, 0));
       else if (action === "next") setIndex((i) => Math.min(i + 1, last));
       else if (action === "exit") onExit();
+      else if (action === "open") onOpenCase(openIds());
       else {
         const decision = node.decisions[action === "first" ? 0 : 1];
         if (decision !== undefined && canSend) void send(decision);
@@ -593,6 +604,10 @@ function Deck({
         >
           <Kbd>D</Kbd>
           Documents
+        </button>
+        <button type="button" aria-keyshortcuts="O" className={keyClass} onClick={() => onOpenCase(openIds())}>
+          <Kbd>O</Kbd>
+          Open the case
         </button>
       </div>
       {rows !== null && rows.length > 0 && (

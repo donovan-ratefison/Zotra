@@ -239,7 +239,7 @@ function renderInbox(cases: InboxCase[], state?: CaseState): string {
 // pends (row 23).
 function renderCase(
   state: CaseState,
-  options?: { withCase?: boolean },
+  options?: { withCase?: boolean; backLabel?: string },
 ): string {
   const client = newClient();
   if (options?.withCase !== false) {
@@ -257,6 +257,7 @@ function renderCase(
         caseId: "c1",
         users: usersFixture,
         onBack: () => {},
+        ...(options?.backLabel !== undefined && { backLabel: options.backLabel }),
       }),
     ),
   );
@@ -487,6 +488,13 @@ describe("app shell", () => {
 });
 
 describe("case screen", () => {
+  test("13.3b row A1: the back button shows the back label", () => {
+    expect(renderCase(stateFixture)).toMatch(/<\/svg>Inbox<\/button>/);
+    const html = renderCase(stateFixture, { backLabel: "Triage" });
+    expect(html).toMatch(/<\/svg>Triage<\/button>/);
+    expect(html).not.toMatch(/<\/svg>Inbox<\/button>/);
+  });
+
   test("6.2 row 15: an untaken case shows the acting-as line and the take branch", () => {
     const html = renderCase(stateFixture);
     expect(html).toContain("Inbox");

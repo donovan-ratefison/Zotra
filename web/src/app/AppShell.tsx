@@ -5,7 +5,7 @@
 // comes from main.tsx.
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   ApiError,
@@ -274,6 +274,10 @@ export function AppShell() {
     queryFn: () => fetchAudit(50),
     enabled: view === "audit",
   });
+  const queryClient = useQueryClient();
+  // The ids of the triage cards from the opened case on: back puts the
+  // deck on the first id that is still in the inbox.
+  const [triageFrom, setTriageFrom] = useState<string[]>([]);
   const [verify, setVerify] = useState<AuditVerify | null>(null);
   const [verifyBusy, setVerifyBusy] = useState(false);
 
@@ -302,11 +306,25 @@ export function AppShell() {
     setCaseId("");
   }
 
+  function openTriageCase(ids: string[]) {
+    setTriageFrom(ids);
+    openCase(ids[0]!);
+  }
+
+  // onTriageLeft waits for the new inbox, so the deck leaves out the
+  // sent case and opens on the next card.
+  async function onTriageLeft() {
+    await queryClient.invalidateQueries({ queryKey: ["inbox", effectiveUserId] });
+    setTriageFrom((ids) => ids.slice(1));
+    back();
+  }
+
   // openView switches the main area to one view. The case parameter
   // drops, the user stays.
   function openView(next: AppView) {
     history.replaceState(null, "", viewUrl(effectiveUserId, next));
     setCaseId("");
+    setTriageFrom([]);
     setView(next);
   }
 
@@ -324,6 +342,7 @@ export function AppShell() {
       ) {
         e.preventDefault();
         history.replaceState(null, "", viewUrl(effectiveUserId, "triage"));
+        setTriageFrom([]);
         setView("triage");
       }
     }
@@ -443,6 +462,8 @@ export function AppShell() {
         caseId={caseId}
         users={users}
         onBack={back}
+        backLabel={view === "triage" ? "Triage" : "Inbox"}
+        onLeftStep={view === "triage" ? () => void onTriageLeft() : undefined}
       />
     );
   } else if (view === "triage") {
@@ -463,6 +484,8 @@ export function AppShell() {
           cases={inboxQuery.data.cases}
           now={inboxQuery.dataUpdatedAt}
           onExit={() => openView("inbox")}
+          start={triageFrom}
+          onOpenCase={openTriageCase}
         />
       );
     }

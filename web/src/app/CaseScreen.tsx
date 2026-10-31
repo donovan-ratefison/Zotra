@@ -25,6 +25,7 @@ import {
 import { StepScreen } from "../studio/StepScreen";
 import { Button } from "@/ui/button";
 import { dayTimeText, moneyText, pickField } from "./InboxScreen";
+import { leftStep } from "./triage";
 
 // Loading is the pending stage of the case or of its version.
 function Loading() {
@@ -52,11 +53,15 @@ export function CaseScreen({
   caseId,
   users,
   onBack,
+  backLabel = "Inbox",
+  onLeftStep,
 }: {
   userId: string;
   caseId: string;
   users: UserDTO[];
   onBack: () => void;
+  backLabel?: string;
+  onLeftStep?: () => void;
 }) {
   const queryClient = useQueryClient();
   const caseQuery = useQuery({
@@ -130,6 +135,7 @@ export function CaseScreen({
         ["case", caseId],
         (old) => (old ? { case: old.case, state: answer.state } : old),
       );
+      if (onLeftStep && state && leftStep(state, answer.state)) onLeftStep();
       void queryClient.invalidateQueries({ queryKey: ["events", caseId] });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : String(err));
@@ -191,7 +197,7 @@ export function CaseScreen({
       <div>
         <Button variant="ghost" size="sm" className="-ml-2" onClick={onBack}>
           <ArrowLeft className="size-4" />
-          Inbox
+          {backLabel}
         </Button>
       </div>
       <div className="rounded-lg border bg-card p-4">

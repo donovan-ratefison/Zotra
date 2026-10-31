@@ -16,6 +16,7 @@ import {
   enteredAt,
   firstDocIndex,
   keyFigures,
+  leftStep,
   lockReason,
   msLeft,
   queueOrder,
@@ -24,6 +25,7 @@ import {
   sendDecision,
   sendResultText,
   shareOfIncome,
+  startIndex,
   triageAction,
   zoneText,
 } from "./triage";
@@ -312,6 +314,33 @@ describe("keys", () => {
       { tagName: "DIV", isContentEditable: true }, { tagName: "BUTTON" }, null,
     ];
     expect(targets.map(editableTarget)).toEqual([true, true, true, true, false, false]);
+  });
+});
+
+describe("open the case", () => {
+  test("O1: key O opens the case", () => {
+    expect([triageAction("o", false, false), triageAction("O", false, false)]).toEqual(["open", "open"]);
+    expect(triageAction("o", true, false)).toBeNull();
+    expect(triageAction("o", false, true)).toBeNull();
+  });
+
+  test("O2: startIndex", () => {
+    expect(startIndex(["c1", "c2", "c3"], ["c2", "c3"])).toBe(1);
+    expect(startIndex(["c2", "c3"], ["c1", "c2", "c3"])).toBe(0);
+    expect(startIndex(["c1", "c2", "c3"], ["x", "c3"])).toBe(2);
+    expect(startIndex(["c1", "c2"], ["x"])).toBe(0);
+    expect(startIndex(["c1", "c2"], [])).toBe(0);
+  });
+
+  test("O3: leftStep", () => {
+    const st = (node_id: string, status: CaseState["status"]): CaseState => ({
+      case_id: "c1", version_id: "v1", status, result: "", node_id, assignee: "", data: {},
+      sources: null, seq: 1, prev_hash: "",
+    });
+    expect(leftStep(st("analysis", "open"), st("decision", "open"))).toBe(true);
+    expect(leftStep(st("end", "open"), st("end", "closed"))).toBe(true);
+    expect(leftStep(st("analysis", "open"), st("analysis", "open"))).toBe(false);
+    expect(leftStep(st("end", "closed"), st("end", "closed"))).toBe(false);
   });
 });
 
