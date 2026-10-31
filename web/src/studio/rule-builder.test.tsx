@@ -11,6 +11,7 @@ import {
   literalOf,
   operatorLabel,
   operatorsFor,
+  readExpression,
   ruleNotice,
   typesOf,
   type RuleRow,
@@ -227,11 +228,11 @@ describe("rule builder render", () => {
   });
 
   test("8: a stored rule the builder cannot show opens in the expert mode", () => {
-    const html = renderBuilder(c1);
+    const html = renderBuilder(checkWith("amount * 2.0 > 10.0"));
     expect(html).toMatch(/<button[^>]*aria-pressed="false"[^>]*>Guided/);
     expect(html).toMatch(/<button[^>]*aria-pressed="true"[^>]*>Expert/);
     // The stored CEL sits in the textarea.
-    expect(html).toContain("amount &gt; 0.0");
+    expect(html).toMatch(/<textarea[^>]*>amount \* 2\.0 &gt; 10\.0<\/textarea>/);
     // The plain text of the check sits above the CEL.
     expect(html).toContain("The loan amount must be positive.");
     // The rule was never in the guided mode: no notice, no restore.
@@ -241,7 +242,7 @@ describe("rule builder render", () => {
   });
 
   test("8b: the expert pane hides an empty plain text", () => {
-    const html = renderBuilder({ ...c1, plain_text: null });
+    const html = renderBuilder({ ...checkWith("amount * 2.0 > 10.0"), plain_text: null });
     expect(html).toContain('aria-label="Expression of check c1"');
     expect(html).not.toContain("The loan amount must be positive.");
   });
@@ -261,13 +262,91 @@ describe("rule builder render", () => {
     );
     expect(html).not.toContain('aria-label="Join of the conditions"');
   });
+
+  test("G1: a stored rule that the builder reads opens guided with its row", () => {
+    const html = renderBuilder(c1);
+    expect(html).toMatch(/<button[^>]*aria-pressed="true"[^>]*>Guided/);
+    expect(html).toContain('<option value="amount" selected="">Amount</option>');
+    expect(html).toContain('<option value="gt" selected="">is above</option>');
+    expect(html).toMatch(/aria-label="Value of condition 1"[^>]*value="0\.0"/);
+    expect(html).toContain("amount &gt; 0.0");
+    expect(html).not.toContain('aria-label="Expression of check c1"');
+    expect(html).not.toContain("changed in the expert mode");
+    expect(html).not.toContain('aria-label="Join of the conditions"');
+  });
+
+  test("G2: a stored rule with two conditions shows both rows and its join", () => {
+    const html = renderBuilder(checkWith("amount <= 500.0 || size(documents) >= 2"));
+    expect(html).toContain('aria-label="Condition 2"');
+    expect(html).toContain('aria-label="Join of the conditions"');
+    expect(html).toMatch(/<button[^>]*aria-pressed="true"[^>]*>or<\/button>/);
+    expect(html).toContain('<option value="count" selected="">has at least</option>');
+    expect(html).toMatch(/aria-label="Value of condition 2"[^>]*value="2"/);
+    expect(html).not.toContain("changed in the expert mode");
+  });
+});
+
+// The local field types of rows R and X.
+const readTypes: Record<string, FieldType> = {
+  amount: "money",
+  term: "integer",
+  rate: "number",
+  note: "string",
+  decision: "enum",
+  due: "date",
+  docs: "document",
+  ok: "boolean",
+};
+
+describe("readExpression", () => {
+  const row = (field: string, op: RuleRow["op"], value: string): RuleRow => ({
+    field,
+    op,
+    value,
+  });
+  test.each([
+    ["R1", "amount > 0.0", [row("amount", "gt", "0.0")], "and"],
+    ["R2", 'rate <= 0.33 || note != ""', [row("rate", "le", "0.33"), row("note", "notempty", "")], "or"],
+    [
+      "R3",
+      "amount >= 1000 && term <= 300 && size(docs) >= 2",
+      [row("amount", "ge", "1000"), row("term", "le", "300"), row("docs", "count", "2")],
+      "and",
+    ],
+    ["R4", 'decision in ["approve", "refuse"]', [row("decision", "in", "approve, refuse")], "and"],
+    ["R5", 'decision != ""', [row("decision", "ne", "")], "and"],
+    ["R6", "due >= now", [row("due", "ge", "now")], "and"],
+    ["R7", 'due <= timestamp("2026-01-01T00:00:00Z")', [row("due", "le", "2026-01-01")], "and"],
+    ["R8", "ok == false", [row("ok", "eq", "false")], "and"],
+    ["R9", 'note == "done"', [row("note", "eq", "done")], "and"],
+  ])("%s: %s", (_id, expression, rows, join) => {
+    expect(readExpression(expression, readTypes)).toEqual({ rows, join });
+  });
+
+  test.each([
+    ["X1", ""],
+    ["X2", "true"],
+    ["X3", "amount * 2.0 > 10.0"],
+    ["X4", "amount > 0.0 && term <= 300 || rate < 1"],
+    ["X5", "ghost > 1"],
+    ["X6", 'note < "b"'],
+    ["X7", "size(amount) >= 1"],
+    ["X8", "blacklist.listed == false"],
+    ["X9", "amount>0"],
+    ["X10", 'note == "a && b"'],
+    ["X11", "decision in [1, 2]"],
+  ])("%s: %s gives null", (_id, expression) => {
+    expect(readExpression(expression, readTypes)).toBeNull();
+  });
 });
 
 describe("rule mode and notice helpers", () => {
-  test("8c: initialRuleMode opens markers guided and stored rules expert", () => {
-    expect(initialRuleMode("")).toBe("guided");
-    expect(initialRuleMode("true")).toBe("guided");
-    expect(initialRuleMode("amount > 0.0")).toBe("expert");
+  test("8c: initialRuleMode opens markers and read rules guided, others expert", () => {
+    const types = typesOf(panelDefinition);
+    expect(initialRuleMode("", types)).toBe("guided");
+    expect(initialRuleMode("true", types)).toBe("guided");
+    expect(initialRuleMode("amount > 0.0", types)).toBe("guided");
+    expect(initialRuleMode("amount * 2.0 > 10.0", types)).toBe("expert");
   });
 
   test("8d: ruleNotice needs guided rows and a left built expression", () => {

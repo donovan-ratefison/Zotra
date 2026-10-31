@@ -155,15 +155,110 @@ export function defaultRow(def: ProcessDefinition): RuleRow {
   );
 }
 
+// The reader of a stored expression: the inverse of conditionCel and
+// literalOf. readExpression keeps a read only when the rows build the
+// same CEL again, so each read is exact.
+const COMPARE: Record<string, Operator> = {
+  "==": "eq",
+  "!=": "ne",
+  "<": "lt",
+  "<=": "le",
+  ">=": "ge",
+  ">": "gt",
+};
+
+function stringOf(text: string): string | null {
+  try {
+    const value: unknown = JSON.parse(text);
+    return typeof value === "string" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function valueOf(type: FieldType, literal: string): string | null {
+  if (type === "date") {
+    if (literal === "now") return "now";
+    const match = /^timestamp\((".*")\)$/.exec(literal);
+    const text = match ? stringOf(match[1]) : null;
+    if (text === null) return null;
+    return /^\d{4}-\d{2}-\d{2}T00:00:00Z$/.test(text) ? text.slice(0, 10) : text;
+  }
+  if (
+    (type === "number" || type === "money" || type === "integer") &&
+    /^-?\d+(\.\d+)?$/.test(literal)
+  ) {
+    return literal;
+  }
+  if (type === "boolean" && (literal === "true" || literal === "false")) return literal;
+  return stringOf(literal);
+}
+
+export function readCondition(
+  text: string,
+  types: Record<string, FieldType>,
+): RuleRow | null {
+  const size = /^size\((\w+)\) >= (\d+)$/.exec(text);
+  if (size) {
+    return types[size[1]] === "document"
+      ? { field: size[1], op: "count", value: size[2] }
+      : null;
+  }
+  const list = /^(\w+) in (\[.*\])$/.exec(text);
+  if (list) {
+    if (types[list[1]] !== "enum") return null;
+    let items: unknown;
+    try {
+      items = JSON.parse(list[2]);
+    } catch {
+      return null;
+    }
+    if (!Array.isArray(items) || !items.every((item) => typeof item === "string")) {
+      return null;
+    }
+    return { field: list[1], op: "in", value: items.join(", ") };
+  }
+  const compare = /^(\w+) (==|!=|<=|>=|<|>) (.+)$/.exec(text);
+  if (!compare) return null;
+  const [, field, symbol, literal] = compare;
+  const type = types[field];
+  if (type === undefined) return null;
+  if (type === "string" && symbol === "!=" && literal === '""') {
+    return { field, op: "notempty", value: "" };
+  }
+  const op = COMPARE[symbol];
+  if (!operatorsFor(type).includes(op)) return null;
+  const value = valueOf(type, literal);
+  return value === null ? null : { field, op, value };
+}
+
+export function readExpression(
+  expression: string,
+  types: Record<string, FieldType>,
+): { rows: RuleRow[]; join: "and" | "or" } | null {
+  const join = expression.includes(" || ") ? "or" : "and";
+  const rows: RuleRow[] = [];
+  for (const part of expression.split(join === "or" ? " || " : " && ")) {
+    const row = readCondition(part, types);
+    if (row === null) return null;
+    rows.push(row);
+  }
+  return buildExpression(rows, types, join) === expression ? { rows, join } : null;
+}
+
 // The mode a check opens in. "" and "true" carry no rule (addCheck
 // starts a check at "true"): the guided mode seeds one row for them.
-// A stored expression that the guided builder cannot show at mount
-// opens in the expert mode: the builder starts with no rows, so its
-// preview is empty and every stored rule diverges from it. A check
-// that opens this way was never in the guided mode, so it shows no
-// notice and no restore button (ruleNotice).
-export function initialRuleMode(expression: string): "guided" | "expert" {
-  return expression === "" || expression === "true" ? "guided" : "expert";
+// A stored expression that readExpression reads opens in the guided
+// mode with its rows. Another stored expression opens in the expert
+// mode: the guided rows cannot show it. A check that opens this way
+// was never in the guided mode, so it shows no notice and no restore
+// button (ruleNotice).
+export function initialRuleMode(
+  expression: string,
+  types: Record<string, FieldType>,
+): "guided" | "expert" {
+  if (expression === "" || expression === "true") return "guided";
+  return readExpression(expression, types) === null ? "expert" : "guided";
 }
 
 // The notice of the guided mode: a guided form existed in this edit

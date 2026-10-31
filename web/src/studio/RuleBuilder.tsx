@@ -2,8 +2,8 @@
 // with one join, and a read-only preview of the generated CEL. The
 // raw CEL stays one toggle away in the expert mode. A rule that left
 // the guided rows in this edit session shows a notice, with a restore
-// button; a check that the builder cannot show at mount opens in the
-// expert mode instead.
+// button. A stored rule that the builder reads opens in the guided
+// mode with its rows; another stored rule opens in the expert mode.
 
 import { Fragment, useEffect, useState } from "react";
 import { X } from "lucide-react";
@@ -17,6 +17,7 @@ import {
   initialRuleMode,
   operatorLabel,
   operatorsFor,
+  readExpression,
   ruleNotice,
   typesOf,
   type RuleRow,
@@ -37,9 +38,17 @@ export function RuleBuilder({
   onExpressionChange: (expression: string) => void;
   disabled: boolean;
 }) {
-  const [mode, setMode] = useState<"guided" | "expert">(initialRuleMode(check.expression));
-  const [rows, setRows] = useState<RuleRow[]>([]);
-  const [join, setJoin] = useState<"and" | "or">("and");
+  // The stored rule is read once, at mount. A read rule builds the same
+  // CEL again, so the mount writes nothing to the draft.
+  const [mode, setMode] = useState<"guided" | "expert">(() =>
+    initialRuleMode(check.expression, typesOf(def)),
+  );
+  const [rows, setRows] = useState<RuleRow[]>(
+    () => readExpression(check.expression, typesOf(def))?.rows ?? [],
+  );
+  const [join, setJoin] = useState<"and" | "or">(
+    () => readExpression(check.expression, typesOf(def))?.join ?? "and",
+  );
 
   // "" and "true" carry no rule: addCheck starts a check at "true".
   const isMarker = check.expression === "" || check.expression === "true";
