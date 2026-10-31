@@ -11,7 +11,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactFlowProvider } from "@xyflow/react";
 import { eventLabel } from "./Timeline";
-import { milestonesOf, TimelineBar, upcomingOf } from "./TimelineBar";
+import { milestonesOf, overflowSides, ScrollEdge, TimelineBar, upcomingOf } from "./TimelineBar";
 import { Inspector } from "./Inspector";
 import { ChecksTab } from "./ChecksTab";
 import { StepScreen } from "./StepScreen";
@@ -715,5 +715,49 @@ describe("test screen", () => {
     expect(html).toContain("Inspector");
     expect(html).toContain("Checks");
     expect((html.match(/role="tab"/g) ?? []).length).toBe(3);
+  });
+});
+
+describe("timeline scroll hint", () => {
+  test("pol-11 row 1: at the start of a long line, only the right side is cut", () => {
+    expect(overflowSides(0, 1320, 986)).toEqual({ left: false, right: true });
+  });
+
+  test("pol-11 row 2: at the end of a long line, only the left side is cut", () => {
+    expect(overflowSides(334, 1320, 986)).toEqual({ left: true, right: false });
+  });
+
+  test("pol-11 row 3: in the middle, both sides are cut", () => {
+    expect(overflowSides(100, 1320, 986)).toEqual({ left: true, right: true });
+  });
+
+  test("pol-11 row 4: when all points fit, no side is cut", () => {
+    expect(overflowSides(0, 960, 986)).toEqual({ left: false, right: false });
+  });
+
+  test("pol-11 row 5: the 1 px margin absorbs a fractional scroll", () => {
+    expect(overflowSides(0.5, 1320, 986)).toEqual({ left: false, right: true });
+    expect(overflowSides(333.5, 1320, 986)).toEqual({ left: true, right: false });
+  });
+
+  test("pol-11 row 6: each edge has its label and its fade", () => {
+    const left = renderToString(createElement(ScrollEdge, { side: "left", onClick: () => {} }));
+    expect(left).toContain('aria-label="Scroll the timeline left"');
+    expect(left).toContain("bg-gradient-to-r");
+    const right = renderToString(createElement(ScrollEdge, { side: "right", onClick: () => {} }));
+    expect(right).toContain('aria-label="Scroll the timeline right"');
+    expect(right).toContain("bg-gradient-to-l");
+  });
+
+  test("pol-11 row 7: the first render shows no scroll control", () => {
+    const html = renderTimeline(
+      [
+        ev(1, "case_created", { version_id: "v1", data: {} }),
+        ev(2, "step_entered", { node_id: "entry" }),
+        ev(3, "edge_taken", { edge_id: "e1" }),
+      ],
+      null,
+    );
+    expect(html).not.toContain("Scroll the timeline");
   });
 });

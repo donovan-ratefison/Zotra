@@ -195,6 +195,27 @@ export function TimelineBar({ def, events, state, at, onSelect, userName }: {
     }
   }, [current, points.length]);
 
+  // A cut side of the line shows a scroll control.
+  const [sides, setSides] = useState({ left: false, right: false });
+  function measure() {
+    const el = listRef.current;
+    if (el) {
+      setSides(overflowSides(el.scrollLeft, el.scrollWidth, el.clientWidth));
+    }
+  }
+  useEffect(() => {
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [points.length, upcoming.length]);
+  // One page is the column width less one point, so one point stays visible.
+  function scrollPage(dir: 1 | -1) {
+    const el = listRef.current;
+    if (el) {
+      el.scrollBy({ left: dir * Math.max(132, el.clientWidth - 132), behavior: "smooth" });
+    }
+  }
+
   const atStart = points.length === 0 || (at !== null && current === 0);
 
   return (
@@ -287,81 +308,120 @@ export function TimelineBar({ def, events, state, at, onSelect, userName }: {
         </Hint>
       </div>
       <TooltipProvider delayDuration={200}>
-        <ol
-          ref={listRef}
-          aria-label="Timeline"
-          className="flex overflow-x-auto px-3 pt-3 pb-2"
-        >
-          {points.map((m, i) => {
-            const isCurrent = i === current;
-            const done = i < current;
-            const dot = m.failed
-              ? "border-red-500 bg-red-500"
-              : isCurrent
-                ? "border-blue-600 bg-blue-600 ring-4 ring-blue-100"
-                : "border-emerald-600 bg-emerald-600";
-            const line = done ? "bg-emerald-600" : "bg-border";
-            return (
-              <li key={m.firstSeq} className="relative flex w-[132px] shrink-0 flex-col items-center">
-                {i > 0 && <span aria-hidden className={`absolute top-[5px] right-1/2 left-0 h-0.5 ${i <= current ? "bg-emerald-600" : "bg-border"}`} />}
-                <span aria-hidden className={`absolute top-[5px] right-0 left-1/2 h-0.5 ${i < lastIndex || upcoming.length > 0 ? line : "bg-transparent"}`} />
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      aria-current={isCurrent ? "true" : undefined}
-                      aria-label={`${m.label}${m.detail === "" ? "" : `, ${m.detail}`}`}
-                      onClick={() => {
-                        setPlaying(false);
-                        seek(i);
-                      }}
-                      className="group flex flex-col items-center gap-1 rounded-md px-1 text-center focus-visible:outline-2 focus-visible:outline-ring"
-                    >
-                      <span className={`relative z-10 size-3 rounded-full border-2 ${dot}`} />
-                      <span
-                        className={`line-clamp-2 text-[12px] leading-tight ${
-                          isCurrent ? "font-semibold text-blue-700" : "text-foreground group-hover:underline"
-                        }`}
+        <div className="relative">
+          <ol
+            ref={listRef}
+            aria-label="Timeline"
+            onScroll={measure}
+            className="flex overflow-x-auto px-3 pt-3 pb-2"
+          >
+            {points.map((m, i) => {
+              const isCurrent = i === current;
+              const done = i < current;
+              const dot = m.failed
+                ? "border-red-500 bg-red-500"
+                : isCurrent
+                  ? "border-blue-600 bg-blue-600 ring-4 ring-blue-100"
+                  : "border-emerald-600 bg-emerald-600";
+              const line = done ? "bg-emerald-600" : "bg-border";
+              return (
+                <li key={m.firstSeq} className="relative flex w-[132px] shrink-0 flex-col items-center">
+                  {i > 0 && <span aria-hidden className={`absolute top-[5px] right-1/2 left-0 h-0.5 ${i <= current ? "bg-emerald-600" : "bg-border"}`} />}
+                  <span aria-hidden className={`absolute top-[5px] right-0 left-1/2 h-0.5 ${i < lastIndex || upcoming.length > 0 ? line : "bg-transparent"}`} />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        aria-current={isCurrent ? "true" : undefined}
+                        aria-label={`${m.label}${m.detail === "" ? "" : `, ${m.detail}`}`}
+                        onClick={() => {
+                          setPlaying(false);
+                          seek(i);
+                        }}
+                        className="group flex flex-col items-center gap-1 rounded-md px-1 text-center focus-visible:outline-2 focus-visible:outline-ring"
                       >
-                        {m.label}
-                      </span>
-                      <span className={`line-clamp-1 text-[11px] ${m.failed ? "text-red-600" : "text-muted-foreground"}`}>
-                        {m.failed ? "Check failed" : m.detail}
-                      </span>
-                      <span className={`font-mono text-[10.5px] ${isCurrent ? "text-blue-700" : "text-muted-foreground"}`}>
-                        {timeText(m.at)}
-                      </span>
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[280px]">
-                    <ol className="flex flex-col gap-0.5">
-                      {m.events.map((e) => (
-                        <li key={e.seq}>
-                          <span className="mr-1.5 font-mono opacity-70">{e.seq}</span>
-                          {eventLabel(def, e, userName)}
-                        </li>
-                      ))}
-                    </ol>
-                  </TooltipContent>
-                </Tooltip>
+                        <span className={`relative z-10 size-3 rounded-full border-2 ${dot}`} />
+                        <span
+                          className={`line-clamp-2 text-[12px] leading-tight ${
+                            isCurrent ? "font-semibold text-blue-700" : "text-foreground group-hover:underline"
+                          }`}
+                        >
+                          {m.label}
+                        </span>
+                        <span className={`line-clamp-1 text-[11px] ${m.failed ? "text-red-600" : "text-muted-foreground"}`}>
+                          {m.failed ? "Check failed" : m.detail}
+                        </span>
+                        <span className={`font-mono text-[10.5px] ${isCurrent ? "text-blue-700" : "text-muted-foreground"}`}>
+                          {timeText(m.at)}
+                        </span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[280px]">
+                      <ol className="flex flex-col gap-0.5">
+                        {m.events.map((e) => (
+                          <li key={e.seq}>
+                            <span className="mr-1.5 font-mono opacity-70">{e.seq}</span>
+                            {eventLabel(def, e, userName)}
+                          </li>
+                        ))}
+                      </ol>
+                    </TooltipContent>
+                  </Tooltip>
+                </li>
+              );
+            })}
+            {upcoming.map((name, i) => (
+              <li key={`up-${name}-${i}`} className="relative flex w-[132px] shrink-0 flex-col items-center">
+                <span aria-hidden className="absolute top-[5px] right-1/2 left-0 h-0.5 bg-border" />
+                {i < upcoming.length - 1 && (
+                  <span aria-hidden className="absolute top-[5px] right-0 left-1/2 h-0.5 bg-border" />
+                )}
+                <span className="relative z-10 size-3 rounded-full border-2 border-border bg-background" />
+                <span className="mt-1 line-clamp-2 text-center text-[12px] leading-tight text-muted-foreground">
+                  {name}
+                </span>
+                <span className="text-[11px] text-muted-foreground">upcoming</span>
               </li>
-            );
-          })}
-          {upcoming.map((name, i) => (
-            <li key={`up-${name}-${i}`} className="relative flex w-[132px] shrink-0 flex-col items-center">
-              <span aria-hidden className="absolute top-[5px] right-1/2 left-0 h-0.5 bg-border" />
-              {i < upcoming.length - 1 && (
-                <span aria-hidden className="absolute top-[5px] right-0 left-1/2 h-0.5 bg-border" />
-              )}
-              <span className="relative z-10 size-3 rounded-full border-2 border-border bg-background" />
-              <span className="mt-1 line-clamp-2 text-center text-[12px] leading-tight text-muted-foreground">
-                {name}
-              </span>
-              <span className="text-[11px] text-muted-foreground">upcoming</span>
-            </li>
-          ))}
-        </ol>
+            ))}
+          </ol>
+          {sides.left && <ScrollEdge side="left" onClick={() => scrollPage(-1)} />}
+          {sides.right && <ScrollEdge side="right" onClick={() => scrollPage(1)} />}
+        </div>
       </TooltipProvider>
+    </div>
+  );
+}
+
+// overflowSides tells which sides of a scrolled list hide content. The
+// 1 px margin absorbs the fractional scrollLeft of a zoomed page.
+export function overflowSides(
+  scrollLeft: number,
+  scrollWidth: number,
+  clientWidth: number,
+): { left: boolean; right: boolean } {
+  return { left: scrollLeft > 1, right: scrollLeft + clientWidth < scrollWidth - 1 };
+}
+
+// ScrollEdge is the fade and the scroll button on one cut side.
+export function ScrollEdge({ side, onClick }: { side: "left" | "right"; onClick: () => void }) {
+  const left = side === "left";
+  return (
+    <div
+      className={`pointer-events-none absolute inset-y-0 flex w-12 items-center ${
+        left
+          ? "left-0 justify-start bg-gradient-to-r from-background"
+          : "right-0 justify-end bg-gradient-to-l from-background"
+      }`}
+    >
+      <Button
+        variant="outline"
+        size="icon-sm"
+        className="pointer-events-auto"
+        aria-label={left ? "Scroll the timeline left" : "Scroll the timeline right"}
+        onClick={onClick}
+      >
+        {left ? <ChevronLeft className="size-4" /> : <ChevronRight className="size-4" />}
+      </Button>
     </div>
   );
 }
