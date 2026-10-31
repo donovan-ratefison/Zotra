@@ -343,7 +343,12 @@ describe("supervision screen", () => {
     expect(html).toContain('class="text-2xl font-semibold">2</span>');
     expect(html).toContain("Where it blocks");
     expect(html).toContain("Who decided today, since 00:00 UTC");
-    expect(html).toContain("The AI never decides. It only proposes and checks.");
+    for (const label of ["About the supervision", "About the live flow", "About who decided"]) {
+      expect(html).toContain(`aria-label="${label}"`);
+    }
+    for (const text of ["Read only view of the open cases", "More dots where", "The AI never decides"]) {
+      expect(html).not.toContain(text);
+    }
     expect(html).not.toContain("Open cases");
     expect(html).not.toContain("across 1 steps");
     expect(html).not.toContain("Steps and indicators");
@@ -463,7 +468,8 @@ describe("audit screen", () => {
   test("6.3 row W7: the head, the buttons, the row and the footer render", () => {
     const html = renderAudit();
     expect(html).toContain("Audit log");
-    expect(html).toContain("Every event carries the hash of the previous one.");
+    expect(html).toContain('aria-label="About the audit log"');
+    expect(html).not.toContain("Every event carries the hash");
     expect(html).toContain("Verify chain");
     expect(html).toContain("Export");
     expect(html).toContain("CASE-2026-0001");
@@ -1036,7 +1042,8 @@ describe("step panel", () => {
       ">25 h<",
       ">24 h<",
       "2 cases are late: CASE-2026-0002 and CASE-2026-0001. Demo Advisor holds 1 of the 2 cases. 1 case has no assignee.",
-      "Computed from the case data. No AI writes this text.",
+      'aria-label="About this text"',
+      'aria-label="About the step detail"',
       "Cases at this step, oldest first",
       "Deadline 24 h",
       "Time left",
@@ -1053,12 +1060,14 @@ describe("step panel", () => {
     expect(html.indexOf("CASE-2026-0002")).toBeLessThan(html.indexOf("CASE-2026-0001"));
     expect(html).not.toContain("Time on step");
     expect(html).not.toContain("Select a step to see its cases.");
+    expect(html).not.toContain("Computed from the case data");
   });
 
   test("14.3b row R6: a panel row opens the case in read only", () => {
     const html = renderSupervision(supAnswer, "entry");
     expect(html).toMatch(/<button type="button" data-case="c2" title="Open CASE-2026-0002 in read only"/);
-    expect(html).toContain("Select a case to open it in read only. Only the participant of the step decides.");
+    expect(html).toContain('aria-label="About the step detail"');
+    expect(html).not.toContain("Select a case to open it");
   });
 
   test("14.3 row P2: a returned case shows its chip", () => {

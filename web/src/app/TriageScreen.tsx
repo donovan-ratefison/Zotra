@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, ChevronRight, CircleCheck, CircleX, Eye, Link, Lock, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ChevronRight, CircleCheck, CircleX, Eye, Link, Lock } from "lucide-react";
 import { ApiError, getVersion } from "../studio/api";
 import {
   listEvents,
@@ -22,6 +22,7 @@ import { valueText } from "../studio/format";
 import type { ProcessNode, Version } from "../studio/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
+import { Hint } from "@/ui/hint";
 import { BrandLoader } from "@/components/BrandLoader";
 import { fetchChecks, type CheckResult, type InboxCase } from "./app-api";
 import { pickField } from "./InboxScreen";
@@ -501,7 +502,7 @@ function Deck({
         <div className="mb-2.5 flex h-9 items-center gap-2.5 rounded-lg border border-l-[3px] border-l-[#2563eb] bg-white pr-2 pl-3 text-[13px] shadow-sm">
           <Eye className="size-4 text-[#2563eb]" />
           <b className="font-semibold">Read only. You supervise this step.</b>
-          <span className="text-[12.5px] text-muted-foreground">Only the participant of the step can decide.</span>
+          <Hint label="About read only">Only the participant of the step can decide.</Hint>
           <Button variant="outline" size="sm" className="ml-auto" onClick={onExit}>
             <ArrowLeft className="size-3.5" />
             Back to supervision
@@ -510,12 +511,9 @@ function Deck({
         </div>
       )}
       <div className="mb-3.5 grid grid-cols-[1fr_auto_1fr] items-center gap-4">
-        <div>
+        <div className="flex min-w-0 items-center gap-2">
           <h1 className="text-[18px] font-semibold tracking-tight">{`${readOnly ? "Queue" : "Triage"}: ${node.name}`}</h1>
-          <p className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
-            <ShieldCheck className="size-3.5 text-primary" />
-            Rules and humans decide. The AI only checks.
-          </p>
+          <Hint label="About the triage" side="bottom">Rules and humans decide. The AI only checks.</Hint>
         </div>
         <div className="grid justify-items-center gap-1.5">
           <b className="text-[13px] font-semibold">{`Case ${index + 1} of ${queue.length}`}</b>

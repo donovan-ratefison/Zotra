@@ -18,6 +18,7 @@ import {
 } from "../studio/case-api";
 import { initials } from "../studio/case-view";
 import { Button } from "@/ui/button";
+import { Hint } from "@/ui/hint";
 import { Input } from "@/ui/input";
 import type { Field, FieldType, ProcessDefinition } from "../studio/types";
 import type { InboxCase } from "./app-api";
@@ -280,11 +281,11 @@ export function InboxScreen({
 
   return (
     <div className="mx-auto w-full max-w-[1180px] px-6 py-6">
-      <div className="mb-4">
+      <div className="mb-4 flex items-center gap-2">
         <h1 className="text-2xl font-semibold tracking-tight">Inbox</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {`Cases that wait for the roles of ${roleNames}. The first taker owns the case.`}
-        </p>
+        <Hint label="About the inbox" side="bottom">
+          {`Cases that wait for the roles of ${roleNames}. The first taker owns the case. Open a case to work on its step.`}
+        </Hint>
       </div>
       <div className="rounded-lg border bg-card">
         <div className="flex items-center justify-between gap-3 border-b px-3 py-2.5">
@@ -364,9 +365,6 @@ export function InboxScreen({
             </p>
           )
         )}
-        <div className="border-t px-4 py-2.5 text-[13px] text-muted-foreground">
-          Open a case to work on its step.
-        </div>
       </div>
     </div>
   );

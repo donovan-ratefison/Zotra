@@ -1,9 +1,9 @@
-// Hint: a small info icon that shows a help text on hover or focus.
+// Hint: a small (?) icon that shows a help text on hover or focus.
 // Long help stays out of the layout; the user reaches it on demand.
 // It carries its own provider, so it works anywhere in the tree.
 
 import type { ReactNode } from "react";
-import { Info } from "lucide-react";
+import { CircleHelp } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./tooltip";
 
 export function Hint({ label, children, side = "top" }: {
@@ -20,7 +20,7 @@ export function Hint({ label, children, side = "top" }: {
             aria-label={label}
             className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
           >
-            <Info className="size-3.5" />
+            <CircleHelp className="size-3.5" />
           </button>
         </TooltipTrigger>
         <TooltipContent side={side} className="max-w-[260px] text-left leading-snug">

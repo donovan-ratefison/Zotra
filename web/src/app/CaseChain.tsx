@@ -10,6 +10,7 @@ import type { ProcessDefinition } from "../studio/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent } from "@/ui/dialog";
+import { Hint } from "@/ui/hint";
 import { verifyCase } from "./app-api";
 import { actorOf } from "./AuditScreen";
 import { chainStatus, seqTone, sheetProgress, walkEnd, type ChainBlock, type VerifyRun } from "./chain";
@@ -275,9 +276,14 @@ export function ChainSheetBody(props: SheetBodyProps) {
     <>
       <div className="flex items-start justify-between gap-3 border-b px-[18px] pt-4 pb-3">
         <div>
-          <h2 className="text-base font-semibold">Case history</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-semibold">Case history</h2>
+            <Hint label="About the case history">
+              Each event carries the hash of the event before it. The log is append only. Nobody can edit an event in the app.
+            </Hint>
+          </div>
           <p className="mt-0.5 text-[12.5px] text-muted-foreground">
-            {`${props.reference} · ${props.client}. Each event carries the hash of the event before it.`}
+            {`${props.reference} · ${props.client}`}
           </p>
         </div>
         <button
@@ -367,8 +373,7 @@ export function ChainSheetBody(props: SheetBodyProps) {
           );
         })}
       </ul>
-      <div className="flex justify-between gap-3 border-t px-[18px] py-2.5 text-xs text-muted-foreground">
-        <span>The log is append only. Nobody can edit an event in the app.</span>
+      <div className="flex justify-end gap-3 border-t px-[18px] py-2.5 text-xs text-muted-foreground">
         <code className="rounded bg-zinc-100 px-[5px] py-px font-mono text-[11px] text-foreground">
           {'sha256(prev_hash + "\\n" + event)'}
         </code>

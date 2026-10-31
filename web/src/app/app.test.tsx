@@ -382,15 +382,14 @@ describe("inbox screen", () => {
   test("6.2 row 8: the inbox row shows the case columns and the take action", () => {
     const html = renderInbox([inboxCase], stateFixture);
     expect(html).toContain("Inbox");
-    expect(html).toContain(
-      "Cases that wait for the roles of Advisor. The first taker owns the case.",
-    );
+    expect(html).toContain('aria-label="About the inbox"');
+    expect(html).not.toContain("The first taker owns the case.");
+    expect(html).not.toContain("Open a case to work on its step.");
     expect(html).toContain("CASE-2026-0001");
     expect(html).toContain("Hanta Rakotobe");
     expect(html).toContain("€240,000.00");
     expect(html).toContain("Application entry");
     expect(html).toContain("Take the case");
-    expect(html).toContain("Open a case to work on its step.");
     expect(html).toContain("28 Oct, 12:05");
     expect(html).toContain("10 h left");
     expect(html).toContain("New");

@@ -4,6 +4,7 @@
 
 import { diagramEdgeText, walk } from "../studio/layout";
 import type { ProcessDefinition, ProcessEdge } from "../studio/types";
+import { Hint } from "@/ui/hint";
 import { edgeKind } from "./LiveFlow";
 import type { Flow } from "./sup-api";
 import { decisionLabel } from "./triage";
@@ -416,11 +417,14 @@ export function CaseFlowCard({ def, flow }: { def: ProcessDefinition; flow: Flow
   return (
     <div className="mb-4 rounded-lg border bg-card">
       <div className="flex h-10 items-center justify-between gap-4 border-b px-4">
-        <h2 className="truncate text-[13.5px] font-semibold">
-          {`Case flow, last ${flow.days} days`}
-        </h2>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <h2 className="truncate text-[13.5px] font-semibold">
+            {`Case flow, last ${flow.days} days`}
+          </h2>
+          <Hint label="About the case flow">The band width shows the passes on each link.</Hint>
+        </div>
         <p className="truncate text-xs text-muted-foreground">
-          {`${flow.closed} cases closed in ${flow.days} days. The band width shows the passes on each link.`}
+          {`${flow.closed} cases closed in ${flow.days} days.`}
         </p>
       </div>
       <div className="grid grid-cols-[minmax(0,1fr)_310px]">

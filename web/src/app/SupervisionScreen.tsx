@@ -6,7 +6,8 @@
 // passes it down with the users list.
 
 import { useEffect, useState } from "react";
-import { Activity, ChevronRight, Eye, Split, TriangleAlert, X } from "lucide-react";
+import { Activity, ChevronRight, Split, TriangleAlert, X } from "lucide-react";
+import { Hint } from "@/ui/hint";
 import { moneyText, pickField } from "./InboxScreen";
 import { CaseFlowCard } from "./CaseFlow";
 import { FlowLegend, haloOf, LiveDiagram } from "./LiveFlow";
@@ -340,8 +341,13 @@ function StepPanel({ def, users, sup, nodeId, onClose, onRead }: {
     >
       <div className="flex items-start justify-between gap-3 px-[18px] pt-3.5 pb-2.5">
         <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[.05em] text-muted-foreground">
-            Step detail
+          <div className="flex items-center gap-1.5">
+            <div className="text-[11px] font-semibold uppercase tracking-[.05em] text-muted-foreground">
+              Step detail
+            </div>
+            <Hint label="About the step detail">
+              Select a case to open it in read only. Only the participant of the step decides.
+            </Hint>
           </div>
           <h2 className="mt-0.5 text-[18px] font-semibold tracking-tight">
             {node?.name ?? nodeId}
@@ -368,16 +374,16 @@ function StepPanel({ def, users, sup, nodeId, onClose, onRead }: {
         ))}
       </div>
       <div className="mx-[18px] mt-3 rounded-lg border border-[#fde68a] bg-[#fffbeb] px-3.5 py-2.5">
-        <h3 className="mb-1 flex items-center gap-[7px] text-[12.5px] font-semibold text-[#d97706]">
-          <TriangleAlert aria-hidden className="size-3.5" />
-          Why it blocks
-        </h3>
+        <div className="mb-1 flex items-center gap-1.5">
+          <h3 className="flex items-center gap-[7px] text-[12.5px] font-semibold text-[#d97706]">
+            <TriangleAlert aria-hidden className="size-3.5" />
+            Why it blocks
+          </h3>
+          <Hint label="About this text">Computed from the case data. No AI writes this text.</Hint>
+        </div>
         <p className="text-[12.5px] leading-normal text-[#3f3f46]">
           {whyText(sup.cases.filter((c) => c.node_id === nodeId), users)}
         </p>
-        <small className="mt-[5px] block text-[11px] text-muted-foreground">
-          Computed from the case data. No AI writes this text.
-        </small>
       </div>
       <div className={`mx-[18px] mt-3 border-b pb-1.5 text-[11px] text-muted-foreground ${LIST_GRID}`}>
         <span>Cases at this step, oldest first</span>
@@ -449,10 +455,6 @@ function StepPanel({ def, users, sup, nodeId, onClose, onRead }: {
           );
         })}
       </div>
-      <div className="flex items-center gap-2 border-t px-[18px] py-[9px] text-[11.5px] text-muted-foreground">
-        <Eye aria-hidden className="size-3.5 text-primary" />
-        Select a case to open it in read only. Only the participant of the step decides.
-      </div>
     </aside>
   );
 }
@@ -510,11 +512,11 @@ export function SupervisionScreen({
   return (
     <div className="w-full px-4 py-3">
       <div className="mb-3 flex flex-wrap items-center gap-4">
-        <div>
+        <div className="flex items-center gap-1.5">
           <h1 className="text-[15px] font-semibold">Supervision</h1>
-          <p className="text-xs text-muted-foreground">
+          <Hint label="About the supervision" side="bottom">
             Read only view of the open cases of every published version.
-          </p>
+          </Hint>
         </div>
         <div
           role="tablist"
@@ -557,12 +559,14 @@ export function SupervisionScreen({
           {/* The card ends above the live events bar at 1366 x 768. */}
           <div className="mb-4 flex h-[calc(100vh-216px)] min-h-[420px] flex-col rounded-lg border bg-card">
             <div className="flex h-10 shrink-0 items-center justify-between gap-4 border-b px-4">
-              <h2 className="truncate text-[13.5px] font-semibold">
-                {`${def.name}, live flow of the open cases`}
-              </h2>
-              <p className="truncate text-xs text-muted-foreground">
-                {`More dots where more cases pass (last ${flow.days} days). The halo shows the case ages against the step deadline.`}
-              </p>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <h2 className="truncate text-[13.5px] font-semibold">
+                  {`${def.name}, live flow of the open cases`}
+                </h2>
+                <Hint label="About the live flow">
+                  {`More dots where more cases pass (last ${flow.days} days). The halo shows the case ages against the step deadline.`}
+                </Hint>
+              </div>
             </div>
             <div className="flex shrink-0 items-start gap-3 px-4 pt-3">
               {block !== null && (
@@ -584,9 +588,12 @@ export function SupervisionScreen({
                 </div>
               )}
               <div className="ml-auto w-[360px] shrink-0 rounded-lg border bg-[#fafaf9] px-3.5 py-2.5">
-                <h3 className="mb-2 text-[11.5px] font-medium text-muted-foreground">
-                  Who decided today, since 00:00 UTC
-                </h3>
+                <div className="mb-2 flex items-center gap-1.5">
+                  <h3 className="text-[11.5px] font-medium text-muted-foreground">
+                    Who decided today, since 00:00 UTC
+                  </h3>
+                  <Hint label="About who decided">The AI never decides. It only proposes and checks.</Hint>
+                </div>
                 <div className="grid grid-cols-3 gap-2.5">
                   <div className="border-l-2 border-border pl-2.5">
                     <b className="block text-xl font-semibold">{flow.today.people}</b>
@@ -607,9 +614,6 @@ export function SupervisionScreen({
                     <span className="text-[11.5px] text-muted-foreground">AI</span>
                   </div>
                 </div>
-                <p className="mt-2 text-[11.5px] text-muted-foreground">
-                  The AI never decides. It only proposes and checks.
-                </p>
               </div>
             </div>
             <div className="flex min-h-0 flex-1 px-4 py-3">

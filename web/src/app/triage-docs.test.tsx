@@ -63,6 +63,10 @@ describe("triage documents dialog", () => {
       expect(html).toContain(text);
     }
     expect(html).toMatch(/aria-pressed="true"[^>]*>Zones shown</);
+    expect(html).toContain('aria-label="About the document check"');
+    for (const text of ["SAM 3.1", "A participant attaches the scan", "You cannot close the step yet."]) {
+      expect(html).not.toContain(text);
+    }
   });
 
   test("B2: pending zones", () => {
@@ -89,6 +93,7 @@ describe("triage documents dialog", () => {
     expect(html).toContain("No scan for Salary slips on this case.");
     expect(html).not.toContain("<img");
     expect(html).toContain("This document is missing.");
+    expect(html).not.toContain("You cannot close the step yet.");
   });
 
   test("B6: zones hidden keep the zone rows", () => {
@@ -100,6 +105,7 @@ describe("triage documents dialog", () => {
   test("B7: an unsigned step", () => {
     const html = render({ nodeId: "decision" }, zones([zone]));
     expect(html).toContain("The step cannot close until it is signed.");
-    expect(html).toContain(" You cannot close the step yet.");
+    expect(html).toContain(">You cannot close the step yet.<");
+    expect(html).not.toContain("Rules and humans decide");
   });
 });

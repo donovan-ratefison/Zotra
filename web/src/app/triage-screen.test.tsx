@@ -147,7 +147,7 @@ describe("triage screen", () => {
     const html = render(seed());
     for (const text of [
       "Triage: Credit analysis",
-      "Rules and humans decide. The AI only checks.",
+      'aria-label="About the triage"',
       "Case 1 of 3",
       "Next: Voahangy Rasoanaivo, €62,000.00",
       "CASE-2026-0001",
@@ -289,7 +289,7 @@ describe("read-only deck", () => {
     const html = renderRO(seed(), [c1, c2, c3], "c2");
     for (const text of [
       "Read only. You supervise this step.",
-      "Only the participant of the step can decide.",
+      'aria-label="About read only"',
       "Back to supervision",
       "Queue: Credit analysis",
       "Case 2 of 3",
@@ -297,7 +297,7 @@ describe("read-only deck", () => {
       expect(html).toContain(text);
     }
     expect(html).toMatch(/<h2[^>]*>Voahangy Rasoanaivo<\/h2>/);
-    for (const text of ["Triage: Credit analysis", "Exit triage", 'aria-keyshortcuts="F"', '<p role="status"', "Open the case"]) {
+    for (const text of ["Triage: Credit analysis", "Only the participant of the step can decide.", "Exit triage", 'aria-keyshortcuts="F"', '<p role="status"', "Open the case"]) {
       expect(html).not.toContain(text);
     }
   });

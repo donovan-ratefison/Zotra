@@ -5,7 +5,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CircleCheck, FileText, FileX, Info, Lock, ScanSearch, ShieldCheck } from "lucide-react";
+import { CircleCheck, FileText, FileX, Info, Lock, ShieldCheck } from "lucide-react";
 import { ApiError } from "../studio/api";
 import type { CaseEvent } from "../studio/case-api";
 import { documentBytesUrl, readZones, type DocumentDTO } from "../studio/doc-api";
@@ -14,6 +14,7 @@ import type { ProcessNode } from "../studio/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent } from "@/ui/dialog";
+import { Hint } from "@/ui/hint";
 import { dayTimeText } from "./InboxScreen";
 import { Kbd } from "./TriageScreen";
 import { docConsequence, docStep, zoneText, type DocRow } from "./triage";
@@ -135,11 +136,6 @@ export function TriageDocumentsBody(props: BodyProps & {
               </button>
             ))}
           </div>
-          <ol className="mx-3.5 mt-3 grid list-decimal gap-1 rounded-[7px] border border-zinc-100 bg-stone-50 py-2.5 pr-3 pl-7 text-xs text-zinc-700 marker:font-semibold marker:text-primary">
-            <li>A participant attaches the scan at its step.</li>
-            <li>The document model finds the zones.</li>
-            <li>The process rule decides.</li>
-          </ol>
           {scan !== null && (
             <div className="mt-auto grid gap-[3px] border-t px-3.5 py-2.5 text-[11.5px] text-muted-foreground">
               <div>{`Added ${dayTimeText(scan.created_at, false)}.`}</div>
@@ -183,16 +179,18 @@ export function TriageDocumentsBody(props: BodyProps & {
 
         <section className="flex min-h-0 flex-col border-l">
           <div className="flex items-center justify-between px-3.5 pt-3 pb-2.5 text-[13px]">
-            <b className="font-semibold">Document check</b>
+            <span className="flex items-center gap-1.5">
+              <b className="font-semibold">Document check</b>
+              <Hint label="About the document check">
+                A participant attaches the scan at its step. The document model (SAM 3.1) finds the zones on the scan.
+                The process rule decides. Rules and humans decide. The AI only checks.
+              </Hint>
+            </span>
             <small className="truncate pl-2 text-xs text-muted-foreground">{row.name}</small>
           </div>
           <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-auto px-3.5 pb-3">
             {scan !== null && (
               <>
-                <p className="flex items-start gap-2 text-xs text-muted-foreground">
-                  <ScanSearch className="mt-px size-3.5 shrink-0 text-primary" />
-                  The document model (SAM 3.1) finds the zones on the scan. The process rule decides.
-                </p>
                 {zonesQ.isError ? (
                   <p className="text-[12.5px] text-red-700">
                     {`The zones did not load: ${
@@ -228,13 +226,12 @@ export function TriageDocumentsBody(props: BodyProps & {
                 <small className="mt-0.5 block text-xs leading-snug opacity-85">{cons.detail}</small>
               </div>
             </div>
-            <p className="mt-auto flex items-start gap-2 rounded-[7px] border border-zinc-100 bg-stone-50 px-3 py-2.5 text-xs text-zinc-700">
-              <ShieldCheck className="mt-px size-3.5 shrink-0 text-primary" />
-              <span>
-                Rules and humans decide. The AI only checks.
-                {cons.tone === "bad" && " You cannot close the step yet."}
-              </span>
-            </p>
+            {cons.tone === "bad" && (
+              <p className="mt-auto flex items-start gap-2 rounded-[7px] border border-zinc-100 bg-stone-50 px-3 py-2.5 text-xs text-zinc-700">
+                <ShieldCheck className="mt-px size-3.5 shrink-0 text-primary" />
+                <span>You cannot close the step yet.</span>
+              </p>
+            )}
           </div>
         </section>
       </div>

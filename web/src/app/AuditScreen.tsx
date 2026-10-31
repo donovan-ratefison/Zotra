@@ -4,6 +4,7 @@
 
 import { eventLabel } from "../studio/Timeline";
 import { Button } from "@/ui/button";
+import { Hint } from "@/ui/hint";
 import type { AuditEvent, AuditVerify } from "./sup-api";
 import type { UserDTO } from "../studio/case-api";
 import type { ProcessDefinition } from "../studio/types";
@@ -37,14 +38,14 @@ export function AuditScreen({
   return (
     <div className="mx-auto w-full max-w-[1100px] px-8 py-6">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="flex items-center gap-2">
           <h1 className="text-2xl font-semibold tracking-tight">
             Audit log
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <Hint label="About the audit log" side="bottom">
             Every event carries the hash of the previous one. The log
             cannot change.
-          </p>
+          </Hint>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" disabled={busy} onClick={onVerify}>

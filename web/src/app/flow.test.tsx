@@ -129,7 +129,8 @@ describe("case flow", () => {
     const html = renderToString(CaseFlowCard({ def: seed, flow: seedFlow }));
     for (const text of [
       "Case flow, last 30 days",
-      "13 cases closed in 30 days. The band width shows the passes on each link.",
+      "13 cases closed in 30 days.",
+      'aria-label="About the case flow"',
       "Application received",
       "Outcome",
       "Complete: 18",
@@ -142,12 +143,14 @@ describe("case flow", () => {
       expect(html).toContain(text);
     }
     expect(html.match(/<path[^>]*opacity="0.42"/g)).toHaveLength(10);
+    expect(html).not.toContain("The band width shows");
   });
 
   test("14.4 row R2: no pass shows the empty text and no diagram", () => {
     const html = renderToString(CaseFlowCard({ def: seed, flow: zeroFlow }));
     expect(html).toContain("No case passed a link in 30 days.");
-    expect(html).not.toContain("<svg");
+    // The only svg is the (?) icon of the hint.
+    expect(html.match(/<svg/g)).toHaveLength(1);
   });
 
   test("14.4 row P1: two labels at the same y are 14 apart", () => {

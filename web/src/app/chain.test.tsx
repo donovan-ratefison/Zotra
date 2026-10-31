@@ -414,7 +414,8 @@ describe("chain sheet", () => {
     const html = sheet();
     for (const text of [
       "Case history",
-      "CASE-2026-0001 · Hery Rasolofo. Each event carries the hash of the event before it.",
+      "CASE-2026-0001 · Hery Rasolofo",
+      'aria-label="About the case history"',
       "Ready to check 12 events",
       "0 / 12",
       "width:0%",
@@ -431,11 +432,12 @@ describe("chain sheet", () => {
       "System",
       ">00000012<",
       ">00000000<",
-      "The log is append only. Nobody can edit an event in the app.",
       "sha256(prev_hash + &quot;\\n&quot; + event)",
     ]) {
       expect(html).toContain(text);
     }
+    expect(html).not.toContain("Each event carries the hash");
+    expect(html).not.toContain("append only");
     expect(count(html, "31 Oct, 10:00:00")).toBe(12);
     expect(count(html, 'data-tone="idle"')).toBe(12);
     expect(html).not.toContain("data-new");
