@@ -33,6 +33,8 @@ archives:
     files:
       - README.md
       - LICENSE
+      - docs/logo/*
+      - docs/images/*
       - .env.example
       - examples/**/*
 checksum:

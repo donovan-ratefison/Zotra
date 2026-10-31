@@ -18,6 +18,19 @@ import (
 // version is set at build time with -ldflags "-X main.version=...".
 var version = "dev"
 
+const historyUsage = `Usage: zotra-history [-days N] [-cases N] [-version] [-help]
+
+zotra-history adds a demo history of past cases to the example process.
+
+  -days N    Number of days of the history, 1 to 90. Default 30.
+  -cases N   Number of cases, 1 to 500. Default 60.
+  -version   Print the version and stop.
+
+Environment variables:
+
+  ZOTRA_DATABASE_URL  PostgreSQL URL. Required.
+`
+
 const exampleVersionID = "00000000-0000-0000-0000-000000000002"
 
 func main() {
@@ -34,6 +47,9 @@ func run(ctx context.Context, args []string, dbURL string, out io.Writer) error 
 	n := fs.Int("cases", 60, "number of cases")
 	showVersion := fs.Bool("version", false, "print the version and stop")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			_, err = fmt.Fprint(out, historyUsage)
+		}
 		return err
 	}
 	if *showVersion {

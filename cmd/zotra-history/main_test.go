@@ -48,7 +48,11 @@ func TestRunArgs(t *testing.T) { // R1 to R8
 	}
 }
 
-func TestVersionFlag(t *testing.T) { // V1, V2
+func TestVersionFlag(t *testing.T) { // V1, V2, H1
+	var h1 strings.Builder
+	if err := run(context.Background(), []string{"--version"}, "", &h1); err != nil || h1.String() != "zotra-history dev\n" {
+		t.Errorf("H1: output %q, error %v", h1.String(), err)
+	}
 	var out strings.Builder
 	if err := run(context.Background(), []string{"-version"}, "", &out); err != nil {
 		t.Fatalf("V1: %v", err)
@@ -59,6 +63,18 @@ func TestVersionFlag(t *testing.T) { // V1, V2
 	err := run(context.Background(), nil, "", io.Discard)
 	if err == nil || err.Error() != "ZOTRA_DATABASE_URL is required" {
 		t.Errorf("V2: error %v", err)
+	}
+}
+
+func TestHelpFlag(t *testing.T) { // H2
+	for _, arg := range []string{"-h", "-help", "--help"} {
+		var out strings.Builder
+		if err := run(context.Background(), []string{arg}, "", &out); err != nil {
+			t.Errorf("H2 %s: error %v", arg, err)
+		}
+		if out.String() != historyUsage {
+			t.Errorf("H2 %s: output %q", arg, out.String())
+		}
 	}
 }
 

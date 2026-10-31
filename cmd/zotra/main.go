@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -29,10 +30,55 @@ func main() {
 		}
 		return
 	}
+	if code, stop := cliArgs(os.Args[1:], os.Stdout, os.Stderr); stop {
+		os.Exit(code)
+	}
 	if err := run(); err != nil {
 		slog.Error(err.Error())
 		os.Exit(1)
 	}
+}
+
+const zotraUsage = `Usage: zotra [--version | --help | health]
+
+Zotra serves the web app and the API. Environment variables:
+
+  ZOTRA_ADDR             Listen address. Default :8080.
+  ZOTRA_DATABASE_URL     PostgreSQL URL. Empty: no process, case or inbox routes.
+  ZOTRA_FEEDBACK_DIR     Folder of the feedback items. Empty: no feedback routes.
+  ZOTRA_AI_MODE          live, cache, replay or off. Default cache.
+  ZOTRA_AI_API_KEY       Meta API key.
+  ZOTRA_AI_BASE_URL      Meta API URL. Default https://api.meta.ai/v1.
+  ZOTRA_AI_TEXT_MODEL    Text model. Default muse-spark-1.3.
+  ZOTRA_AI_SAM_MODEL     SAM model. Default sam-3.1.
+  ZOTRA_AI_READ_MODEL    Field reading model. Empty: the text model.
+  ZOTRA_AI_DOC_BASE_URL  URL of the document calls. Empty: ZOTRA_AI_BASE_URL.
+  ZOTRA_AI_DOC_API_KEY   Key of the document calls. Empty: ZOTRA_AI_API_KEY.
+  ZOTRA_AI_CACHE_DIR     Folder of the AI cache. Default local/ai-cache.
+  ZOTRA_AI_STATE_DIR     Folder of the daily AI budget. Empty: the cache folder.
+  ZOTRA_AI_BUDGET_USD    Daily AI budget in USD. Default 2.
+
+health asks /api/health of the app on ZOTRA_ADDR and exits 1 if it fails.
+`
+
+// cliArgs handles the arguments. stop is true when the command must
+// stop with the exit code code. No argument starts the server.
+func cliArgs(args []string, stdout, stderr io.Writer) (code int, stop bool) {
+	if len(args) == 0 {
+		return 0, false
+	}
+	if len(args) == 1 {
+		switch args[0] {
+		case "--version", "-version":
+			fmt.Fprintf(stdout, "zotra %s\n", version)
+			return 0, true
+		case "--help", "-help", "-h":
+			fmt.Fprint(stdout, zotraUsage)
+			return 0, true
+		}
+	}
+	fmt.Fprintf(stderr, "zotra: unknown argument %q. Run zotra --help.\n", args[0])
+	return 2, true
 }
 
 // listenAddr returns ZOTRA_ADDR, or ":8080" if it is empty.
