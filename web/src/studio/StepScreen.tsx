@@ -153,7 +153,7 @@ function Footer({ children }: { children: ReactNode }) {
   );
 }
 
-export function StepScreen({ def, state, users, actor, onActorChange, onCommand, onDecide, failedChecks, readOnly = false, actorLocked = false, actorInBar = false, showHeader = true, finalData = false, documents, documentsError, events, uploading, onUpload }: {
+export function StepScreen({ def, state, users, actor, onActorChange, onCommand, onDecide, failedChecks, readOnly = false, actorLocked = false, actorInBar = false, showHeader = true, finalData = false, documents, documentsError, events, uploading, onUpload, showSummary = true, checkResult }: {
   def: ProcessDefinition;
   state: CaseState;
   users: UserDTO[];
@@ -172,6 +172,8 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
   events: CaseEvent[];
   uploading: boolean;
   onUpload: (file: File, targetName: string) => void;
+  showSummary?: boolean; // false: the caller renders the case data
+  checkResult?: ReactNode; // the check result, above the actions
 }) {
   if (state.status === "closed") {
     return (
@@ -233,6 +235,8 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
           events={events}
           uploading={uploading}
           onUpload={onUpload}
+          showSummary={showSummary}
+          checkResult={checkResult}
         />
       )}
     </div>
@@ -242,7 +246,7 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
 // TaskBody is the task-only part: the Act as pick, then the take
 // button or the form with the actions. A replay disables the pick and
 // hides the commands.
-function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, onDecide, failedChecks, readOnly, actorLocked, actorInBar, documents, documentsError, events, uploading, onUpload }: {
+function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, onDecide, failedChecks, readOnly, actorLocked, actorInBar, documents, documentsError, events, uploading, onUpload, showSummary, checkResult }: {
   def: ProcessDefinition;
   node: ProcessNode;
   state: CaseState;
@@ -260,6 +264,8 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, on
   events: CaseEvent[];
   uploading: boolean;
   onUpload: (file: File, targetName: string) => void;
+  showSummary: boolean;
+  checkResult: ReactNode;
 }) {
   // The effect fires with the assignee when one is set, else with
   // the first list entry when the actor is not in the list: what the
@@ -310,6 +316,7 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, on
           {`Taken by ${actorName(state.assignee)}.`}
         </div>
         <FailedChecks failedChecks={failedChecks} />
+        {checkResult}
       </div>
     );
   }
@@ -319,8 +326,9 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, on
       <>
         <div className="flex flex-col gap-3 px-4 pt-3 pb-4">
           {actorLine}
-          <CaseSummary def={def} node={node} state={state} withWrites />
+          {showSummary && <CaseSummary def={def} node={node} state={state} withWrites />}
           <FailedChecks failedChecks={failedChecks} />
+          {checkResult}
         </div>
         {!readOnly && (
           <Footer>
@@ -349,6 +357,8 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, on
       events={events}
       uploading={uploading}
       onUpload={onUpload}
+      showSummary={showSummary}
+      checkResult={checkResult}
     />
   );
 }
@@ -357,7 +367,7 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, on
 // row, in their display form. A computed field shows here whatever
 // its access: the engine computes it. withWrites adds the fields the
 // role writes: before the take, the form is not open yet.
-function CaseSummary({ def, node, state, withWrites = false }: {
+export function CaseSummary({ def, node, state, withWrites = false }: {
   def: ProcessDefinition;
   node: ProcessNode;
   state: CaseState;
@@ -463,7 +473,7 @@ export function sendsBack(def: ProcessDefinition, nodeId: string, decision: stri
 // fields with the local values, the documents, and the sticky
 // actions. The key on the parent render resets the values at each
 // step change. A replay disables the inputs and hides the actions.
-function StepForm({ def, node, state, actorLine, onCommand, onDecide, failedChecks, readOnly, documents, documentsError, events, uploading, onUpload }: {
+function StepForm({ def, node, state, actorLine, onCommand, onDecide, failedChecks, readOnly, documents, documentsError, events, uploading, onUpload, showSummary, checkResult }: {
   def: ProcessDefinition;
   node: ProcessNode;
   state: CaseState;
@@ -477,6 +487,8 @@ function StepForm({ def, node, state, actorLine, onCommand, onDecide, failedChec
   events: CaseEvent[];
   uploading: boolean;
   onUpload: (file: File, targetName: string) => void;
+  showSummary: boolean;
+  checkResult: ReactNode;
 }) {
   const [values, setValues] = useState<Record<string, unknown>>({});
   // asked is the decision that waits for its confirmation.
@@ -572,7 +584,7 @@ function StepForm({ def, node, state, actorLine, onCommand, onDecide, failedChec
     <>
       <div className="flex flex-col gap-3 px-4 pt-3 pb-4">
         {actorLine}
-        <CaseSummary def={def} node={node} state={state} />
+        {showSummary && <CaseSummary def={def} node={node} state={state} />}
         {inputs.length > 0 && (
           <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
             {inputs.map((field) => (
@@ -607,6 +619,7 @@ function StepForm({ def, node, state, actorLine, onCommand, onDecide, failedChec
           />
         )}
         <FailedChecks failedChecks={failedChecks} />
+        {checkResult}
       </div>
       {!readOnly && (
         <Footer>

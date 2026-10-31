@@ -1,12 +1,14 @@
 // The case screen of the delivered app: the header card (figures,
-// deadline and stepper) and the step screen with the actor locked to
-// the picked user. The command and upload wiring copies the delivered
+// deadline and stepper), then two columns. The left column holds the
+// case data, the share of income and the supporting documents. The
+// right column holds the step screen with the actor locked to the
+// picked user, and the rules of the step above its actions. The command and upload wiring copies the delivered
 // test screen.
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Check } from "lucide-react";
+import { ArrowLeft, Check, FileText } from "lucide-react";
 import { ApiError, getVersion } from "../studio/api";
 import {
   listEvents,
@@ -23,11 +25,12 @@ import {
   uploadDocument,
   type DocumentDTO,
 } from "../studio/doc-api";
-import { StepScreen } from "../studio/StepScreen";
+import { CaseSummary, StepScreen } from "../studio/StepScreen";
 import { Button } from "@/ui/button";
 import { dayTimeText, moneyText, pickField } from "./InboxScreen";
-import { leftStep, sendDecision } from "./triage";
-import { Pill } from "./TriageScreen";
+import { fetchChecks } from "./app-api";
+import { documentRows, leftStep, sendDecision, shareOfIncome } from "./triage";
+import { Pill, RulesSection, ShareBar } from "./TriageScreen";
 import { deadlineOf, stepperOf, type StepperItem } from "./case-header";
 
 // Loading is the pending stage of the case or of its version.
@@ -82,10 +85,14 @@ function Stepper({ items }: { items: StepperItem[] }) {
   );
 }
 
+function messageOf(error: unknown): string {
+  return error instanceof ApiError ? error.message : String(error);
+}
+
 // ErrorScreen is the error stage of the case or of its version. The
 // heading copies the delivered text of the test screen.
 function ErrorScreen({ error }: { error: unknown }) {
-  const message = error instanceof ApiError ? error.message : String(error);
+  const message = messageOf(error);
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
       <h1 className="text-lg font-semibold">The case did not load.</h1>
@@ -128,6 +135,12 @@ export function CaseScreen({
     queryKey: ["documents", caseId],
     queryFn: () => listCaseDocuments(caseId),
   });
+  // The same key as the triage deck: one cache for the checks of a case.
+  const checksQuery = useQuery({
+    queryKey: ["checks", caseId],
+    queryFn: () => fetchChecks(caseId),
+    enabled: caseQuery.data?.state.status === "open",
+  });
 
   const [lastAnswer, setLastAnswer] = useState<{
     events: CaseEvent[];
@@ -169,10 +182,12 @@ export function CaseScreen({
       );
       if (onLeftStep && state && leftStep(state, answer.state)) onLeftStep();
       void queryClient.invalidateQueries({ queryKey: ["events", caseId] });
+      void queryClient.invalidateQueries({ queryKey: ["checks", caseId] });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : String(err));
       void queryClient.invalidateQueries({ queryKey: ["case", caseId] });
       void queryClient.invalidateQueries({ queryKey: ["events", caseId] });
+      void queryClient.invalidateQueries({ queryKey: ["checks", caseId] });
     }
   }
 
@@ -234,6 +249,12 @@ export function CaseScreen({
     caseQuery.dataUpdatedAt,
   );
   const steps = stepperOf(loadedDef, events, loaded.state);
+  const share = shareOfIncome(loaded.state);
+  const rows =
+    documentsQuery.data === undefined
+      ? null
+      : documentRows(loadedDef, events, loaded.state.node_id, documentsQuery.data);
+  const provided = (rows ?? []).filter((r) => r.scan !== null).length;
 
   return (
     <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-4 px-6 py-6">
@@ -301,27 +322,92 @@ export function CaseScreen({
           <Stepper items={steps} />
         </div>
       </div>
-      <div className="rounded-lg border bg-card">
-        <StepScreen
-          def={loadedDef}
-          state={loaded.state}
-          users={users}
-          actor={userId}
-          onActorChange={() => {}}
-          onCommand={(cmd) => void onCommands([cmd])}
-          onDecide={(cmds) => void onCommands(cmds)}
-          failedChecks={failedChecks}
-          documents={documentsQuery.data ?? null}
-          documentsError={
-            documentsQuery.error instanceof ApiError
-              ? documentsQuery.error.message
-              : null
-          }
-          events={eventsQuery.data ?? []}
-          uploading={uploading}
-          onUpload={onUpload}
-          actorLocked
-        />
+      <div className="grid grid-cols-[minmax(0,1fr)_360px] items-start gap-4">
+        <div className="flex min-w-0 flex-col gap-4">
+          <section aria-label="Case data" className="rounded-lg border bg-card">
+            <h2 className="border-b px-4 py-3 text-[15px] font-semibold">Case data</h2>
+            <div className="p-4">
+              {currentNode !== undefined && (
+                // The write fields show here only while the form is closed.
+                <CaseSummary
+                  def={loadedDef}
+                  node={currentNode}
+                  state={loaded.state}
+                  withWrites={loaded.state.status !== "open" || loaded.state.assignee !== userId}
+                />
+              )}
+              {share !== null && (
+                <div className="mt-3 border-t pt-3">
+                  <ShareBar share={share} />
+                </div>
+              )}
+            </div>
+          </section>
+          {(rows === null || rows.length > 0) && (
+            <section aria-label="Supporting documents" className="rounded-lg border bg-card">
+              <div className="flex items-center justify-between gap-2 px-4 py-3">
+                <h2 className="text-[15px] font-semibold">Supporting documents</h2>
+                {rows !== null && (
+                  <span className="text-xs text-muted-foreground">{`${provided} of ${rows.length} provided`}</span>
+                )}
+              </div>
+              {documentsQuery.isError ? (
+                <p className="border-t px-4 py-2.5 text-sm text-red-700">
+                  {`The documents did not load: ${messageOf(documentsQuery.error)}`}
+                </p>
+              ) : rows === null ? (
+                <p className="border-t px-4 py-2.5 text-sm text-muted-foreground">Loading the documents.</p>
+              ) : (
+                <ul>
+                  {rows.map((r) => (
+                    <li key={r.name} className="flex items-start gap-3 border-t px-4 py-2.5">
+                      <FileText size={16} className="mt-0.5 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{r.name}</p>
+                        {r.scan === null ? (
+                          <p className="text-xs text-red-700">Missing</p>
+                        ) : (
+                          <p className="truncate text-xs text-muted-foreground">{r.scan.name}</p>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+        </div>
+        <div className="rounded-lg border bg-card">
+          <StepScreen
+            def={loadedDef}
+            state={loaded.state}
+            users={users}
+            actor={userId}
+            onActorChange={() => {}}
+            onCommand={(cmd) => void onCommands([cmd])}
+            onDecide={(cmds) => void onCommands(cmds)}
+            failedChecks={failedChecks}
+            documents={documentsQuery.data ?? null}
+            documentsError={
+              documentsQuery.error instanceof ApiError
+                ? documentsQuery.error.message
+                : null
+            }
+            events={eventsQuery.data ?? []}
+            uploading={uploading}
+            onUpload={onUpload}
+            actorLocked
+            showSummary={false}
+            checkResult={
+              loaded.state.status === "open" ? (
+                <RulesSection
+                  checks={checksQuery.data?.checks ?? null}
+                  checksError={checksQuery.isError ? messageOf(checksQuery.error) : null}
+                />
+              ) : undefined
+            }
+          />
+        </div>
       </div>
     </div>
   );

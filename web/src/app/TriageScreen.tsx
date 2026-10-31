@@ -121,6 +121,78 @@ export function Pill({ tone, text }: { tone: keyof typeof TONES; text: string })
   );
 }
 
+// ShareBar is the share of income for all loans, with the limit mark.
+// The triage card and the case screen render it.
+export function ShareBar({ share }: { share: number }) {
+  const over = share > SHARE_LIMIT;
+  return (
+    <div className="grid gap-1.5">
+      <div className="flex justify-between text-[12.5px]">
+        <span>Share of income for all loans</span>
+        <span>
+          <b className={`font-semibold ${over ? "text-red-700" : ""}`}>{`${(share * 100).toFixed(1)}%`}</b>
+          <span className="text-muted-foreground">{` of ${Math.round(SHARE_LIMIT * 100)}% limit`}</span>
+        </span>
+      </div>
+      <div className="relative h-2 rounded-full bg-zinc-100">
+        <div
+          className={`absolute inset-y-0 left-0 rounded-full ${over ? "bg-red-600" : "bg-primary"}`}
+          style={{ width: `${Math.min(share / 0.5, 1) * 100}%` }}
+        />
+        <div className="absolute -inset-y-1 w-0.5 bg-zinc-700" style={{ left: `${(SHARE_LIMIT / 0.5) * 100}%` }} />
+      </div>
+    </div>
+  );
+}
+
+// RulesSection is the rules list of the checks of a case: the count,
+// then one row for each check. The triage card and the case screen
+// render it.
+export function RulesSection({ checks, checksError }: {
+  checks: CheckResult[] | null;
+  checksError: string | null;
+}) {
+  const passCount = (checks ?? []).filter((c) => c.passed && c.error === null).length;
+  return (
+    <section>
+      <h3 className="mb-0.5 flex h-5 items-center justify-between text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+        Rules
+        {checks !== null && checks.length > 0 && (
+          <span className="font-medium normal-case tracking-normal">{`${passCount} of ${checks.length} pass`}</span>
+        )}
+      </h3>
+      {checksError !== null ? (
+        <p className="text-[12.5px] text-red-700">{`The checks did not load: ${checksError}`}</p>
+      ) : checks === null ? (
+        <p className="text-[12.5px] text-muted-foreground">Loading the checks.</p>
+      ) : checks.length === 0 ? (
+        <p className="text-[12.5px] text-muted-foreground">No rule on this step.</p>
+      ) : (
+        <ul>
+          {checks.map((c) => {
+            const ok = c.passed && c.error === null;
+            return (
+              <li key={c.id} className="grid grid-cols-[16px_minmax(0,1fr)] gap-2 border-b border-zinc-100 py-1.5 text-[12.5px] leading-snug last:border-b-0">
+                {ok ? (
+                  <CircleCheck className="mt-px size-4 text-green-600" />
+                ) : (
+                  <CircleX className="mt-px size-4 text-red-600" />
+                )}
+                <div className="min-w-0">
+                  <b className="block font-mono text-xs font-medium">{c.id}</b>
+                  <small className={`block text-[11.5px] ${ok ? "text-muted-foreground" : "text-red-700"}`}>
+                    {c.passed ? c.expression : (c.error ?? c.message)}
+                  </small>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 function Centered({ children }: { children: ReactNode }) {
   return <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">{children}</div>;
 }
@@ -419,8 +491,6 @@ function Deck({
   const due = dueText(msLeft(enteredAt(events, node.id), node.deadline_hours, now));
   const figures = keyFigures(def, node, state);
   const share = shareOfIncome(state);
-  const over = share !== null && share > SHARE_LIMIT;
-  const passCount = (checks ?? []).filter((c) => c.passed && c.error === null).length;
   const keyClass =
     "inline-flex h-[34px] items-center gap-2 rounded-lg border bg-white pr-3 pl-2 text-[13px] font-medium whitespace-nowrap text-zinc-700 shadow-sm hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-45";
 
@@ -523,62 +593,10 @@ function Deck({
               </div>
             )}
 
-            {share !== null && (
-              <div className="grid gap-1.5">
-                <div className="flex justify-between text-[12.5px]">
-                  <span>Share of income for all loans</span>
-                  <span>
-                    <b className={`font-semibold ${over ? "text-red-700" : ""}`}>{`${(share * 100).toFixed(1)}%`}</b>
-                    <span className="text-muted-foreground">{` of ${Math.round(SHARE_LIMIT * 100)}% limit`}</span>
-                  </span>
-                </div>
-                <div className="relative h-2 rounded-full bg-zinc-100">
-                  <div
-                    className={`absolute inset-y-0 left-0 rounded-full ${over ? "bg-red-600" : "bg-primary"}`}
-                    style={{ width: `${Math.min(share / 0.5, 1) * 100}%` }}
-                  />
-                  <div className="absolute -inset-y-1 w-0.5 bg-zinc-700" style={{ left: `${(SHARE_LIMIT / 0.5) * 100}%` }} />
-                </div>
-              </div>
-            )}
+            {share !== null && <ShareBar share={share} />}
 
             <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] gap-[22px]">
-              <section>
-                <h3 className="mb-0.5 flex h-5 items-center justify-between text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase">
-                  Rules
-                  {checks !== null && checks.length > 0 && (
-                    <span className="font-medium normal-case tracking-normal">{`${passCount} of ${checks.length} pass`}</span>
-                  )}
-                </h3>
-                {checksError !== null ? (
-                  <p className="text-[12.5px] text-red-700">{`The checks did not load: ${checksError}`}</p>
-                ) : checks === null ? (
-                  <p className="text-[12.5px] text-muted-foreground">Loading the checks.</p>
-                ) : checks.length === 0 ? (
-                  <p className="text-[12.5px] text-muted-foreground">No rule on this step.</p>
-                ) : (
-                  <ul>
-                    {checks.map((c) => {
-                      const ok = c.passed && c.error === null;
-                      return (
-                        <li key={c.id} className="grid grid-cols-[16px_minmax(0,1fr)] gap-2 border-b border-zinc-100 py-1.5 text-[12.5px] leading-snug last:border-b-0">
-                          {ok ? (
-                            <CircleCheck className="mt-px size-4 text-green-600" />
-                          ) : (
-                            <CircleX className="mt-px size-4 text-red-600" />
-                          )}
-                          <div className="min-w-0">
-                            <b className="block font-mono text-xs font-medium">{c.id}</b>
-                            <small className={`block text-[11.5px] ${ok ? "text-muted-foreground" : "text-red-700"}`}>
-                              {c.passed ? c.expression : (c.error ?? c.message)}
-                            </small>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </section>
+              <RulesSection checks={checks} checksError={checksError} />
               <section>
                 <h3 className="mb-0.5 flex h-5 items-center justify-between text-[11.5px] font-semibold tracking-wide text-muted-foreground uppercase">
                   Documents

@@ -7,6 +7,7 @@ import { describe, expect, test } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import seedJson from "../../../internal/store/seed/example-process.json";
 import type { CaseEvent, CaseState, UserDTO } from "../studio/case-api";
+import type { DocumentDTO } from "../studio/doc-api";
 import type { ProcessDefinition } from "../studio/types";
 import { upcomingIds, upcomingOf } from "../studio/TimelineBar";
 import { deadlineOf, stepperOf } from "./case-header";
@@ -109,14 +110,26 @@ const caseRow = {
   id: "c1", version_id: "v1", reference: "CASE-2026-0001", is_test: false, created_at: "2026-10-30T05:00:00Z",
 };
 
+const checksSeed = {
+  node_id: "entry",
+  checks: [{ id: "c1", message: "Amount and duration", expression: "amount > 0.0 && duration_months <= 300", passed: true, error: null }],
+};
+
 // renderCase renders the case screen with the caches seeded. With
-// events undefined the events query pends.
-function renderCase(state: CaseState, events: CaseEvent[] | undefined): string {
+// events undefined the events query pends; with documents or checks
+// null their query pends.
+function renderCase(
+  state: CaseState,
+  events: CaseEvent[] | undefined,
+  documents: DocumentDTO[] | null = [],
+  checks: typeof checksSeed | null = checksSeed,
+): string {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(["version", "v1"], versionSeed);
   client.setQueryData(["case", "c1"], { case: caseRow, state });
   if (events !== undefined) client.setQueryData(["events", "c1"], events);
-  client.setQueryData(["documents", "c1"], []);
+  if (documents !== null) client.setQueryData(["documents", "c1"], documents);
+  if (checks !== null) client.setQueryData(["checks", "c1"], checks);
   return renderToString(
     createElement(
       QueryClientProvider,
@@ -166,5 +179,74 @@ describe("case header render", () => {
     const html = renderCase(S("entry", "open"), entryOpen);
     expect(html).toContain("max-w-[1120px]");
     expect(html).not.toContain("max-w-[720px]");
+  });
+});
+
+const count = (html: string, text: string) => html.split(text).length - 1;
+
+describe("case two columns", () => {
+  test("B1: two columns, the left cards before the step", () => {
+    const html = renderCase(S("entry", "open"), entryOpen);
+    expect(html).toContain("grid-cols-[minmax(0,1fr)_360px]");
+    expect(html.indexOf("Case data")).toBeGreaterThan(-1);
+    expect(html.indexOf("Case data")).toBeLessThan(html.indexOf("Supporting documents"));
+    expect(html.indexOf("Supporting documents")).toBeLessThan(html.indexOf("Take the step"));
+  });
+  test("B2: the case data shows one time", () => {
+    expect(count(renderCase(S("entry", "open"), entryOpen), "Loan amount")).toBe(1);
+  });
+  test("B2b: a taken step shows its write fields in the form only", () => {
+    const html = renderCase(S("entry", "open", { assignee: "u-advisor" }), entryOpen);
+    expect(html).toContain("Hery Rabe");
+    expect(count(html, ">Client name<")).toBe(1);
+  });
+  test("B3: the rules show above the action", () => {
+    const html = renderCase(S("entry", "open"), entryOpen);
+    expect(html.indexOf("1 of 1 pass")).toBeGreaterThan(-1);
+    expect(html.indexOf("1 of 1 pass")).toBeLessThan(html.indexOf("Take the step"));
+    expect(html).toContain("amount &gt; 0.0 &amp;&amp; duration_months &lt;= 300");
+  });
+  test("B4: no scan gives 0 of 4 and four Missing", () => {
+    const html = renderCase(S("entry", "open"), entryOpen, []);
+    expect(html).toContain("0 of 4 provided");
+    expect(count(html, "Missing")).toBe(4);
+  });
+  test("B5: one scan provides the ID card", () => {
+    const doc: DocumentDTO = {
+      id: "d1", case_id: "c1", name: "ID card.pdf", mime: "application/pdf", sha256: "x", created_at: "2026-10-30T05:10:00Z",
+    };
+    const html = renderCase(S("entry", "open"), entryOpen, [doc]);
+    expect(html).toContain("1 of 4 provided");
+    expect(html).toContain("ID card.pdf");
+    expect(count(html, "Missing")).toBe(3);
+  });
+  test("B6: pending documents give the loading text", () => {
+    expect(renderCase(S("entry", "open"), entryOpen, null)).toContain("Loading the documents.");
+  });
+  test("B7: the existing loans source gives the share bar", () => {
+    const html = renderCase(
+      S("entry", "open", {
+        data: { client_name: "Hery Rabe", amount: 150000, monthly_income: 4000, monthly_payment: 908.97 },
+        sources: { existing_loans: { monthly_total: 0 } },
+      }),
+      entryOpen,
+    );
+    expect(html).toContain("Share of income for all loans");
+    expect(html).toContain("22.7%");
+  });
+  test("B8: no sources gives no share bar", () => {
+    expect(renderCase(S("entry", "open"), entryOpen)).not.toContain("Share of income for all loans");
+  });
+  test("B9: pending checks give the loading text before the action", () => {
+    const html = renderCase(S("entry", "open"), entryOpen, [], null);
+    expect(html.indexOf("Loading the checks.")).toBeGreaterThan(-1);
+    expect(html.indexOf("Loading the checks.")).toBeLessThan(html.indexOf("Take the step"));
+  });
+  test("B10: a closed case has no rules", () => {
+    const events = entered(["entry", "complete", "analysis", "refused"]);
+    const html = renderCase(S("refused", "closed"), events, [], null);
+    expect(html).not.toContain("1 of 1 pass");
+    expect(html).not.toContain("Loading the checks.");
+    expect(html).toContain("Case closed");
   });
 });
