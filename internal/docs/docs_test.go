@@ -3,7 +3,7 @@ package docs
 import (
 	"fmt"
 	"os"
-	"regexp"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -110,32 +110,41 @@ func TestMarkdownFixture(t *testing.T) {
 // 2.
 func TestHTMLFixture(t *testing.T) {
 	text := string(HTML(docFixture(t)))
-	hasAll(t, "html", text, "<!doctype html>", "<svg", "<h1>Home loan</h1>", "<table>")
+	const script = `<script type="module" src="/assets/doc-diagram.js"></script>`
+	hasAll(t, "html", text, "<!doctype html>", "<h1>Home loan</h1>", "<table>",
+		`<div id="diagram"></div>`, `<script type="application/json" id="process-definition">`, script)
+	if strings.Contains(text, "<svg") {
+		t.Error("html has an inline <svg>")
+	}
 	var want []string
 	for _, h := range headings {
 		want = append(want, "<h2>"+h+"</h2>")
 	}
-	inOrder(t, text, append([]string{"<h1>Home loan</h1>", "<svg"}, want...)...)
+	inOrder(t, text, append([]string{"<h1>Home loan</h1>", `<div id="diagram"></div>`}, want...)...)
 	if !strings.HasSuffix(text, "</html>\n") {
 		t.Error("no trailing newline")
 	}
 }
 
-// 3.
-func TestSVGFixture(t *testing.T) {
-	text := string(SVG(docFixture(t)))
-	if n := strings.Count(text, "<rect "); n != 11 {
-		t.Errorf("rect = %d, want 11", n)
+// 2b. The definition in the page decodes to the same definition, and
+// it cannot close its script element.
+func TestHTMLFixtureDefinition(t *testing.T) {
+	def := docFixture(t)
+	text := string(HTML(def))
+	_, rest, ok := strings.Cut(text, `id="process-definition">`)
+	data, _, ok2 := strings.Cut(rest, "</script>")
+	if !ok || !ok2 {
+		t.Fatal("no process-definition script")
 	}
-	if n := strings.Count(text, "<line "); n != 14 {
-		t.Errorf("line = %d, want 14", n)
+	if strings.Contains(data, "</") {
+		t.Error("the JSON has </")
 	}
-	hasAll(t, "svg", text, `viewBox="0 0 260 1000"`, ">Incomplete</text>")
-	for id, fill := range map[string]string{"released": "#16a34a", "refused": "#dc2626"} {
-		re := regexp.MustCompile(`<g id="node-` + id + `"><rect [^>]*fill="` + fill + `"`)
-		if !re.MatchString(text) {
-			t.Errorf("%s box has no fill %s", id, fill)
-		}
+	got, err := process.Decode([]byte(data))
+	if err != nil {
+		t.Fatalf("decode page JSON: %v", err)
+	}
+	if !reflect.DeepEqual(got, def) {
+		t.Error("page JSON does not decode to the input definition")
 	}
 }
 
@@ -215,5 +224,5 @@ func TestMinimal(t *testing.T) {
 	}
 	hasAll(t, "markdown", md, "## Roles\n\n-\n", "## Data model\n\n-\n",
 		"## Data scope\n\n-\n", "## Policy citations\n\n-\n")
-	hasAll(t, "html", string(HTML(def)), "<svg", "<h1>Mini</h1>")
+	hasAll(t, "html", string(HTML(def)), `id="diagram"`, "<h1>Mini</h1>")
 }

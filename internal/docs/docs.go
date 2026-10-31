@@ -1,10 +1,12 @@
 // Package docs generates the documentation of one process version
-// from its process file: Markdown, a printable HTML page and an SVG
-// diagram. The output depends on the definition only, so the
-// documentation of a frozen version never changes.
+// from its process file: Markdown and a printable HTML page. The page
+// draws the diagram in the browser with the layout of the studio. The
+// output depends on the definition only, so the documentation of a
+// frozen version never changes.
 package docs
 
 import (
+	"encoding/json"
 	"fmt"
 	"html"
 	"slices"
@@ -287,16 +289,23 @@ func htm(l line) string {
 
 const css = `body{font-family:Georgia,serif;max-width:720px;margin:2em auto;padding:0 1em;color:#111}
 table{border-collapse:collapse;margin:1em 0}th,td{border:1px solid #999;padding:4px 8px;text-align:left}
-code{font-size:90%}svg{display:block;margin:1em 0}@media print{section{break-inside:auto}}`
+code{font-size:90%}#diagram{position:relative;left:50%;transform:translateX(-50%);width:calc(100vw - 2em)}
+#diagram svg{display:block;max-width:100%;height:auto;margin:1em auto}
+@media print{section{break-inside:auto}#diagram{left:0;transform:none;width:auto}}`
 
-// HTML renders the printable page: the same sections, one inline
-// <svg> for the diagram and minimal inline CSS.
+// HTML renders the printable page: the same sections, the process
+// definition as JSON for the diagram script, and minimal inline CSS.
 func HTML(def process.Definition) []byte {
 	var b strings.Builder
 	name := html.EscapeString(def.Name)
+	// Marshal cannot fail for this type. It escapes <, > and &, so the JSON cannot close the script.
+	data, _ := json.Marshal(def)
 	fmt.Fprintf(&b, "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"+
-		"<title>%s</title>\n<style>\n%s\n</style>\n</head>\n<body>\n<h1>%s</h1>\n<p>%s</p>\n%s",
-		name, css, name, intro, SVG(def))
+		"<title>%s</title>\n<style>\n%s\n</style>\n</head>\n<body>\n<h1>%s</h1>\n<p>%s</p>\n"+
+		"<div id=\"diagram\"></div>\n"+
+		"<script type=\"application/json\" id=\"process-definition\">%s</script>\n"+
+		"<script type=\"module\" src=\"/assets/doc-diagram.js\"></script>\n",
+		name, css, name, intro, data)
 	for _, s := range sections(def) {
 		fmt.Fprintf(&b, "<section>\n<h2>%s</h2>\n", s.title)
 		for _, bl := range s.blocks {
@@ -330,69 +339,5 @@ func HTML(def process.Definition) []byte {
 		b.WriteString("</section>\n")
 	}
 	b.WriteString("</body>\n</html>\n")
-	return []byte(b.String())
-}
-
-// The end colors of the studio canvas, used as box fills.
-var endFill = map[string]string{"approved": "#16a34a", "refused": "#dc2626"}
-
-// SVG renders a simple deterministic diagram: one 220 x 60 box per
-// node, one row per node in array order, and one straight arrow per
-// edge from the bottom of the source box to the top of the target box.
-func SVG(def process.Definition) []byte {
-	const x, w, h, step, top = 20, 220, 60, 90, 20
-	row := map[string]int{}
-	for i, n := range def.Nodes {
-		row[n.ID] = i
-	}
-	// Spread the arrows of one box along its width, so that they do
-	// not overlap.
-	outs, ins := map[string][]int{}, map[string][]int{}
-	for i, e := range def.Edges {
-		outs[e.From] = append(outs[e.From], i)
-		ins[e.To] = append(ins[e.To], i)
-	}
-	spread := func(list []int, i int) int {
-		return x + w*(slices.Index(list, i)+1)/(len(list)+1)
-	}
-
-	// The lines go first, so that the boxes hide them and the labels
-	// stay on top.
-	var b, boxes, labels strings.Builder
-	fmt.Fprintf(&b, `<svg xmlns="http://www.w3.org/2000/svg" width="260" height="%[1]d" viewBox="0 0 260 %[1]d" font-family="sans-serif" font-size="12">`+"\n",
-		len(def.Nodes)*step+top-step+h+top)
-	b.WriteString(`<defs><marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#555"/></marker></defs>` + "\n")
-	for i, n := range def.Nodes {
-		fill, color := "#ffffff", "#111111"
-		if n.EndResult != nil && endFill[*n.EndResult] != "" {
-			fill, color = endFill[*n.EndResult], "#ffffff"
-		}
-		y := top + i*step
-		fmt.Fprintf(&boxes, `<g id="node-%s"><rect x="%d" y="%d" width="%d" height="%d" rx="10" fill="%s" stroke="#555"/>`+
-			`<text x="%d" y="%d" text-anchor="middle" dominant-baseline="middle" fill="%s">%s</text></g>`+"\n",
-			html.EscapeString(n.ID), x, y, w, h, fill, x+w/2, y+h/2, color, html.EscapeString(n.Name))
-	}
-	for i, e := range def.Edges {
-		from, okFrom := row[e.From]
-		to, okTo := row[e.To]
-		if !okFrom || !okTo {
-			continue
-		}
-		x1, y1 := spread(outs[e.From], i), top+from*step+h
-		x2, y2 := spread(ins[e.To], i), top+to*step
-		fmt.Fprintf(&b, `<line x1="%d" y1="%d" x2="%d" y2="%d" stroke="#555" marker-end="url(#arrow)"/>`+"\n",
-			x1, y1, x2, y2)
-		label := ""
-		if e.Label != nil {
-			label = *e.Label
-		} else if e.Decision != nil {
-			label = *e.Decision
-		}
-		if label != "" {
-			fmt.Fprintf(&labels, `<text x="%d" y="%d" text-anchor="middle" fill="#111" stroke="#fff" stroke-width="3" paint-order="stroke">%s</text>`+"\n",
-				(x1+x2)/2, (y1+y2)/2, html.EscapeString(label))
-		}
-	}
-	b.WriteString(boxes.String() + labels.String() + "</svg>\n")
 	return []byte(b.String())
 }

@@ -13,7 +13,7 @@ func TestVersionDoc(t *testing.T) {
 	newTestAPI(t)
 	for _, c := range []struct{ path, contentType, part string }{
 		{"doc.md", "text/markdown; charset=utf-8", "# Home loan\n"},
-		{"doc.html", "text/html; charset=utf-8", "<svg"},
+		{"doc.html", "text/html; charset=utf-8", `id="process-definition"`},
 	} {
 		rec := do(t, "GET", "/api/versions/"+seedVersionID+"/"+c.path, "", "")
 		if rec.Code != http.StatusOK {
