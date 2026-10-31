@@ -378,12 +378,58 @@ describe("event labels", () => {
     ).toBe("Link Application entry to Review");
   });
 
-  test("3.2 row 4: a failed check gives failed", () => {
+  test("3.2 row 4: a failed check gives its position and message", () => {
     expect(
       eventLabel(testDefinition, ev(4, "check_evaluated", {
         node_id: "entry", check_id: "c1", result: false, error: null,
       })),
-    ).toBe("Check c1 failed");
+    ).toBe("Check 1 failed: The amount must be positive.");
+  });
+
+  const entryNode = testDefinition.nodes.find((nd) => nd.id === "entry")!;
+  const c1 = entryNode.checks[0]!;
+  const withChecks = (checks: typeof entryNode.checks): ProcessDefinition => ({
+    ...testDefinition,
+    nodes: testDefinition.nodes.map((nd) =>
+      nd.id === "entry" ? { ...nd, checks } : nd,
+    ),
+  });
+  const twoChecks = withChecks([
+    c1,
+    { ...c1, id: "c2", message: "The term is too long." },
+  ]);
+  const checkLabel = (
+    def: ProcessDefinition,
+    nodeId: string,
+    checkId: string,
+    result: boolean,
+  ) =>
+    eventLabel(def, ev(4, "check_evaluated", {
+      node_id: nodeId, check_id: checkId, result, error: null,
+    }));
+
+  test("P1: a passed check gives its position", () => {
+    expect(checkLabel(testDefinition, "entry", "c1", true)).toBe("Check 1 passed");
+  });
+
+  test("P2: an unknown check gives the raw id", () => {
+    expect(checkLabel(testDefinition, "entry", "c9", false)).toBe("Check c9 failed");
+  });
+
+  test("P3: an unknown node gives the raw check id", () => {
+    expect(checkLabel(testDefinition, "ghost", "c1", true)).toBe("Check c1 passed");
+  });
+
+  test("P4: a failed check with an empty message gives no colon", () => {
+    expect(
+      checkLabel(withChecks([{ ...c1, message: "" }]), "entry", "c1", false),
+    ).toBe("Check 1 failed");
+  });
+
+  test("P5: the second check of a step gives Check 2", () => {
+    expect(checkLabel(twoChecks, "entry", "c2", false)).toBe(
+      "Check 2 failed: The term is too long.",
+    );
   });
 
   test("3.2 row 5: a step_assigned names the user", () => {
