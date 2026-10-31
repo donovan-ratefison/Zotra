@@ -3,12 +3,14 @@ package api
 // The version routes: read, update a draft, validate, lifecycle.
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 
 	"github.com/donovan-ratefison/zotra/internal/docs"
 	"github.com/donovan-ratefison/zotra/internal/process"
 	"github.com/donovan-ratefison/zotra/internal/rules"
+	"github.com/donovan-ratefison/zotra/internal/store"
 )
 
 // readVersion answers 200 {"version":{...}}.
@@ -103,19 +105,40 @@ func (d apiDeps) forkVersion(w http.ResponseWriter, r *http.Request) {
 
 // versionMarkdown answers the documentation of a version in Markdown.
 func (d apiDeps) versionMarkdown(w http.ResponseWriter, r *http.Request) {
-	d.writeDoc(w, r, "text/markdown; charset=utf-8", docs.Markdown)
+	d.writeDoc(w, r, "text/markdown; charset=utf-8",
+		func(def process.Definition, _ store.Version) []byte { return docs.Markdown(def) })
 }
 
 // versionHTML answers the documentation of a version as a printable
-// HTML page.
+// HTML page with the bank profile.
 func (d apiDeps) versionHTML(w http.ResponseWriter, r *http.Request) {
-	d.writeDoc(w, r, "text/html; charset=utf-8", docs.HTML)
+	b, err := d.st.Bank(r.Context())
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	d.writeDoc(w, r, "text/html; charset=utf-8",
+		func(def process.Definition, v store.Version) []byte { return docs.HTML(def, coverOf(b, v)) })
+}
+
+// coverOf is the page data of the bank and the version. The logo is a
+// data URI, so the page prints and saves as one file.
+func coverOf(b store.Bank, v store.Version) docs.Cover {
+	c := docs.Cover{BankName: b.Name, PrimaryColor: b.PrimaryColor, AccentColor: b.AccentColor,
+		Version: v.Number, Status: v.Status, Date: v.CreatedAt}
+	if b.Logo != nil {
+		c.LogoURI = "data:" + b.LogoMIME + ";base64," + base64.StdEncoding.EncodeToString(b.Logo)
+	}
+	if v.FrozenAt != nil {
+		c.Date = *v.FrozenAt
+	}
+	return c
 }
 
 // writeDoc generates the documentation from the stored definition at
 // each request. A draft can hold a definition that does not decode.
 func (d apiDeps) writeDoc(w http.ResponseWriter, r *http.Request, contentType string,
-	render func(process.Definition) []byte) {
+	render func(process.Definition, store.Version) []byte) {
 	id := r.PathValue("id")
 	v, err := d.st.GetVersion(r.Context(), id)
 	if err != nil {
@@ -130,5 +153,5 @@ func (d apiDeps) writeDoc(w http.ResponseWriter, r *http.Request, contentType st
 	}
 	w.Header().Set("Content-Type", contentType)
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(render(def))
+	_, _ = w.Write(render(def, v))
 }

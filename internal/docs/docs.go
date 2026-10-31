@@ -10,10 +10,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"math"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/donovan-ratefison/zotra/internal/process"
@@ -32,13 +34,17 @@ type line []span
 
 // block is one item of a section: a step heading, a paragraph, a
 // bullet list or a table. A table sets head and rows; each other
-// kind sets one field.
+// kind sets one field. HTML only: tag is the card header tag of a
+// step heading, and lis, when set, holds the <li> of each list line
+// ("" hides the line).
 type block struct {
 	heading string
 	text    line
 	list    []line
 	head    []string
 	rows    []cells
+	tag     string
+	lis     []string
 }
 
 // cells is one table row: one line for each cell.
@@ -275,6 +281,10 @@ func dataScope(def process.Definition) block {
 
 // steps is one numbered heading and one bullet list for each node.
 func steps(def process.Definition, roleName map[string]string) []block {
+	roleColor := map[string]string{}
+	for i, r := range def.Roles {
+		roleColor[r.ID] = rolePalette[i%len(rolePalette)]
+	}
 	nodeName := map[string]string{}
 	for _, n := range def.Nodes {
 		nodeName[n.ID] = n.Name
@@ -292,6 +302,11 @@ func steps(def process.Definition, roleName map[string]string) []block {
 			}
 		}
 		var items []line
+		var lis []string
+		tag := map[string]string{"start": "Start", "end": "End", "gateway": "Automatic rule"}[n.Type]
+		if tag != "" {
+			tag = `<span class="kind">` + tag + `</span>`
+		}
 		next := func(e process.Edge) line { return plain(end("Next: " + nodeName[e.To])) }
 		switch n.Type {
 		case "start":
@@ -322,42 +337,85 @@ func steps(def process.Definition, roleName map[string]string) []block {
 				}
 			}
 		default:
-			items = task(n, edges, roleName, nodeName, sourceName)
+			items, lis = task(n, edges, roleName, nodeName, sourceName)
+			tag = taskTag(n, roleName, roleColor)
 		}
-		out = append(out, block{heading: fmt.Sprintf("3.%d %s", k+1, n.Name)}, block{list: items})
+		out = append(out, block{heading: fmt.Sprintf("3.%d %s", k+1, n.Name), tag: tag}, block{list: items, lis: lis})
 	}
 	return out
 }
 
-// task is the list of one task step.
-func task(n process.Node, edges []process.Edge, roleName, nodeName, sourceName map[string]string) []line {
-	items := []line{plain("Responsible: no role is set.")}
+// rolePalette is the role color palette of the studio, in role order.
+var rolePalette = []string{"#0891b2", "#2563eb", "#7c3aed", "#db2777", "#ea580c", "#65a30d"}
+
+// taskTag is the card header tag of a task: the role chip or "No
+// role", then the deadline.
+func taskTag(n process.Node, roleName, roleColor map[string]string) string {
+	tag := `<span class="kind">No role</span>`
 	if n.Role != nil {
-		items[0] = plain("Responsible: " + nameOr(roleName, *n.Role) + ".")
+		color := cmp.Or(roleColor[*n.Role], "#a1a1aa")
+		tag = fmt.Sprintf(`<span class="chip" style="--chip:%s">%s</span>`, color,
+			html.EscapeString(nameOr(roleName, *n.Role)))
+	}
+	deadline := "No deadline"
+	if n.DeadlineHours != nil {
+		deadline = fmt.Sprintf("%d h", *n.DeadlineHours)
+	}
+	return tag + `<span class="deadline">` + deadline + `</span>`
+}
+
+// task is the list of one task step, and the <li> of each line for
+// the HTML card.
+func task(n process.Node, edges []process.Edge, roleName, nodeName, sourceName map[string]string) ([]line, []string) {
+	var items []line
+	var lis []string
+	add := func(l line, li string) {
+		items = append(items, l)
+		lis = append(lis, li)
+	}
+	// li is the default <li> of a line.
+	li := func(l line) string { return "<li>" + htm(l) + "</li>" }
+	// The card header shows the role and the deadline.
+	if n.Role != nil {
+		add(plain("Responsible: "+nameOr(roleName, *n.Role)+"."), "")
+	} else {
+		add(plain("Responsible: no role is set."), "")
 	}
 	if n.DeadlineHours != nil {
-		items = append(items, plain(fmt.Sprintf("Deadline: %d hours from the arrival of the case.", *n.DeadlineHours)))
+		add(plain(fmt.Sprintf("Deadline: %d hours from the arrival of the case.", *n.DeadlineHours)), "")
 	} else {
-		items = append(items, plain("Deadline: none."))
+		add(plain("Deadline: none."), "")
 	}
 	if len(n.Documents) > 0 {
-		items = append(items, plain("Required documents: "+strings.Join(n.Documents, ", ")+"."))
+		var docs strings.Builder
+		for _, d := range n.Documents {
+			docs.WriteString("<li>" + html.EscapeString(d) + "</li>")
+		}
+		add(plain("Required documents: "+strings.Join(n.Documents, ", ")+"."),
+			`<li>Required documents<ul class="docs">`+docs.String()+"</ul></li>")
 	}
 	if n.Signature {
-		items = append(items, plain("Signature: the participant signs the step before it closes."))
+		l := plain("Signature: the participant signs the step before it closes.")
+		add(l, li(l))
 	}
 	for _, c := range n.Checks {
-		r := ""
+		r, refHTML := "", ""
 		if len(c.Citations) > 0 {
 			r = " Reference: " + refs(c.Citations) + "."
+			refHTML = `<p class="ref">` + html.EscapeString(strings.TrimSpace(r)) + "</p>"
 		}
 		expr := span{text: c.Expression, code: true}
+		cel := `<code class="cel">` + html.EscapeString(c.Expression) + "</code>"
 		if c.PlainText != nil {
-			items = append(items, line{{text: "Rule: " + end(*c.PlainText) + " Expression: "}, expr, {text: "." + r}})
+			add(line{{text: "Rule: " + end(*c.PlainText) + " Expression: "}, expr, {text: "." + r}},
+				`<li class="rule"><p>`+html.EscapeString(end(*c.PlainText))+"</p>"+cel+refHTML+"</li>")
 		} else {
-			items = append(items, line{{text: "Rule: "}, expr, {text: ". Message when it fails: \"" + c.Message + "\"" + r}})
+			add(line{{text: "Rule: "}, expr, {text: ". Message when it fails: \"" + c.Message + "\"" + r}},
+				`<li class="rule">`+cel+"<p>"+html.EscapeString("Message when it fails: \""+c.Message+"\"")+"</p>"+refHTML+"</li>")
 		}
 	}
+	// The lines below keep the default <li>.
+	defaults := len(items)
 	if len(n.SourceIDs) > 0 {
 		var names []string
 		for _, id := range n.SourceIDs {
@@ -383,10 +441,14 @@ func task(n process.Node, edges []process.Edge, roleName, nodeName, sourceName m
 			items = append(items, plain(end("Next: "+nodeName[e.To])))
 		}
 	}
-	if len(n.Citations) > 0 {
-		items = append(items, plain("Reference: "+refs(n.Citations)+"."))
+	for _, l := range items[defaults:] {
+		lis = append(lis, li(l))
 	}
-	return items
+	if len(n.Citations) > 0 {
+		r := "Reference: " + refs(n.Citations) + "."
+		add(plain(r), `<li class="ref">`+html.EscapeString(r)+"</li>")
+	}
+	return items, lis
 }
 
 // md renders one line as Markdown. A table cell escapes the pipe.
@@ -451,37 +513,161 @@ func htm(l line) string {
 	return b.String()
 }
 
-const css = `body{font-family:Georgia,serif;max-width:720px;margin:2em auto;padding:0 1em;color:#111}
-table{border-collapse:collapse;margin:1em 0}th,td{border:1px solid #999;padding:4px 8px;text-align:left}
-code{font-size:90%}#diagram{position:relative;left:50%;transform:translateX(-50%);width:calc(100vw - 2em)}
-#diagram svg{display:block;max-width:100%;height:auto;margin:1em auto}
-@media print{section{break-inside:auto}#diagram{left:0;transform:none;width:auto}}`
+// Cover is the page data that does not come from the process file.
+// LogoURI is a data URI or "" (no logo). The API stores only
+// #rrggbb colors.
+type Cover struct {
+	BankName, PrimaryColor, AccentColor, LogoURI string
+	Version                                      int
+	Status                                       string
+	Date                                         time.Time
+}
 
-// HTML renders the printable page: the same sections, the process
-// definition as JSON for the diagram script, and minimal inline CSS.
-func HTML(def process.Definition) []byte {
+// luminance is the WCAG 2 relative luminance of a #rrggbb color.
+func luminance(hex string) float64 {
+	v, _ := strconv.ParseUint(strings.TrimPrefix(hex, "#"), 16, 32)
+	l := 0.0
+	for i, k := range []float64{0.2126, 0.7152, 0.0722} {
+		c := float64(v>>(16-8*i)&0xff) / 255
+		if c <= 0.04045 {
+			c /= 12.92
+		} else {
+			c = math.Pow((c+0.055)/1.055, 2.4)
+		}
+		l += k * c
+	}
+	return l
+}
+
+// onColor is the text color, #ffffff or #111111, with the higher WCAG
+// contrast ratio on hex.
+func onColor(hex string) string {
+	l := luminance(hex)
+	if 1.05/(l+0.05) >= (l+0.05)/(luminance("#111111")+0.05) {
+		return "#ffffff"
+	}
+	return "#111111"
+}
+
+// cssString quotes s as a CSS string that cannot close the style
+// element.
+func cssString(s string) string {
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "<", `\3c `, "\n", `\a `).Replace(s) + `"`
+}
+
+// anchor is the id of a section title or a step heading: "1. Purpose"
+// gives "s1", "3.10 Loan" gives "s3-10".
+func anchor(title string) string {
+	num, _, _ := strings.Cut(title, " ")
+	return "s" + strings.ReplaceAll(strings.TrimSuffix(num, "."), ".", "-")
+}
+
+var statusText = map[string]string{"draft": "Draft", "published": "Published", "frozen": "Frozen"}
+
+const css = `*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{margin:0;padding:32px 16px;background:#f4f4f5;color:#18181b;font:15px/1.55 Inter,system-ui,sans-serif}
+.sheet{max-width:820px;margin:0 auto;padding:56px 64px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08),0 8px 24px rgba(0,0,0,.06)}
+.cover{display:flex;justify-content:space-between;gap:32px;padding-bottom:24px;margin-bottom:24px;border-bottom:4px solid var(--primary)}
+.bank{display:flex;align-items:center;gap:12px;font-weight:600;color:var(--primary)}
+.bank img{max-height:48px;max-width:160px}
+.cover h1{margin:0 0 8px;font-size:26px;line-height:1.25;color:var(--primary);text-align:right}
+.meta,.gen{margin:0;text-align:right;color:#52525b}
+.gen{font-size:12px;color:#71717a}
+.badge{display:inline-block;padding:0 8px;border-radius:999px;background:var(--primary);color:var(--on-primary);font-size:12px;font-weight:600}
+h2{color:var(--primary);font-size:20px;margin:32px 0 12px;padding-bottom:4px;border-bottom:2px solid var(--accent)}
+h3{margin:0;font-size:15px}
+.toc ol{margin:0;padding:0;list-style:none}.toc ol ol{columns:2;padding-left:20px}
+.toc a{color:inherit;text-decoration:none}.toc a:hover{text-decoration:underline}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13px}
+th,td{border:1px solid #e4e4e7;padding:6px 8px;text-align:left;vertical-align:top}
+th{background:color-mix(in srgb,var(--primary) 8%,white)}
+tbody tr:nth-child(even){background:#fafafa}
+td.name{white-space:nowrap}
+.step{border:1px solid #e4e4e7;border-radius:8px;padding:12px 16px;margin:12px 0}
+.step>header{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.step ul{margin:0;padding-left:20px}
+.num{background:var(--primary);color:var(--on-primary);border-radius:4px;padding:0 6px;font-size:13px;font-weight:600}
+.chip{color:var(--chip);border:1px solid var(--chip);background:color-mix(in srgb,var(--chip) 12%,transparent);border-radius:999px;padding:0 8px;font-size:12px}
+.kind{border:1px solid #d4d4d8;border-radius:999px;padding:0 8px;font-size:12px;color:#52525b}
+.deadline{margin-left:auto;font-size:12px;color:#52525b}
+.rule p{margin:0}
+.cel{display:block;margin:4px 0;padding:6px 8px;border-radius:4px;background:#f4f4f5;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap}
+.ref{margin:4px 0;padding-left:8px;border-left:3px solid var(--accent);color:#52525b}
+li.ref{list-style:none;margin-left:-20px}
+figure{margin:24px 0}
+#diagram svg{display:block;width:100%;height:auto}
+figcaption{font-size:12px;color:#71717a;text-align:center}
+@media print{body{font-size:10.5pt;padding:0;background:none}.sheet{max-width:none;padding:0;box-shadow:none}
+tr,.step,.rule{break-inside:avoid}h2,h3,.step>header{break-after:avoid}}`
+
+// HTML renders the printable page with the bank profile of c: the
+// cover, the contents, the diagram, the same sections with a card for
+// each step, and the process definition as JSON for the diagram script.
+func HTML(def process.Definition, c Cover) []byte {
 	var b strings.Builder
 	name := html.EscapeString(def.Name)
+	title := name + ": procedure"
+	status := cmp.Or(statusText[c.Status], c.Status)
 	// Marshal cannot fail for this type. It escapes <, > and &, so the JSON cannot close the script.
 	data, _ := json.Marshal(def)
+	all := sections(def)
+	const box = ";font-size:8pt;color:#71717a}"
 	fmt.Fprintf(&b, "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"+
-		"<title>%s</title>\n<style>\n%s\n</style>\n</head>\n<body>\n<h1>%s</h1>\n<p>%s</p>\n"+
-		"<div id=\"diagram\"></div>\n"+
+		"<title>%s, v%d</title>\n<style>\n:root{--primary:%s;--accent:%s;--on-primary:%s}\n"+
+		"@page{size:A4;margin:18mm;@top-left{content:%s%s@top-right{content:%s%s"+
+		"@bottom-left{content:\"v%d\"%s@bottom-right{content:\"page \" counter(page) \" of \" counter(pages)%s}\n"+
+		"%s\n</style>\n</head>\n<body>\n<main class=\"sheet\">\n<header class=\"cover\"><div class=\"bank\">",
+		title, c.Version, c.PrimaryColor, c.AccentColor, onColor(c.PrimaryColor),
+		cssString(c.BankName), box, cssString(def.Name+": procedure"), box, c.Version, box, box, css)
+	bank := html.EscapeString(c.BankName)
+	if c.LogoURI != "" {
+		fmt.Fprintf(&b, "<img src=\"%s\" alt=\"%s\">", html.EscapeString(c.LogoURI), bank)
+	}
+	fmt.Fprintf(&b, "<span>%s</span></div><div><h1>%s</h1>"+
+		"<p class=\"meta\">v%d <span class=\"badge\">%s</span> <span>%s</span></p>"+
+		"<p class=\"gen\">Generated by Zotra from the process file of this version</p></div></header>\n"+
+		"<nav class=\"toc\" aria-label=\"Contents\"><h2>Contents</h2><ol>\n",
+		bank, title, c.Version, html.EscapeString(status), c.Date.UTC().Format("2 Jan 2006"))
+	for _, s := range all {
+		fmt.Fprintf(&b, "<li><a href=\"#%s\">%s</a>", anchor(s.title), html.EscapeString(s.title))
+		if s.title == "3. Procedure" {
+			b.WriteString("<ol>")
+			for _, bl := range s.blocks {
+				if bl.heading != "" {
+					fmt.Fprintf(&b, "<li><a href=\"#%s\">%s</a></li>", anchor(bl.heading), html.EscapeString(bl.heading))
+				}
+			}
+			b.WriteString("</ol>")
+		}
+		b.WriteString("</li>\n")
+	}
+	fmt.Fprintf(&b, "</ol></nav>\n<figure class=\"diagram\"><div id=\"diagram\"></div>"+
+		"<figcaption>Figure 1. The steps and links of %s, v%d.</figcaption></figure>\n"+
 		"<script type=\"application/json\" id=\"process-definition\">%s</script>\n"+
-		"<script type=\"module\" src=\"/assets/doc-diagram.js\"></script>\n",
-		name, css, name, intro, data)
-	for _, s := range sections(def) {
-		fmt.Fprintf(&b, "<section>\n<h2>%s</h2>\n", s.title)
+		"<script type=\"module\" src=\"/assets/doc-diagram.js\"></script>\n", name, c.Version, data)
+	for _, s := range all {
+		fmt.Fprintf(&b, "<section id=\"%s\">\n<h2>%s</h2>\n", anchor(s.title), html.EscapeString(s.title))
 		for _, bl := range s.blocks {
 			switch {
 			case bl.heading != "":
-				fmt.Fprintf(&b, "<h3>%s</h3>\n", html.EscapeString(bl.heading))
+				num, stepName, _ := strings.Cut(bl.heading, " ")
+				fmt.Fprintf(&b, "<article class=\"step\" id=\"%s\"><header><span class=\"num\">%s</span><h3>%s</h3>%s</header>\n",
+					anchor(bl.heading), num, html.EscapeString(stepName), bl.tag)
 			case bl.list != nil:
 				b.WriteString("<ul>\n")
-				for _, l := range bl.list {
-					fmt.Fprintf(&b, "<li>%s</li>\n", htm(l))
+				for i, l := range bl.list {
+					switch {
+					case bl.lis == nil:
+						fmt.Fprintf(&b, "<li>%s</li>\n", htm(l))
+					case bl.lis[i] != "":
+						b.WriteString(bl.lis[i] + "\n")
+					}
 				}
 				b.WriteString("</ul>\n")
+				if s.title == "3. Procedure" {
+					b.WriteString("</article>\n")
+				}
 			case bl.head != nil:
 				b.WriteString("<table>\n<thead><tr>")
 				for _, h := range bl.head {
@@ -490,8 +676,12 @@ func HTML(def process.Definition) []byte {
 				b.WriteString("</tr></thead>\n<tbody>\n")
 				for _, row := range bl.rows {
 					b.WriteString("<tr>")
-					for _, c := range row {
-						fmt.Fprintf(&b, "<td>%s</td>", htm(c))
+					for i, c := range row {
+						if h := bl.head[i]; h == "Name" || h == "Field" {
+							fmt.Fprintf(&b, "<td class=\"name\">%s</td>", htm(c))
+						} else {
+							fmt.Fprintf(&b, "<td>%s</td>", htm(c))
+						}
 					}
 					b.WriteString("</tr>\n")
 				}
@@ -502,6 +692,6 @@ func HTML(def process.Definition) []byte {
 		}
 		b.WriteString("</section>\n")
 	}
-	b.WriteString("</body>\n</html>\n")
+	b.WriteString("</main>\n</body>\n</html>\n")
 	return []byte(b.String())
 }
