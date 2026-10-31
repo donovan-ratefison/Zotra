@@ -1,5 +1,5 @@
-// The chain strip test rows B1 to B5, G1 to G3, T1, T2, C1, C2 and S1
-// to S6. The environment is node: renderToString for the strip.
+// The chain strip test rows B1 to B5, G1 to G3, T1, T2, C1, C2, S1 to
+// S6, N1 to N3, A1, A2, G5, G6, S7 to S10, P1 and P2. The environment is node: renderToString for the strip.
 
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
@@ -9,8 +9,17 @@ import { ApiError } from "../studio/api";
 import type { CaseEvent, CaseState } from "../studio/case-api";
 import type { ProcessDefinition } from "../studio/types";
 import { verifyCase } from "./app-api";
-import { ChainStrip } from "./CaseChain";
-import { chainBlocks, chainStatus, ghostLabels, seqTone, type VerifyRun } from "./chain";
+import { ChainStrip, SignedStamp } from "./CaseChain";
+import {
+  appendBlock,
+  blockText,
+  chainBlocks,
+  chainStatus,
+  ghostLabels,
+  newBlock,
+  seqTone,
+  type VerifyRun,
+} from "./chain";
 
 const def = seedJson as ProcessDefinition;
 const h = (seq: number) => String(seq).padStart(8, "0") + "f".repeat(56);
@@ -39,6 +48,20 @@ const st = (over: Partial<CaseState> = {}): CaseState => ({
 const blk = (label: string, from: number, to: number, kind: string) => ({
   label, from, to, hash: h(to).slice(0, 8), prev: (from === 1 ? "0".repeat(8) : h(from - 1).slice(0, 8)), kind,
 });
+
+// The events of the command answer of a send (as in row B2).
+const answer = [
+  hev(13, "step_assigned", { node_id: "analysis", user_id: "u-analyst" }, "u-analyst"),
+  hev(14, "data_submitted", { node_id: "analysis", values: {} }, "u-analyst"),
+  hev(15, "check_evaluated", {}, "u-analyst"),
+  hev(16, "check_evaluated", {}, "u-analyst"),
+  hev(17, "check_evaluated", {}, "u-analyst"),
+  hev(18, "decision_made", { node_id: "analysis", decision: "favorable" }, "u-analyst"),
+  hev(19, "edge_taken", { edge_id: "e05" }),
+  hev(20, "step_entered", { node_id: "threshold" }),
+  hev(21, "edge_taken", { edge_id: "e07" }),
+  hev(22, "step_entered", { node_id: "decision" }),
+];
 
 describe("chain blocks", () => {
   test("B1: one block for each step", () => {
@@ -216,5 +239,113 @@ describe("chain strip", () => {
 
   test("S6: a busy strip disables the button", () => {
     expect(strip({ busy: true })).toMatch(/<button type="button" aria-keyshortcuts="V" disabled=""/);
+  });
+});
+
+describe("new block", () => {
+  const n1 = newBlock(answer, "Favorable");
+  const b1 = chainBlocks(def, base, st());
+  const after = st({ node_id: "decision", seq: 22 });
+
+  test("N1: one block for the answer events", () => {
+    expect(n1).toEqual({ label: "Decision · Favorable", from: 13, to: 22, hash: "00000022", prev: "00000012", kind: "new" });
+  });
+
+  test("N2: no event gives no block", () => {
+    expect(newBlock([], "Favorable")).toBeNull();
+  });
+
+  test("N3: the block text", () => {
+    expect(blockText(n1!)).toBe("Block #13-22 signed: 00000022, previous 00000012.");
+  });
+
+  test("A1: the current block becomes a passed step", () => {
+    expect(appendBlock(b1, n1).map((b) => [b.label, b.from, b.to, b.kind])).toEqual([
+      ["Application received", 1, 2, "step"],
+      ["Application entry", 3, 7, "step"],
+      ["File complete?", 8, 9, "rule"],
+      ["Credit analysis", 10, 12, "step"],
+      ["Decision · Favorable", 13, 22, "new"],
+    ]);
+  });
+
+  test("A2: no block gives the same array", () => {
+    expect(appendBlock(b1, null)).toBe(b1);
+  });
+
+  test("G5: the ghosts after the new block", () => {
+    expect(ghostLabels(def, after, 6)).toEqual(["Loan offer", "Client signature at the branch", "Release of funds"]);
+  });
+
+  test("G6: a closed case has no ghost after the new block", () => {
+    expect(ghostLabels(def, st({ status: "closed", result: "refused", node_id: "refused" }), 6)).toEqual([]);
+  });
+
+  function sent(run: VerifyRun | null): string {
+    return renderToString(
+      createElement(ChainStrip, {
+        reference: "CASE-2026-0001",
+        blocks: appendBlock(b1, n1),
+        ghosts: ghostLabels(def, after, 6),
+        run,
+        n: 22,
+        error: null,
+        busy: false,
+        onVerify: () => {},
+      }),
+    );
+  }
+
+  test("S7: the new block locks with its hash", () => {
+    const html = sent(null);
+    for (const text of [
+      "22 events. Last block ",
+      "Decision · Favorable",
+      " prev 00000012",
+      'title="Your decision. Events #13-22. Hash 00000022. Previous 00000012."',
+      "flex-[2.3_1_0%]",
+      "top-[5px]",
+    ]) {
+      expect(html).toContain(text);
+    }
+    expect(count(html, 'data-tone="ok"')).toBe(1);
+    expect(count(html, 'data-tone="idle"')).toBe(4);
+    expect(count(html, ">No block<")).toBe(3);
+    expect(html).not.toContain('data-kind="cur"');
+  });
+
+  test("S8: a verified chain after a send", () => {
+    const html = sent({ bad: 0, upTo: 22 });
+    expect(html).toContain("Chain verified. 22 events.");
+    expect(count(html, 'data-tone="ok"')).toBe(5);
+  });
+
+  test("S9: a changed event before the new block", () => {
+    const html = sent({ bad: 8, upTo: 8 });
+    expect(html).toContain("Event 8 changed after it was written.");
+    expect(count(html, 'data-tone="bad"')).toBe(3);
+    expect(count(html, 'data-tone="ok"')).toBe(2);
+  });
+
+  test("S10: the walk in progress", () => {
+    const html = sent({ bad: 0, upTo: 12 });
+    expect(html).toContain("Checking event 13 of 22");
+    expect(count(html, 'data-tone="ok"')).toBe(4);
+    expect(count(html, 'data-tone="idle"')).toBe(1);
+  });
+});
+
+describe("signed stamp", () => {
+  test("P1: the first decision", () => {
+    const html = renderToString(createElement(SignedStamp, { label: "Favorable", first: true }));
+    expect(html).toContain("Signed · Favorable");
+    expect(html).toContain("text-primary");
+    expect(html).not.toContain("text-red-700");
+  });
+
+  test("P2: another decision", () => {
+    const html = renderToString(createElement(SignedStamp, { label: "Unfavorable", first: false }));
+    expect(html).toContain("Signed · Unfavorable");
+    expect(html).toContain("text-red-700");
   });
 });

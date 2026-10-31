@@ -18,6 +18,7 @@ import {
   keyFigures,
   leftStep,
   lockReason,
+  moveAfterSend,
   msLeft,
   queueOrder,
   receivedText,
@@ -290,6 +291,37 @@ describe("send", () => {
   test("R4: a failed check that the process does not know", () => {
     const a = answer([["check_evaluated", { check_id: "zzz", result: false }]], {});
     expect(sendResultText(a, def, "Favorable")).toEqual({ ok: false, text: "Check zzz failed: zzz" });
+  });
+
+  const r5Block = "Block #13-22 signed: 00000022, previous 00000012.";
+
+  test("R5: the toast names the new block", () => {
+    const a = answer(
+      [["check_evaluated", { check_id: "analysis-debt-ratio", result: true }], ["decision_made", { decision: "favorable" }], ["step_entered", { node_id: "offer" }]],
+      { node_id: "offer" },
+    );
+    expect(sendResultText(a, def, "Favorable", r5Block)).toEqual({
+      ok: true,
+      text: "Favorable sent. Block #13-22 signed: 00000022, previous 00000012. Next step by rule: Loan offer.",
+    });
+  });
+
+  test("R6: the toast names the block of a closed case", () => {
+    const a = answer([["decision_made", { decision: "unfavorable" }]], { status: "closed", result: "refused", node_id: "refused" });
+    expect(sendResultText(a, def, "Unfavorable", "Block #4-4 signed: 00000004, previous 00000003.")).toEqual({
+      ok: true,
+      text: "Unfavorable sent. Block #4-4 signed: 00000004, previous 00000003. The case is closed: refused.",
+    });
+  });
+
+  test("R7: a failed check keeps its text", () => {
+    const a = answer([["check_evaluated", { check_id: "analysis-debt-ratio", result: false }]], {});
+    expect(sendResultText(a, def, "Favorable", r5Block)).toEqual(sendResultText(a, def, "Favorable"));
+    expect(sendResultText(a, def, "Favorable", r5Block).ok).toBe(false);
+  });
+
+  test("M1 to M3: the move after the pause of a send", () => {
+    expect([moveAfterSend(2, 2, 3), moveAfterSend(3, 3, 3), moveAfterSend(1, 2, 3)]).toEqual([3, 3, 1]);
   });
 });
 

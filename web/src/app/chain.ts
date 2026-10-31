@@ -76,3 +76,30 @@ export function chainStatus(
   if (run.bad === 0) return { tone: "ok", title: `Chain verified. ${n} events.`, detail: "" };
   return { tone: "bad", title: `Event ${run.bad} changed after it was written.`, detail: "" };
 }
+
+// newBlock gives one block for all the events of a command answer: the
+// decision is one block, not one block for each step.
+export function newBlock(events: CaseEvent[], label: string): ChainBlock | null {
+  if (events.length === 0) return null;
+  const first = events[0]!;
+  const last = events.at(-1)!;
+  return {
+    label: `Decision · ${label}`,
+    from: first.seq,
+    to: last.seq,
+    hash: last.hash.slice(0, 8),
+    prev: first.prev_hash.slice(0, 8),
+    kind: "new",
+  };
+}
+
+// appendBlock adds the new block. The current step block becomes a
+// passed step: the case left the step.
+export function appendBlock(blocks: ChainBlock[], nb: ChainBlock | null): ChainBlock[] {
+  if (nb === null) return blocks;
+  return [...blocks.map((b) => (b.kind === "cur" ? { ...b, kind: "step" as const } : b)), nb];
+}
+
+export function blockText(b: ChainBlock): string {
+  return `Block #${b.from}-${b.to} signed: ${b.hash}, previous ${b.prev}.`;
+}

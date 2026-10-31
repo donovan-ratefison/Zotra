@@ -2,7 +2,7 @@
 // passed, the ghost blocks of the next steps, and the verify walk.
 
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Link, Lock, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Link, Lock, PenTool, ShieldAlert, ShieldCheck } from "lucide-react";
 import { ApiError } from "../studio/api";
 import { cn } from "@/lib/utils";
 import { verifyCase } from "./app-api";
@@ -21,6 +21,7 @@ export function useChainVerify(): {
   errors: Record<string, string>;
   busy: string | null;
   verify: (caseId: string, n: number) => void;
+  reset: (caseId: string) => void;
 } {
   const [runs, setRuns] = useState<Record<string, VerifyRun>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -65,7 +66,12 @@ export function useChainVerify(): {
     }, STEP_MS);
   }
 
-  return { runs, errors, busy, verify: (caseId, n) => void verify(caseId, n) };
+  function reset(caseId: string) {
+    setRuns((old) => without(old, caseId));
+    setErrors((old) => without(old, caseId));
+  }
+
+  return { runs, errors, busy, verify: (caseId, n) => void verify(caseId, n), reset };
 }
 
 const LINE = { idle: "bg-primary/30", ok: "bg-green-300", bad: "bg-red-300" };
@@ -73,10 +79,13 @@ const KIND = {
   step: "border-primary/30",
   rule: "border-amber-200 bg-[#fffdf5]",
   cur: "border-blue-600 ring-2 ring-blue-600/15",
-  new: "border-primary",
+  new: "flex-[2.3_1_0%] border-primary ring-[3px] ring-primary/15",
 };
 const TONE = { idle: "", ok: "border-green-300 bg-green-50 ring-0", bad: "border-red-300 bg-red-50 ring-0" };
 const HASH = { idle: "text-primary", ok: "text-green-700", bad: "text-red-700" };
+// The new block keeps its ring after a verify.
+const NEW_OK = "border-green-600 ring-[3px] ring-green-600/15";
+const NEW_LABEL = { idle: "font-semibold text-primary", ok: "font-semibold text-green-700", bad: "font-semibold text-red-700" };
 
 export function ChainStrip(props: {
   reference: string;
@@ -95,7 +104,9 @@ export function ChainStrip(props: {
       : chainStatus(n, blocks.at(-1)?.hash ?? "", run);
   const lastHash = blocks.at(-1)?.hash ?? "";
   const Icon = status.tone === "idle" ? Link : status.tone === "bad" ? ShieldAlert : ShieldCheck;
-  const tones = blocks.map((b) => seqTone(b.to, run));
+  const lineTones = blocks.map((b) => seqTone(b.to, run));
+  // The new block locks with its hash before any verify.
+  const tones = blocks.map((b, i) => (b.kind === "new" && run === null ? "ok" : lineTones[i]!));
 
   return (
     <section aria-label="Case history" className="rounded-b-xl border-t bg-stone-50 px-[22px] pt-[9px] pb-3">
@@ -138,29 +149,44 @@ export function ChainStrip(props: {
       <div className="flex items-center">
         {blocks.map((b, i) => (
           <Fragment key={b.from}>
-            {i > 0 && <span className={cn("h-0.5 w-[9px] shrink-0", LINE[tones[i]!])} />}
+            {i > 0 && <span className={cn("h-0.5 w-[9px] shrink-0", LINE[lineTones[i]!])} />}
             <span
               data-kind={b.kind}
               data-tone={tones[i]}
-              title={`${b.label}. Events #${b.from}-${b.to}. Hash ${b.hash}. Previous ${b.prev}.`}
+              title={
+                b.kind === "new"
+                  ? `Your decision. Events #${b.from}-${b.to}. Hash ${b.hash}. Previous ${b.prev}.`
+                  : `${b.label}. Events #${b.from}-${b.to}. Hash ${b.hash}. Previous ${b.prev}.`
+              }
               className={cn(
                 "relative grid h-10 min-w-0 flex-1 content-center rounded-md border bg-white px-2 py-1",
                 KIND[b.kind],
                 TONE[tones[i]!],
+                b.kind === "new" && tones[i] === "ok" && NEW_OK,
               )}
             >
               <span
                 className={cn(
                   "truncate text-[10.5px]",
-                  b.kind === "cur" ? "font-medium text-blue-600" : "text-zinc-700",
+                  b.kind === "cur"
+                    ? "font-medium text-blue-600"
+                    : b.kind === "new"
+                      ? NEW_LABEL[tones[i]!]
+                      : "text-zinc-700",
                 )}
               >
                 {b.label}
               </span>
-              <span className={cn("font-mono text-[11px] font-semibold", HASH[tones[i]!])}>{b.hash}</span>
+              <span className={cn("font-mono text-[11px] font-semibold", HASH[tones[i]!])}>
+                {b.hash}
+                {b.kind === "new" && (
+                  <i className="font-normal not-italic text-[10px] text-muted-foreground">{` prev ${b.prev}`}</i>
+                )}
+              </span>
               <Lock
                 className={cn(
-                  "absolute right-1.5 bottom-1.5 size-[11px] text-green-600",
+                  "absolute right-1.5 size-[11px] text-green-600",
+                  b.kind === "new" ? "top-[5px] bottom-auto" : "bottom-1.5",
                   tones[i] === "ok" ? "opacity-100" : "opacity-0",
                 )}
               />
@@ -184,5 +210,20 @@ export function ChainStrip(props: {
         ))}
       </div>
     </section>
+  );
+}
+
+// The stamp of a sent card: primary for the first decision, red else.
+export function SignedStamp({ label, first }: { label: string; first: boolean }) {
+  return (
+    <div
+      className={cn(
+        "pointer-events-none absolute top-5 right-[220px] z-[5] inline-flex items-center gap-[7px] rounded-md border-2 border-current bg-white px-3 py-1.5 text-sm font-bold tracking-[.02em] rotate-[-5deg] animate-in fade-in zoom-in-125 duration-300",
+        first ? "text-primary" : "text-red-700",
+      )}
+    >
+      <PenTool className="size-[15px] stroke-[2.4]" />
+      {`Signed · ${label}`}
+    </div>
   );
 }

@@ -225,7 +225,7 @@ export function sendCommands(
   return [...take, { type: "submit", values }, { type: "decide", decision }];
 }
 
-type Answer = { events: CaseEvent[]; state: CaseState };
+export type Answer = { events: CaseEvent[]; state: CaseState };
 
 // sendDecision runs the commands in order. A rejection stops the run.
 export async function sendDecision(
@@ -244,19 +244,32 @@ export async function sendDecision(
   return { events, state: state! };
 }
 
-export function sendResultText(answer: Answer, def: ProcessDefinition, label: string): { ok: boolean; text: string } {
+// block is the text of the new chain block (empty: no block text).
+export function sendResultText(
+  answer: Answer,
+  def: ProcessDefinition,
+  label: string,
+  block = "",
+): { ok: boolean; text: string } {
   const { state } = answer;
   if (answer.events.some((e) => e.type === "decision_made")) {
+    const head = block === "" ? `${label} sent.` : `${label} sent. ${block}`;
     if (state.status === "closed") {
-      return { ok: true, text: `${label} sent. The case is closed: ${state.result}.` };
+      return { ok: true, text: `${head} The case is closed: ${state.result}.` };
     }
     const name = def.nodes.find((n) => n.id === state.node_id)?.name ?? state.node_id;
-    return { ok: true, text: `${label} sent. Next step by rule: ${name}.` };
+    return { ok: true, text: `${head} Next step by rule: ${name}.` };
   }
   const bad = answer.events.find((e) => e.type === "check_evaluated" && e.payload.result === false);
   const id = String(bad?.payload.check_id ?? "");
   const message = def.nodes.flatMap((n) => n.checks).find((c) => c.id === id)?.message ?? id;
   return { ok: false, text: `Check ${id} failed: ${message}` };
+}
+
+// moveAfterSend gives the card after the pause of a send. If the user
+// moved during the pause, the deck stays on the user's card.
+export function moveAfterSend(i: number, at: number, last: number): number {
+  return i === at ? Math.min(i + 1, last) : i;
 }
 
 const KEYS: Record<string, "prev" | "next" | "first" | "second" | "docs" | "open" | "verify"> = {

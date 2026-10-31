@@ -34,6 +34,7 @@ import {
   firstDocIndex,
   keyFigures,
   lockReason,
+  moveAfterSend,
   msLeft,
   queueOrder,
   receivedText,
@@ -43,16 +44,22 @@ import {
   shareOfIncome,
   startIndex,
   triageAction,
+  type Answer,
 } from "./triage";
 import { TriageDocuments } from "./TriageDocuments";
-import { ChainStrip, useChainVerify } from "./CaseChain";
-import { chainBlocks, ghostLabels } from "./chain";
+import { ChainStrip, SignedStamp, useChainVerify } from "./CaseChain";
+import { appendBlock, blockText, chainBlocks, ghostLabels, newBlock } from "./chain";
+
+// The pause before the move to the next card, so the user sees the stamp.
+const MOVE_MS = 1200;
 
 // A sent case keeps the documents and checks of the send moment.
 interface Sent {
   decision: string;
   docs: DocumentDTO[];
   checks: CheckResult[];
+  // The events and the state of the command answer.
+  answer: Answer;
 }
 
 // One loaded case of the queue.
@@ -249,6 +256,8 @@ function Deck({
   };
   // Blocks a second send before the busy state renders.
   const sending = useRef(false);
+  const moveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(moveTimer.current), []);
 
   const last = queue.length - 1;
   const front = queue[Math.min(index, last)]!;
@@ -285,31 +294,38 @@ function Deck({
     checksError,
   });
   const sentDecision = snap?.decision;
-  const canSend = lock === null && sentDecision === undefined && !busy;
-  const rows = docs === null ? null : documentRows(def, events, node.id, docs);
-  // A sent card keeps its snapshot: the strip shows front.events as they are.
   const chain = useChainVerify();
-  const blocks = chainBlocks(def, events, state);
-  const ghosts = ghostLabels(def, state, blocks.length);
-  const n = events.length;
+  const canSend = lock === null && sentDecision === undefined && !busy && chain.busy === null;
+  const rows = docs === null ? null : documentRows(def, events, node.id, docs);
+  // A sent card keeps its snapshot: the events of the answer add one block.
+  const extra = snap?.answer.events ?? [];
+  const nb = snap === undefined ? null : newBlock(extra, decisionLabel(snap.decision));
+  const blocks = appendBlock(chainBlocks(def, events, state), nb);
+  // The new block takes 2 places.
+  const ghosts = ghostLabels(def, snap?.answer.state ?? state, blocks.length + (nb === null ? 0 : 1));
+  const n = events.length + extra.length;
   const verifyFront = () => chain.verify(front.id, n);
 
   async function send(decision: string) {
     if (sending.current) return;
     sending.current = true;
     const id = front.id;
+    const at = Math.min(index, last);
     const label = decisionLabel(decision);
     const shot = { decision, docs: docs ?? [], checks: checks ?? [] };
     setBusy(true);
     try {
       const cmds = sendCommands(def, node, state, shot.docs, decision);
       const answer = await sendDecision(id, userId, cmds, runCommand);
-      const result = sendResultText(answer, def, label);
+      const nb = newBlock(answer.events, label);
+      const result = sendResultText(answer, def, label, nb === null ? "" : blockText(nb));
       if (result.ok) {
         toast.success(result.text);
-        onSent(id, shot);
+        onSent(id, { ...shot, answer });
+        chain.reset(id);
         void queryClient.invalidateQueries({ queryKey: ["inbox", userId] });
-        setIndex((i) => Math.min(i + 1, last));
+        clearTimeout(moveTimer.current);
+        moveTimer.current = setTimeout(() => setIndex((i) => moveAfterSend(i, at, last)), MOVE_MS);
       } else {
         toast.error(result.text);
         void queryClient.invalidateQueries({ queryKey: ["checks", id] });
@@ -431,6 +447,9 @@ function Deck({
           key={front.id}
           className="relative z-[3] animate-in rounded-xl border bg-white shadow-[0_1px_3px_rgba(12,10,9,.06),0_12px_32px_rgba(12,10,9,.08)] duration-300 fade-in slide-in-from-right-4"
         >
+          {snap !== undefined && (
+            <SignedStamp label={decisionLabel(snap.decision)} first={snap.decision === node.decisions[0]} />
+          )}
           <header className="flex items-start justify-between gap-4 border-b px-[22px] pt-3.5 pb-3">
             <div className="min-w-0">
               <div className="mb-0.5 flex items-center gap-2">
