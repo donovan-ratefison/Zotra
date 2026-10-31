@@ -4,7 +4,7 @@
 // loads its version, then renders the frame. The query provider
 // comes from main.tsx.
 
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -20,6 +20,8 @@ import { AuditScreen } from "./AuditScreen";
 import { CaseScreen } from "./CaseScreen";
 import { InboxScreen } from "./InboxScreen";
 import { SupervisionScreen } from "./SupervisionScreen";
+import { TriageScreen } from "./TriageScreen";
+import { editableTarget } from "./triage";
 import {
   Select,
   SelectContent,
@@ -87,6 +89,26 @@ export function viewSearch(
     params.set("view", view);
   }
   return `?${params.toString()}`;
+}
+
+export type AppView = "inbox" | "triage" | "supervision" | "audit";
+
+// viewOf reads the view of one URL: the triage path, else the view
+// parameter of a supervisor screen, else the inbox.
+export function viewOf(pathname: string, search: string): AppView {
+  if (pathname === "/app/triage" || pathname === "/app/triage/") {
+    return "triage";
+  }
+  const v = new URLSearchParams(search).get("view");
+  return v === "supervision" || v === "audit" ? v : "inbox";
+}
+
+// viewUrl gives the URL of one view. The triage has its own path.
+export function viewUrl(userId: string, view: AppView): string {
+  if (view === "triage") {
+    return `/app/triage?${new URLSearchParams({ user: userId }).toString()}`;
+  }
+  return `/app${viewSearch(userId, view)}`;
 }
 
 // pickProcess takes the earliest process that is not archived, then
@@ -197,13 +219,13 @@ export function AppShell() {
     const q = typeof location === "undefined" ? "" : location.search;
     return new URLSearchParams(q).get("case") ?? "";
   });
-  // The view of the main area: the inbox, or one supervisor screen.
-  // An unknown or absent view parameter gives the inbox.
-  const [view, setView] = useState<"inbox" | "supervision" | "audit">(() => {
-    const q = typeof location === "undefined" ? "" : location.search;
-    const v = new URLSearchParams(q).get("view");
-    return v === "supervision" || v === "audit" ? v : "inbox";
-  });
+  // The view of the main area: the inbox, the triage, or one
+  // supervisor screen.
+  const [view, setView] = useState<AppView>(() =>
+    typeof location === "undefined"
+      ? "inbox"
+      : viewOf(location.pathname, location.search),
+  );
 
   const processesQuery = useQuery({
     queryKey: ["processes"],
@@ -269,13 +291,34 @@ export function AppShell() {
     setCaseId("");
   }
 
-  // openView switches the main area to the inbox or one supervisor
-  // screen. The case parameter drops, the user stays.
-  function openView(next: "inbox" | "supervision" | "audit") {
-    history.replaceState(null, "", viewSearch(effectiveUserId, next));
+  // openView switches the main area to one view. The case parameter
+  // drops, the user stays.
+  function openView(next: AppView) {
+    history.replaceState(null, "", viewUrl(effectiveUserId, next));
     setCaseId("");
     setView(next);
   }
+
+  // Key T opens the triage from the inbox and the supervisor screens.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (
+        (e.key === "t" || e.key === "T") &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        !editableTarget(e.target as HTMLElement | null) &&
+        caseId === "" &&
+        view !== "triage"
+      ) {
+        e.preventDefault();
+        history.replaceState(null, "", viewUrl(effectiveUserId, "triage"));
+        setView("triage");
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [caseId, view, effectiveUserId]);
 
   // onVerify runs the chain check of the whole log. A failure shows a
   // toast and keeps the last answer.
@@ -391,6 +434,27 @@ export function AppShell() {
         onBack={back}
       />
     );
+  } else if (view === "triage") {
+    if (inboxQuery.isError) {
+      main = (
+        <ErrorScreen
+          heading="The triage did not load."
+          error={inboxQuery.error}
+        />
+      );
+    } else if (inboxQuery.data === undefined) {
+      main = <Loading text="Loading" />;
+    } else {
+      main = (
+        <TriageScreen
+          userId={effectiveUserId}
+          users={users}
+          cases={inboxQuery.data.cases}
+          now={inboxQuery.dataUpdatedAt}
+          onExit={() => openView("inbox")}
+        />
+      );
+    }
   } else if (view === "supervision") {
     if (supervisionQuery.isError) {
       main = (
@@ -496,6 +560,22 @@ export function AppShell() {
                 {inboxData.cases.length}
               </span>
             )}
+          </button>
+          <button
+            type="button"
+            aria-pressed={view === "triage"}
+            aria-keyshortcuts="T"
+            onClick={() => openView("triage")}
+            className={`flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${
+              view === "triage"
+                ? "bg-accent font-medium"
+                : "text-muted-foreground"
+            }`}
+          >
+            Triage
+            <kbd className="ml-auto inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded border bg-background px-1 font-mono text-[11px] text-muted-foreground">
+              T
+            </kbd>
           </button>
           <button
             type="button"

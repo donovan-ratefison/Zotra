@@ -399,6 +399,14 @@ describe("app shell", () => {
     expect(html).toContain("CASE-2026-0001");
   });
 
+  test("13.2b row V3: the sidebar has the Triage item with key T", () => {
+    const client = newClient();
+    seedShell(client);
+    const html = renderApp(client);
+    expect(html).toContain("Triage");
+    expect(html).toContain('aria-keyshortcuts="T"');
+  });
+
   test("6.2 row 13: a logo renders an img and no letter square", () => {
     const client = newClient();
     seedShell(client);
