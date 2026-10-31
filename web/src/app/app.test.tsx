@@ -10,6 +10,7 @@ import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApiError } from "../studio/api";
+import { bankTheme } from "../studio/BankSettings";
 import { fetchInbox } from "./app-api";
 import { AppShell, brandVars, hslOf, pickProcess, processUrlOf } from "./AppShell";
 import { CaseScreen } from "./CaseScreen";
@@ -556,6 +557,45 @@ describe("app shell", () => {
     client.setQueryData(["documents", "c1"], []);
     const html = renderApp(client);
     expect(html).toMatch(INBOX_ON);
+  });
+
+  // pol-20c: the sidebar header and the app colors read the bank profile.
+  const bankTest = {
+    name: "Banque Test",
+    primary_color: "#7c3aed",
+    accent_color: "#ffcc00",
+    logo_url: null,
+    updated_at: "2026-10-31T16:00:00Z",
+  };
+
+  test("pol-20c row K1: the bank profile names and colors the app", () => {
+    const client = newClient();
+    seedShell(client);
+    client.setQueryData(["bank"], bankTest);
+    const html = renderApp(client);
+    expect(html).toContain("Banque Test");
+    expect(html).not.toContain("Banque Ravina");
+    expect(html).toContain(`--primary:${brandVars(bankTheme(bankTest))["--primary"]}`);
+    expect(html).toContain("border-top-color:#ffcc00");
+    expect(html).toMatch(/style="background-color:#7c3aed">B</);
+  });
+
+  test("pol-20c row K2: the bank logo replaces the letter tile", () => {
+    const client = newClient();
+    seedShell(client);
+    client.setQueryData(["bank"], { ...bankTest, logo_url: "/api/settings/bank/logo?v=1" });
+    const html = renderApp(client);
+    expect(html).toContain('src="/api/settings/bank/logo?v=1"');
+    expect(html).toContain('alt="Banque Test"');
+    expect(html).not.toMatch(/style="background-color:#7c3aed">B</);
+  });
+
+  test("pol-20c row K3: while the bank profile loads, the app keeps the process theme", () => {
+    const client = newClient();
+    seedShell(client);
+    const html = renderApp(client);
+    expect(html).toContain("Banque Ravina");
+    expect(html).toContain("border-top-color:transparent");
   });
 });
 

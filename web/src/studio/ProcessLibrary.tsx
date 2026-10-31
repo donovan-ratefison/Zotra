@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, ChevronRight, LayoutGrid, List, Search } from "lucide-react";
+import { Archive, ChevronRight, LayoutGrid, List, Search, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { archiveProcess, listProcesses, listVersions, restoreProcess } from "./api";
 import { layoutProcess } from "./layout";
@@ -411,7 +411,15 @@ export function ProcessLibrary() {
         <a href="/" aria-label="All processes" className="shrink-0">
           <img src="/zotra-wordmark.svg" alt="Zotra" width={76} height={22} />
         </a>
-        <span className="ml-auto">
+        <span className="ml-auto flex items-center gap-2">
+          <a
+            href="/settings"
+            aria-label="Bank settings"
+            title="Bank settings"
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md border hover:bg-accent"
+          >
+            <Settings size={16} aria-hidden="true" />
+          </a>
           <NewLink />
         </span>
       </header>

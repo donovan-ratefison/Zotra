@@ -510,6 +510,33 @@ describe("top bar", () => {
     expect(html).not.toContain('rx="6"');
   });
 
+  // pol-20c: the breadcrumb names the bank, and a gear opens the bank settings.
+  const b1Props = {
+    def: miniDefinition,
+    version: versionRow(1, "published"),
+    versions: [versionRow(1, "published")],
+    versionsPending: false,
+    onVersionsChanged: () => {},
+  };
+
+  test("G1: the breadcrumb shows the bank name", () => {
+    const html = renderToString(createElement(TopBar, { ...b1Props, brandName: "Banque Test" }));
+    expect(html).toContain(">Banque Test</a>");
+    expect(html).not.toContain(">Mini Bank</a>");
+  });
+
+  test("G2: with no bank name, the breadcrumb shows the process theme", () => {
+    const html = renderToString(createElement(TopBar, b1Props));
+    expect(html).toContain(">Mini Bank</a>");
+  });
+
+  test("G3: the top bar has the gear link to the bank settings", () => {
+    const html = renderToString(createElement(TopBar, b1Props));
+    expect(html).toContain('href="/settings"');
+    expect(html).toContain('aria-label="Bank settings"');
+    expect(html).toContain('title="Bank settings"');
+  });
+
   test("F3: the top bar shows the unsaved badge while the draft is dirty", () => {
     const topBarProps = {
       def: miniDefinition,

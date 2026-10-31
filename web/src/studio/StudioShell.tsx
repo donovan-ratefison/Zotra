@@ -11,12 +11,13 @@ import {
   type ReactNode,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, FileText, PanelRightClose } from "lucide-react";
+import { ChevronRight, FileText, PanelRightClose, Settings } from "lucide-react";
 import { toast } from "sonner";
 import {
   ApiError,
   createProcess,
   createVersion,
+  fetchBank,
   getVersion,
   listProcesses,
   listVersions,
@@ -247,6 +248,7 @@ export function StudioShell() {
   }, [setTab, setMode, setTestCaseId]);
 
   const q1 = useQuery({ queryKey: ["processes"], queryFn: listProcesses });
+  const bankQuery = useQuery({ queryKey: ["bank"], queryFn: fetchBank });
   // A process or version id in the URL overrides the automatic pick.
   // A value that matches no row falls back to the automatic rule. The
   // render tests have no window: the automatic rule applies there.
@@ -747,6 +749,7 @@ export function StudioShell() {
       <div className="flex h-screen flex-col">
         <TopBar
           processId={processId}
+          brandName={bankQuery.data?.name}
           def={proposal.definition}
           version={undefined}
           proposalName={proposal.name}
@@ -830,6 +833,7 @@ export function StudioShell() {
       <div className="flex h-screen flex-col">
         <TopBar
           processId={processId}
+          brandName={bankQuery.data?.name}
           def={loaded.definition}
           version={version}
           onNewFromPolicy={() => setImportOpen(true)}
@@ -1031,6 +1035,7 @@ export function TopBar({
   onCompareVersion,
   onUpdatePolicy,
   processId,
+  brandName,
 }: {
   def: ProcessDefinition;
   version?: VersionSummary;
@@ -1050,6 +1055,8 @@ export function TopBar({
   onUpdatePolicy?: () => void;
   // The opened process. The Monitor link opens its app supervision.
   processId?: string | null;
+  // The bank name of the bank profile; the theme of the process while it loads.
+  brandName?: string;
 }) {
   const list = version === undefined ? [] : versions.length > 0 ? versions : [version];
   const newest = newestPublished(list);
@@ -1081,7 +1088,7 @@ export function TopBar({
             }
           }}
         >
-          {def.theme.brand_name}
+          {brandName ?? def.theme.brand_name}
         </a>
         <ChevronRight size={14} className="shrink-0" />
         <span className="truncate font-semibold">{proposalName ?? def.name}</span>
@@ -1206,6 +1213,19 @@ export function TopBar({
           />
         </div>
       )}
+      <a
+        href="/settings"
+        aria-label="Bank settings"
+        title="Bank settings"
+        className="inline-flex size-8 shrink-0 items-center justify-center rounded-md border hover:bg-accent"
+        onClick={(e) => {
+          if (dirty && !window.confirm("The draft has unsaved changes. Leave the studio?")) {
+            e.preventDefault();
+          }
+        }}
+      >
+        <Settings size={16} aria-hidden="true" />
+      </a>
     </header>
   );
 }

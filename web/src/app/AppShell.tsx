@@ -9,10 +9,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   ApiError,
+  fetchBank,
   getVersion,
   listProcesses,
   listVersions,
 } from "../studio/api";
+import { bankTheme } from "../studio/BankSettings";
 import { listUsers } from "../studio/case-api";
 import { fetchInbox } from "./app-api";
 import { BrandLoader } from "@/components/BrandLoader";
@@ -255,6 +257,7 @@ export function AppShell() {
     enabled: published !== null,
   });
   const usersQuery = useQuery({ queryKey: ["users"], queryFn: listUsers });
+  const bankQuery = useQuery({ queryKey: ["bank"], queryFn: fetchBank });
   const users = usersQuery.data ?? [];
   const effectiveUserId = userId === "" ? (users[0]?.id ?? "") : userId;
   const inboxQuery = useQuery({
@@ -451,6 +454,10 @@ export function AppShell() {
   }
 
   const def = versionQuery.data.definition;
+  // The bank profile is cosmetic: while it loads or fails, the app
+  // keeps the theme of the process.
+  const theme =
+    bankQuery.data !== undefined ? bankTheme(bankQuery.data) : def.theme;
   const versionRow = versionQuery.data;
   // The inbox answer, null while the query is pending or disabled.
   // The badge and the card role names line render only through the
@@ -595,27 +602,32 @@ export function AppShell() {
   return (
     <div
       className="flex h-screen"
-      style={brandVars(def.theme) as CSSProperties}
+      style={brandVars(theme) as CSSProperties}
     >
-      <aside className="flex w-[240px] shrink-0 flex-col border-r bg-card">
+      <aside
+        className="flex w-[240px] shrink-0 flex-col border-r border-t-[3px] bg-card"
+        style={{
+          borderTopColor: bankQuery.data?.accent_color ?? "transparent",
+        }}
+      >
         <div className="flex items-center gap-2.5 px-4 pt-4">
-          {def.theme.logo_url !== null ? (
+          {theme.logo_url !== null ? (
             <img
-              src={def.theme.logo_url}
-              alt={def.theme.brand_name}
+              src={theme.logo_url}
+              alt={theme.brand_name}
               className="size-[34px] rounded-lg object-contain"
             />
           ) : (
             <div
               className="flex size-[34px] shrink-0 items-center justify-center rounded-lg font-semibold text-white"
-              style={{ backgroundColor: def.theme.primary_color }}
+              style={{ backgroundColor: theme.primary_color }}
             >
-              {def.theme.brand_name.charAt(0)}
+              {theme.brand_name.charAt(0)}
             </div>
           )}
           <div className="flex min-w-0 flex-col">
             <span className="truncate text-sm font-semibold">
-              {def.theme.brand_name}
+              {theme.brand_name}
             </span>
             <span className="text-xs text-muted-foreground">Credits</span>
           </div>
