@@ -141,6 +141,12 @@ test("W3: the Markdown draft", () => {
   );
 });
 
+test("J1 W3: the Markdown draft of base 0", () => {
+  expect(draftMarkdown("Home loan", 0, []).split("\n")[2]).toBe(
+    "Checked against the current process file. The AI wrote this draft. The bank reviews it before any use.",
+  );
+});
+
 describe("PolicyDraftView", () => {
   test("W4: pending and error", () => {
     expect(view({ status: "pending", blocks: [] })).toContain("The AI writes the draft...");
@@ -163,6 +169,12 @@ describe("PolicyDraftView", () => {
     const html = view({ status: "success", draft: { base_number: 1, changed: [], added: [], dropped: 2 }, blocks: [] });
     expect(html).toContain("The AI found no paragraph to update.");
     expect(html).toContain("The server refused 2 AI items");
+  });
+
+  test("J1 W3: base 0 shows the check line", () => {
+    const html = view({ status: "success", draft: { base_number: 0, changed: [], added: [], dropped: 2 }, blocks: [] });
+    expect(html).toContain("Checked against the current process file.");
+    expect(html).not.toContain("Changes since");
   });
 });
 

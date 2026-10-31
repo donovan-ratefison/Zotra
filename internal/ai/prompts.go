@@ -186,3 +186,20 @@ func UpdatePolicyUser(paragraphs []PolicyParagraph, definition string, changes [
 		"\n\nProcess file (JSON):\n" + definition +
 		"\n\nChanges since version 1:\n" + strings.Join(changes, "\n")
 }
+
+// UpdatePolicyCheckSystem is the system prompt of the policy update
+// for version 1: no earlier version, so no change list. The model
+// compares the policy with the process file.
+const UpdatePolicyCheckSystem = `You update the text of a credit policy so that it matches its process file. The bank reviews your draft.
+You receive the numbered policy paragraphs and the process file (JSON). There is no earlier version.
+Rules:
+- changed: only the paragraphs that the process file changes or contradicts. paragraph_id is an existing id. new_text is the full new text. element_ids lists the ids of the steps and links of the process file that the new text covers.
+- added: one paragraph for each step of the process file that no paragraph covers. step_id is the step id. after_paragraph_id is the existing paragraph that it follows.
+- reason: one short line. Keep the style of the policy. Do not invent a rule that the process file does not hold.`
+
+// UpdatePolicyCheckUser formats the user message of the policy update
+// for version 1: the paragraphs and the process file.
+func UpdatePolicyCheckUser(paragraphs []PolicyParagraph, definition string) string {
+	return "Policy paragraphs:\n" + PolicyToProcessUser(paragraphs) +
+		"\n\nProcess file (JSON):\n" + definition
+}

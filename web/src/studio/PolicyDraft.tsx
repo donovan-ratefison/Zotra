@@ -11,7 +11,7 @@ import { Hint } from "@/ui/hint";
 import { Dialog, DialogContent, DialogFooter, DialogTitle, focusContent } from "@/ui/dialog";
 import type { PolicyDraft } from "./ai-api";
 import { ApiError } from "./api";
-import { draftHtmlFile } from "./draft-html";
+import { baseLine, draftHtmlFile } from "./draft-html";
 import type { Paragraph } from "./policy";
 import type { ProcessDefinition, VersionSummary } from "./types";
 import { docLinks } from "./version-actions";
@@ -48,7 +48,7 @@ export function draftBlocks(
 export function draftMarkdown(title: string, baseNumber: number, blocks: DraftBlock[]): string {
   const parts = [
     `# ${title}: policy draft`,
-    `Changes since version ${baseNumber}. The AI wrote this draft. The bank reviews it before any use.`,
+    `${baseLine(baseNumber)} The AI wrote this draft. The bank reviews it before any use.`,
     ...blocks.map((b) =>
       b.kind === "same"
         ? b.text
@@ -90,7 +90,7 @@ export function PolicyDraftView({ status, draft, blocks, error }: {
   return (
     <div className="flex flex-col gap-3 text-sm">
       <div className="flex items-center gap-1.5 text-muted-foreground">
-        {`Changes since version ${draft.base_number}.`}
+        {baseLine(draft.base_number)}
         <Hint label="About the policy draft">
           The AI wrote this draft. The bank reviews it before any use.
         </Hint>

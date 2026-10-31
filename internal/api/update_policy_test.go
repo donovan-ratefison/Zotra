@@ -1,4 +1,5 @@
-// The tests of the policy update: rows A1 to A11. The live rows run
+// The tests of the policy update: rows A1 to A11, and T1 to T5 of the
+// check mode for version 1. The live rows run
 // against one stub server, with the env set before newTestAPI. The
 // refusal rows run no AI call.
 
@@ -110,8 +111,16 @@ const (
 	goodAdded   = `{"step_id":"committee","after_paragraph_id":"p1-1","text":"The credit committee reviews the file before the amount check.","reason":"New step Credit committee."}`
 )
 
-// checkGoodItems checks the two good items of rows A1 and A2.
+// checkGoodItems checks the two good items of rows A1, A2 and T1, and
+// the base number of the diff mode.
 func checkGoodItems(t *testing.T, got updateAnswer, dropped int) {
+	t.Helper()
+	checkGoodItemsBase(t, got, 1, dropped)
+}
+
+// checkGoodItemsBase checks the two good items, the base number and
+// the dropped count.
+func checkGoodItemsBase(t *testing.T, got updateAnswer, base, dropped int) {
 	t.Helper()
 	wantChanged := []policyChange{{ParagraphID: "p1-1",
 		NewText: "The analyst reviews and scores the file.",
@@ -125,8 +134,8 @@ func checkGoodItems(t *testing.T, got updateAnswer, dropped int) {
 	if !reflect.DeepEqual(got.Added, wantAdded) {
 		t.Errorf("added = %+v", got.Added)
 	}
-	if got.BaseNumber != 1 || got.Dropped != dropped {
-		t.Errorf("base_number = %d, dropped = %d, want 1, %d", got.BaseNumber, got.Dropped, dropped)
+	if got.BaseNumber != base || got.Dropped != dropped {
+		t.Errorf("base_number = %d, dropped = %d, want %d, %d", got.BaseNumber, got.Dropped, base, dropped)
 	}
 }
 
@@ -278,7 +287,7 @@ func TestUpdatePolicyRefusals(t *testing.T) {
 		{"empty text", updateReq(t, id, []paragraphIn{{ID: "p1-1", Text: ""}}), 400, "invalid_paragraphs", msgInvalidParagraphs},
 		{"not a uuid", updateReq(t, "not-a-uuid", updateParagraphs), 404, "not_found", "no version not-a-uuid"},
 		{"unknown version", updateReq(t, missing, updateParagraphs), 404, "not_found", "no version " + missing},
-		{"version 1", updateReq(t, changeSeedVersionID, updateParagraphs), 400, "no_changes", msgNoPolicyChanges},
+		{"version 1, id p0-1", updateReq(t, changeSeedVersionID, []paragraphIn{{ID: "p0-1", Text: "T"}}), 400, "invalid_paragraphs", msgInvalidParagraphs},
 		{"fork with no change", updateReq(t, unchanged, updateParagraphs), 400, "no_changes", msgNoPolicyChanges},
 	}
 	for _, row := range rows {
@@ -289,6 +298,92 @@ func TestUpdatePolicyRefusals(t *testing.T) {
 	}
 	if *count != 0 {
 		t.Errorf("requests = %d, want 0", *count)
+	}
+}
+
+// T1: an imported version 1 with one change gives a draft in check
+// mode.
+func TestUpdatePolicyFirstVersion(t *testing.T) {
+	stub := fmt.Sprintf(`{"changed":[%s],"added":[%s]}`, goodChanged, goodAdded)
+	srv, count, seen := changeLiveStub(t, []string{chatEnvelope(stub)})
+	aiLive(t, srv.URL)
+	newTestAPI(t)
+	id := createProcessVersion(t, seedBytes(t), "Import")
+	def := committeeDefinition(t)
+	raw, err := json.Marshal(map[string]any{"definition": def})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := do(t, "PUT", "/api/versions/"+id, string(raw), ""); rec.Code != http.StatusOK {
+		t.Fatalf("put status = %d: %s", rec.Code, rec.Body.String())
+	}
+
+	rec := postUpdatePolicy(t, updateReq(t, id, updateParagraphs))
+	checkOK(t, rec)
+	var got updateAnswer
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	checkGoodItemsBase(t, got, 0, 0)
+	if *count != 1 {
+		t.Fatalf("requests = %d, want 1", *count)
+	}
+	req := requestMessages(t, (*seen)[0])
+	if len(req.Messages) != 2 || req.Messages[0].Content != ai.UpdatePolicyCheckSystem {
+		t.Fatal("system message is not UpdatePolicyCheckSystem")
+	}
+	// The store may reformat the JSON, so the definition is read back
+	// from the message and compared as a parsed value.
+	user := req.Messages[1].Content
+	marker := "\n\nProcess file (JSON):\n"
+	stored := user[strings.Index(user, marker)+len(marker):]
+	paragraphs, _ := policyParagraphs(updateParagraphs)
+	if user != ai.UpdatePolicyCheckUser(paragraphs, stored) {
+		t.Errorf("user message = %q", user)
+	}
+	if strings.Contains(user, "Changes since") {
+		t.Error("user message holds a change list")
+	}
+	var have, want any
+	if err := json.Unmarshal([]byte(stored), &have); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &want); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(have, want.(map[string]any)["definition"]) {
+		t.Error("process file of the message is not the stored definition")
+	}
+}
+
+// T2: version 1 with no change goes to the AI. The items cite the
+// steps and links of the definition.
+func TestUpdatePolicyFirstVersionChecks(t *testing.T) {
+	stub := `{"changed":[` +
+		`{"paragraph_id":"p1-1","new_text":"T","reason":"R","element_ids":["e01"]},` +
+		`{"paragraph_id":"p1-2","new_text":"T","reason":"R","element_ids":["nope"]}` +
+		`],"added":[` +
+		`{"step_id":"analysis","after_paragraph_id":"p1-1","text":"T","reason":"R"},` +
+		`{"step_id":"nope","after_paragraph_id":"p1-1","text":"T","reason":"R"}]}`
+	srv, count, _ := changeLiveStub(t, []string{chatEnvelope(stub)})
+	aiLive(t, srv.URL)
+	newTestAPI(t)
+
+	rec := postUpdatePolicy(t, updateReq(t, changeSeedVersionID, updateParagraphs))
+	checkOK(t, rec)
+	var got updateAnswer
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.BaseNumber != 0 || got.Dropped != 2 || *count != 1 {
+		t.Errorf("base_number = %d, dropped = %d, requests = %d, want 0, 2, 1",
+			got.BaseNumber, got.Dropped, *count)
+	}
+	if len(got.Changed) != 1 || got.Changed[0].ParagraphID != "p1-1" {
+		t.Errorf("changed = %+v", got.Changed)
+	}
+	if len(got.Added) != 1 || got.Added[0].StepID != "analysis" {
+		t.Errorf("added = %+v", got.Added)
 	}
 }
 

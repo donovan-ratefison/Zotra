@@ -22,6 +22,12 @@ export type DraftCover = {
   baseNumber: number;
 };
 
+// baseLine is the line that says what the draft compares: base 0 is
+// version 1, checked against its own process file.
+export function baseLine(baseNumber: number): string {
+  return baseNumber === 0 ? "Checked against the current process file." : `Changes since version ${baseNumber}.`;
+}
+
 // cssString quotes s as a CSS string that cannot close the style
 // element.
 export function cssString(s: string): string {
@@ -82,7 +88,7 @@ export function draftHTML(c: DraftCover, blocks: DraftBlock[]): string {
 @page{size:A4;margin:18mm;@top-left{content:${cssString(c.bankName)}${box}@top-right{content:${cssString(`${c.processName}: policy draft`)}${box}@bottom-left{content:"v${c.version}"${box}@bottom-right{content:"page " counter(page) " of " counter(pages)${box}}
 ${CSS}
 </style></head><body>
-<main class="sheet"><header class="cover"><div class="bank">${logo}<span>${bank}</span></div><div><h1>${t}</h1><p class="meta">v${c.version} <span class="badge">${STATUS_BADGE[c.status][0]}</span> <span>${dateLabel(c.date)}</span></p><p class="gen">Changes since version ${c.baseNumber}. The AI wrote this draft. The bank reviews it before any use.</p></div></header>
+<main class="sheet"><header class="cover"><div class="bank">${logo}<span>${bank}</span></div><div><h1>${t}</h1><p class="meta">v${c.version} <span class="badge">${STATUS_BADGE[c.status][0]}</span> <span>${dateLabel(c.date)}</span></p><p class="gen">${baseLine(c.baseNumber)} The AI wrote this draft. The bank reviews it before any use.</p></div></header>
 ${none ? `<p class="note">The AI found no paragraph to update.</p>\n` : ""}<section class="draft">
 ${body}
 </section></main></body></html>

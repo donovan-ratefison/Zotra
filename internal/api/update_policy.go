@@ -1,9 +1,11 @@
 // The policy update: POST /api/ai/update-policy. The web sends the
-// policy paragraphs and one version. The engine computes the changes
-// since version 1, and one AI call drafts the policy paragraphs that
-// the changes make wrong, plus one paragraph for each added step. The
-// server keeps only the items that cite request paragraphs and
-// changed elements. Nothing is stored.
+// policy paragraphs and one version. For a later version, the engine
+// computes the changes since version 1, and one AI call drafts the
+// policy paragraphs that the changes make wrong, plus one paragraph
+// for each added step. For version 1 (for example after an import),
+// there is no diff: one AI call checks the paragraphs against the
+// process file. The server keeps only the items that cite request
+// paragraphs and valid elements. Nothing is stored.
 
 package api
 
@@ -18,7 +20,7 @@ import (
 )
 
 // msgNoPolicyChanges is the message of the no_changes answer.
-const msgNoPolicyChanges = "this version has no change since version 1"
+const msgNoPolicyChanges = "This version has no change since version 1."
 
 // updatePolicySchema is the strict response schema of the policy
 // update.
@@ -77,9 +79,12 @@ type policyAddition struct {
 	Reason           string `json:"reason"`
 }
 
-// updatePolicy drafts the policy text for the changes of one version
-// since version 1. The answer is {"base_number": 1, "changed": [...],
-// "added": [...], "dropped": <n>}.
+// updatePolicy drafts the policy text for one version. Version 1 runs
+// in check mode: the model compares the paragraphs with the process
+// file, and base_number is 0. Another version runs in diff mode: the
+// model gets the changes since version 1, and base_number is 1. The
+// answer is {"base_number": <0 or 1>, "changed": [...], "added": [...],
+// "dropped": <n>}.
 func (d apiDeps) updatePolicy(w http.ResponseWriter, r *http.Request) {
 	// 1. The body.
 	var body struct {
@@ -101,37 +106,65 @@ func (d apiDeps) updatePolicy(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
-	// 4. The base: version number 1 of the same process.
-	versions, err := d.st.ListVersions(r.Context(), v.ProcessID)
-	if err != nil {
-		writeStoreError(w, err)
-		return
-	}
-	var baseRaw []byte
-	for _, x := range versions {
-		if x.Number == 1 {
-			baseRaw = x.Definition
-		}
-	}
-	base, errBase := process.Decode(baseRaw)
+	// 4. The mode. Version 1 has no base: check mode.
+	paragraphs, ids := policyParagraphs(body.Paragraphs)
 	next, errNext := process.Decode(v.Definition)
-	if baseRaw == nil || errBase != nil || errNext != nil {
+	if errNext != nil {
 		writeError(w, http.StatusInternalServerError, "internal",
 			"cannot complete the request")
 		return
 	}
-	// 5. The changes since version 1.
-	lines, changed, addedSteps := changedElements(base, next)
-	if len(lines) == 0 {
-		writeError(w, http.StatusBadRequest, "no_changes", msgNoPolicyChanges)
-		return
+	var messages []ai.Message
+	var changed, addedSteps map[string]bool
+	baseNumber := 1
+	if v.Number == 1 {
+		// 5. Check mode: each step and link is valid, each step can
+		// get a paragraph.
+		baseNumber = 0
+		changed, addedSteps = map[string]bool{}, map[string]bool{}
+		for _, n := range next.Nodes {
+			changed[n.ID] = true
+			addedSteps[n.ID] = true
+		}
+		for _, e := range next.Edges {
+			changed[e.ID] = true
+		}
+		messages = []ai.Message{
+			{Role: "system", Content: ai.UpdatePolicyCheckSystem},
+			{Role: "user", Content: ai.UpdatePolicyCheckUser(paragraphs, string(v.Definition))},
+		}
+	} else {
+		// 5. Diff mode: the base is version number 1 of the same
+		// process.
+		versions, err := d.st.ListVersions(r.Context(), v.ProcessID)
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		var baseRaw []byte
+		for _, x := range versions {
+			if x.Number == 1 {
+				baseRaw = x.Definition
+			}
+		}
+		base, errBase := process.Decode(baseRaw)
+		if baseRaw == nil || errBase != nil {
+			writeError(w, http.StatusInternalServerError, "internal",
+				"cannot complete the request")
+			return
+		}
+		var lines []string
+		lines, changed, addedSteps = changedElements(base, next)
+		if len(lines) == 0 {
+			writeError(w, http.StatusBadRequest, "no_changes", msgNoPolicyChanges)
+			return
+		}
+		messages = []ai.Message{
+			{Role: "system", Content: ai.UpdatePolicySystem},
+			{Role: "user", Content: ai.UpdatePolicyUser(paragraphs, string(v.Definition), lines)},
+		}
 	}
 	// 6. One AI call, no repair loop.
-	paragraphs, ids := policyParagraphs(body.Paragraphs)
-	messages := []ai.Message{
-		{Role: "system", Content: ai.UpdatePolicySystem},
-		{Role: "user", Content: ai.UpdatePolicyUser(paragraphs, string(v.Definition), lines)},
-	}
 	ansBody, err := d.ai.ChatCompletion(r.Context(), messages, "policy_update", updatePolicySchema)
 	if err != nil {
 		writeAIError(w, err)
@@ -178,7 +211,7 @@ func (d apiDeps) updatePolicy(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"base_number": 1,
+		"base_number": baseNumber,
 		"changed":     keptChanged,
 		"added":       keptAdded,
 		"dropped":     len(answer.Changed) + len(answer.Added) - len(keptChanged) - len(keptAdded),

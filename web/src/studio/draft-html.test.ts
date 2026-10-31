@@ -6,7 +6,7 @@ import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ApiError, logoDataURI } from "./api";
-import { cssString, dateLabel, draftHTML, draftHtmlFile, type DraftCover } from "./draft-html";
+import { baseLine, cssString, dateLabel, draftHTML, draftHtmlFile, type DraftCover } from "./draft-html";
 import { PolicyDraftActions, type DraftBlock } from "./PolicyDraft";
 import type { ProcessDefinition, VersionSummary } from "./types";
 
@@ -151,6 +151,12 @@ describe("draftHTML", () => {
     expect(html).not.toContain("http");
   });
 
+  test("J1 W2: base 0 says the draft checks the current process file", () => {
+    expect(draftHTML({ ...cover, baseNumber: 0 }, blocks)).toContain(
+      '<p class="gen">Checked against the current process file. The AI wrote this draft. The bank reviews it before any use.</p>',
+    );
+  });
+
   test("H2: the blocks in order", () => {
     const html = draftHTML(cover, blocks);
     const parts = [
@@ -277,4 +283,10 @@ test("F1: the dialog actions", () => {
   expect(on).not.toContain('disabled=""');
   const off = renderToString(createElement(PolicyDraftActions, { ready: false, ...props }));
   expect(off.split('disabled=""').length - 1).toBe(2);
+});
+
+test("J1 W1: baseLine", () => {
+  expect(baseLine(0)).toBe("Checked against the current process file.");
+  expect(baseLine(1)).toBe("Changes since version 1.");
+  expect(baseLine(3)).toBe("Changes since version 3.");
 });
