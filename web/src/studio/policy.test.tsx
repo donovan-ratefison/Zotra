@@ -259,12 +259,12 @@ describe("split ligatures", () => {
     const doc = await pdfjsLib.getDocument({ data: new Uint8Array(bytes) }).promise;
     const content = await (await doc.getPage(1)).getTextContent();
     const ids = paragraphIdsOfItems(1, pdfItemsOf(content.items));
-    expect(ids[12]).toBe("p1-5");
-    expect(ids[39]).toBe("p1-9");
+    expect(ids[13]).toBe("p1-5");
+    expect(ids[46]).toBe("p1-9");
     expect(ids[7]).toBeNull();
     const hl = [{ id: "p1-5", text: "x" }];
-    expect(isHighlighted(ids[12], hl)).toBe(true);
-    expect(isHighlighted(ids[39], hl)).toBe(false);
+    expect(isHighlighted(ids[13], hl)).toBe(true);
+    expect(isHighlighted(ids[46], hl)).toBe(false);
   });
 });
 
