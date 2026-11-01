@@ -17,6 +17,18 @@
   <img src="https://img.shields.io/badge/Meta%20Global%20AI%20Developer%20Hackathon-2026-820ad1" alt="Meta Global AI Developer Hackathon 2026">
 </p>
 
+## See it
+
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=FBQbIOHB1C8"><img src="https://img.youtube.com/vi/FBQbIOHB1C8/maxresdefault.jpg" alt="Watch the Zotra demo video on YouTube" width="720"></a>
+</p>
+
+- **Video:** [watch the demo on YouTube](https://www.youtube.com/watch?v=FBQbIOHB1C8).
+- **Live demo:** [zotra-demo.donovan-ratefison.mg](https://zotra-demo.donovan-ratefison.mg/).
+  No install and no account. The data is sample data and resets every
+  hour. The AI replays recorded answers: follow the steps in
+  [examples/ai-replay](examples/ai-replay/README.md#what-works-with-no-key).
+
 ## Try it in 2 minutes
 
 You need Docker with Compose v2.
