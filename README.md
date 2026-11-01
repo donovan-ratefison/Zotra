@@ -115,6 +115,9 @@ test the process. Without an AI key, you can still design the process by hand.
 | Muse Spark 1.3 | Policy to process, scanned policies, process changes, rules, test cases, explanations, policy update |
 | SAM 3.1 | Signature, stamp and ID areas on scanned documents |
 
+Zotra calls both models through the Meta Model API (`https://api.meta.ai/v1`):
+Muse Spark on `/chat/completions`, SAM 3.1 on `/responses`.
+
 ## Install
 
 ### Docker (recommended)
