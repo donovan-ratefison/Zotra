@@ -7,7 +7,7 @@
 
 <p align="center">
   <b>From a credit policy PDF to a tested approval app.</b><br>
-  The AI drafts and tests. People decide.
+  The AI drafts and tests. Humans decide.
 </p>
 
 <p align="center">
