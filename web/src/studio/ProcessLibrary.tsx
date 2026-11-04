@@ -62,6 +62,42 @@ function processUrl(id: string): string {
   return `/?process=${encodeURIComponent(id)}`;
 }
 
+const EXAMPLE_ID = "00000000-0000-0000-0000-000000000001";
+
+// StartHere shows the first actions of a tester while the library
+// holds at most one process (archived processes count).
+function StartHere({ rows }: { rows: LibraryRow[] }) {
+  const cards: [string, string, string][] = [
+    ["Import a sample policy", "Turn a credit policy PDF into a draft process. No AI key is needed for the samples.", "/?new=1"],
+    ["Open the bank app", "Work the sample cases: inbox, triage, audit and supervision.", "/app"],
+  ];
+  if (rows.some((r) => r.id === EXAMPLE_ID)) {
+    cards.unshift([
+      "Open the Home loan example",
+      "See a tested process: steps, rules, roles and the policy text.",
+      processUrl(EXAMPLE_ID),
+    ]);
+  }
+  return (
+    <section aria-labelledby="start-here" className="flex flex-col gap-2">
+      <h2 id="start-here" className="text-[15px] font-semibold">Start here</h2>
+      <ul className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {cards.map(([title, text, href]) => (
+          <li key={href}>
+            <a
+              href={href}
+              className="flex h-full flex-col gap-1 rounded-lg border bg-card p-3 text-[13px] hover:border-muted-foreground/40"
+            >
+              <span className="font-semibold">{title}</span>
+              <span className="text-muted-foreground">{text}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function NewLink() {
   return (
     <NewProcessMenu
@@ -289,6 +325,7 @@ export function LibraryView({
           Each process of the bank, with its versions. A click opens the process in the studio.
         </Hint>
       </div>
+      {rows.length <= 1 && <StartHere rows={rows} />}
       <div className="flex flex-wrap items-center gap-2">
         <span className="relative w-80">
           <Search

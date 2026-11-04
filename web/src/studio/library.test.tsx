@@ -1,12 +1,13 @@
-// The test rows 53a to 53r, L1 to L6 and P1 to P10 of the process library. The environment is
+// The test rows 53a to 53r, L1 to L6, P1 to P10 and S1 to S6 of the process library. The environment is
 // node: direct calls of the pure functions, and renderToString of the
 // stateless view (one query client for the thumbnail query).
 
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import seedJson from "../../../examples/home-loan/process.json";
+import { listProcesses } from "./api";
 import { layoutProcess } from "./layout";
 import {
   filterRows,
@@ -19,7 +20,7 @@ import {
   type LibrarySort,
   type LibraryStatus,
 } from "./library";
-import { LibraryView, STATUS_OPTIONS } from "./ProcessLibrary";
+import { LibraryView, ProcessLibrary, STATUS_OPTIONS } from "./ProcessLibrary";
 import type { ProcessDefinition, ProcessSummary, Version, VersionStatus } from "./types";
 
 const seed = seedJson as ProcessDefinition;
@@ -284,5 +285,74 @@ describe("library page", () => {
     ["P10", "/other", "", false],
   ])("%s: %s%s", (_row, pathname, search, expected) => {
     expect(isLibraryPage(pathname, search)).toBe(expected);
+  });
+});
+
+// The fetch stub answers GET /api/processes. The page renders from the
+// query cache after one prefetch.
+async function page(answer: ProcessSummary[] | "fail"): Promise<string> {
+  vi.stubGlobal("fetch", async (url: string) => {
+    expect(url).toBe("/api/processes");
+    return answer === "fail"
+      ? new Response(JSON.stringify({ error: "down" }), { status: 500 })
+      : new Response(JSON.stringify({ processes: answer }), { status: 200 });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, retryOnMount: false } } });
+  await client.prefetchQuery({ queryKey: ["processes"], queryFn: listProcesses });
+  return renderToString(createElement(QueryClientProvider, { client }, createElement(ProcessLibrary)));
+}
+
+const EXAMPLE = "00000000-0000-0000-0000-000000000001";
+const example: ProcessSummary = { id: EXAMPLE, name: "Home loan", created_at: "2026-10-01T08:00:00Z" };
+const second: ProcessSummary = { id: "p2", name: "Consumer credit", created_at: "2026-10-02T08:00:00Z" };
+
+describe("start here panel", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("S1: only the example gives the panel with 3 cards", async () => {
+    const html = await page([example]);
+    expect(html).toContain(">Start here</h2>");
+    const card = (href: string, title: string) =>
+      new RegExp(`<a href="${href.replace(/[?]/g, "\\?")}" [^>]*><span class="font-semibold">${title}</span>`);
+    expect(html).toMatch(card(`/?process=${EXAMPLE}`, "Open the Home loan example"));
+    expect(html).toMatch(card("/?new=1", "Import a sample policy"));
+    expect(html).toMatch(card("/app", "Open the bank app"));
+    expect(html).toContain("See a tested process: steps, rules, roles and the policy text.");
+    expect(html).toContain("Turn a credit policy PDF into a draft process. No AI key is needed for the samples.");
+    expect(html).toContain("Work the sample cases: inbox, triage, audit and supervision.");
+    expect(html.indexOf("Start here")).toBeGreaterThan(html.indexOf(">Processes</h1>"));
+    expect(html.indexOf("Start here")).toBeLessThan(html.indexOf('aria-label="Search processes"'));
+  });
+
+  test("S2: the example and 1 other process give no panel", async () => {
+    expect(await page([example, second])).not.toContain("Start here");
+  });
+
+  test("S3: the example and 1 archived process give no panel", async () => {
+    expect(await page([example, { ...second, archived_at: "2026-10-30T10:00:00Z" }])).not.toContain("Start here");
+  });
+
+  test("S4: 1 process that is not the example gives cards 2 and 3", async () => {
+    const html = await page([second]);
+    expect(html).toContain(">Start here</h2>");
+    expect(html).not.toContain("Open the Home loan example");
+    expect(html).toContain("Import a sample policy");
+    expect(html).toContain("Open the bank app");
+  });
+
+  test("S5: an empty list gives cards 2 and 3", async () => {
+    const html = await page([]);
+    expect(html).toContain(">Start here</h2>");
+    expect(html).not.toContain("Open the Home loan example");
+    expect(html).toContain("Import a sample policy");
+    expect(html).toContain("Open the bank app");
+  });
+
+  test("S6: a failed list request gives no panel", async () => {
+    const html = await page("fail");
+    expect(html).toContain("The processes did not load.");
+    expect(html).not.toContain("Start here");
   });
 });
