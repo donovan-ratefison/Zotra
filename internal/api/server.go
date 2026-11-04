@@ -30,7 +30,8 @@ type apiDeps struct {
 func NewHandler(static fs.FS, version string, st *store.Store, feedbackDir string) http.Handler {
 	mux := http.NewServeMux()
 
-	health := map[string]string{"status": "ok", "version": version}
+	cfg := ai.LoadConfig()
+	health := map[string]string{"status": "ok", "version": version, "ai_mode": cfg.Mode}
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, _ *http.Request) {
 		b, _ := json.Marshal(health)
 		w.Header().Set("Content-Type", "application/json")
@@ -56,7 +57,7 @@ func NewHandler(static fs.FS, version string, st *store.Store, feedbackDir strin
 	// pattern carries one method: a wrong method falls to the /api/
 	// fallback below and answers 404 not_found.
 	if st != nil {
-		d := apiDeps{st: st, version: version, ai: ai.New(ai.LoadConfig())}
+		d := apiDeps{st: st, version: version, ai: ai.New(cfg)}
 		mux.HandleFunc("GET /api/processes", d.listProcesses)
 		mux.HandleFunc("POST /api/processes", d.createProcess)
 		mux.HandleFunc("POST /api/processes/{id}/archive", d.archiveProcess)

@@ -127,6 +127,32 @@ export function NoTextNotice({
   );
 }
 
+// SAMPLES are the policy PDFs that the web app serves. The AI replay
+// keys depend on the file name: it gives the default process name.
+export const SAMPLES = [
+  { label: "Home loan (EN)", url: "/samples/home-loan.pdf", fileName: "home-loan.pdf" },
+  {
+    label: "SME loan (EN)",
+    url: "/samples/sme-loan-disbursement.pdf",
+    fileName: "sme-loan-disbursement.pdf",
+  },
+  {
+    label: "Prêt immobilier (FR)",
+    url: "/samples/deblocage-pret-immobilier.pdf",
+    fileName: "deblocage-pret-immobilier.pdf",
+  },
+];
+
+// fetchSample gets one sample PDF as a File with the given name. A
+// network error or an answer that is not ok rejects.
+export async function fetchSample(url: string, fileName: string): Promise<File> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`sample ${url}: ${res.status}`);
+  }
+  return new File([await res.blob()], fileName, { type: "application/pdf" });
+}
+
 export function ImportDialogBody({
   onProposed,
   onClose,
@@ -208,6 +234,20 @@ export function ImportDialogBody({
     } finally {
       setReading(false);
     }
+  }
+
+  // loadSample reads one sample PDF like a picked file. A failed
+  // fetch shows the load error of a bad file.
+  async function loadSample(url: string, fileName: string) {
+    let picked: File;
+    try {
+      picked = await fetchSample(url, fileName);
+    } catch {
+      setFile(null);
+      setLoadError(true);
+      return;
+    }
+    await loadFile(picked);
   }
 
   // readScanClick lets the AI read the page images of a scan. On
@@ -335,6 +375,23 @@ export function ImportDialogBody({
               e.target.value = "";
             }}
           />
+        </div>
+      )}
+      {!analyzing && !scanning && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm text-muted-foreground">Try a sample policy:</span>
+          <div className="flex flex-wrap gap-2">
+            {SAMPLES.map((sample) => (
+              <Button
+                key={sample.url}
+                variant="outline"
+                size="sm"
+                onClick={() => void loadSample(sample.url, sample.fileName)}
+              >
+                {sample.label}
+              </Button>
+            ))}
+          </div>
         </div>
       )}
       {reading && <p className="text-sm text-muted-foreground">Reading the policy...</p>}

@@ -12,6 +12,7 @@ func TestNewHandler(t *testing.T) {
 		"index.html":    &fstest.MapFile{Data: []byte("<p>index</p>")},
 		"assets/app.js": &fstest.MapFile{Data: []byte("console.log(1)")},
 	}
+	t.Setenv("ZOTRA_AI_MODE", "")
 	handler := NewHandler(static, "test", nil, "")
 
 	tests := []struct {
@@ -24,7 +25,7 @@ func TestNewHandler(t *testing.T) {
 	}{
 		{name: "health", method: "GET", target: "/api/health",
 			wantStatus: 200, wantJSON: true,
-			wantBody: []string{`"status":"ok"`, `"version":"test"`}},
+			wantBody: []string{`"status":"ok"`, `"version":"test"`, `"ai_mode":"cache"`}},
 		{name: "wrong method on health", method: "POST", target: "/api/health",
 			wantStatus: 405},
 		{name: "unknown api route", method: "GET", target: "/api/nothing",
@@ -57,5 +58,15 @@ func TestNewHandler(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestHealthAIMode(t *testing.T) {
+	t.Setenv("ZOTRA_AI_MODE", "replay")
+	handler := NewHandler(fstest.MapFS{}, "test", nil, "")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/api/health", nil))
+	if !strings.Contains(rec.Body.String(), `"ai_mode":"replay"`) {
+		t.Errorf("body does not contain ai_mode replay: %q", rec.Body.String())
 	}
 }

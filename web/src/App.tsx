@@ -5,6 +5,7 @@ import { IntroSplash } from "@/studio/IntroSplash";
 import { ProcessLibrary } from "@/studio/ProcessLibrary";
 import { BankSettings } from "@/studio/BankSettings";
 import { isLibraryPage } from "@/studio/library";
+import { ReplayBanner } from "@/studio/ReplayBanner";
 
 const client = new QueryClient({
   defaultOptions: { queries: { retry: false } },
@@ -20,7 +21,14 @@ export default function App() {
   return (
     <QueryClientProvider client={client}>
       <ReactFlowProvider>
-        {settingsPage ? <BankSettings /> : libraryPage ? <ProcessLibrary /> : <StudioShell />}
+        {/* The banner takes its height from the page: the studio
+            screens fill the rest, and the page scroll stays inside. */}
+        <div className="flex h-screen flex-col">
+          <ReplayBanner />
+          <div className="min-h-0 flex-1 overflow-y-auto [&>.h-screen]:h-full [&>.min-h-screen]:min-h-full">
+            {settingsPage ? <BankSettings /> : libraryPage ? <ProcessLibrary /> : <StudioShell />}
+          </div>
+        </div>
         <IntroSplash />
       </ReactFlowProvider>
     </QueryClientProvider>
