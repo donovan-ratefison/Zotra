@@ -38,8 +38,10 @@ git clone https://github.com/donovan-ratefison/Zotra.git && cd Zotra
 docker compose up -d
 ```
 
-Open http://127.0.0.1:8080. No AI key is needed for the demo: the app
-replays recorded AI answers for the example policies. The steps are in
+Open http://127.0.0.1:8080. At the first start, Zotra adds 60 sample
+cases over 30 days, so the inbox, the triage and the supervision have
+data. No AI key is needed for the demo: the app replays recorded AI
+answers for the example policies. The steps are in
 [examples/ai-replay](examples/ai-replay/README.md).
 
 To call the live Meta models with your own key, see [Use the live AI with your own Meta key](#use-the-live-ai-with-your-own-meta-key).

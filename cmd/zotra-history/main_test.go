@@ -159,6 +159,15 @@ func TestRefusal(t *testing.T) { // R9, R10
 	if err := run(ctx, nil, raw, io.Discard); err == nil || err.Error() != want {
 		t.Errorf("R10: error %v, want %q", err, want)
 	}
+
+	// R11: -if-empty skips with no error when a real case exists.
+	var out strings.Builder
+	if err := run(ctx, []string{"-if-empty"}, raw, &out); err != nil {
+		t.Errorf("R11: error %v, want none", err)
+	}
+	if got := out.String(); got != "skipped: the database already has real cases\n" {
+		t.Errorf("R11: output %q", got)
+	}
 }
 
 func getJSON(t *testing.T, h http.Handler, path string, out any) {

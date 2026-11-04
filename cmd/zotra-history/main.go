@@ -18,12 +18,15 @@ import (
 // version is set at build time with -ldflags "-X main.version=...".
 var version = "dev"
 
-const historyUsage = `Usage: zotra-history [-days N] [-cases N] [-version] [-help]
+const historyUsage = `Usage: zotra-history [-days N] [-cases N] [-if-empty] [-version] [-help]
 
 zotra-history adds a demo history of past cases to the example process.
 
   -days N    Number of days of the history, 1 to 90. Default 30.
   -cases N   Number of cases, 1 to 500. Default 60.
+  -if-empty  Add the history only when the database has no real case.
+             Else print a message and stop with no error. Docker runs it
+             at each start.
   -version   Print the version and stop.
 
 Environment variables:
@@ -45,6 +48,7 @@ func run(ctx context.Context, args []string, dbURL string, out io.Writer) error 
 	fs.SetOutput(io.Discard)
 	days := fs.Int("days", 30, "number of days of the history")
 	n := fs.Int("cases", 60, "number of cases")
+	ifEmpty := fs.Bool("if-empty", false, "add the history only when the database has no real case")
 	showVersion := fs.Bool("version", false, "print the version and stop")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -79,6 +83,10 @@ func run(ctx context.Context, args []string, dbURL string, out io.Writer) error 
 	for _, c := range cases {
 		if c.IsTest {
 			continue
+		}
+		if *ifEmpty {
+			_, err := fmt.Fprintln(out, "skipped: the database already has real cases")
+			return err
 		}
 		if c.VersionID != exampleVersionID {
 			return fmt.Errorf("refused: real case %s is on another version", c.Reference)

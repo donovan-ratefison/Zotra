@@ -40,6 +40,19 @@ services:
       interval: 5s
       retries: 12
 
+  # Adds 60 sample cases over 30 days at the first start, so that the
+  # inbox, the triage and the supervision have data. On a database
+  # with real cases, it prints a message and stops.
+  demo-history:
+    image: ghcr.io/donovan-ratefison/zotra:${ZOTRA_VERSION:-latest}
+    entrypoint: ["/app/zotra-history", "-if-empty"]
+    environment:
+      ZOTRA_DATABASE_URL: postgres://zotra:zotra@db:5432/zotra?sslmode=disable
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: "no"
+
   # The example process calls the demo bank at 127.0.0.1:8097, so it
   # shares the network of the app.
   demo-bank:
