@@ -41,7 +41,37 @@ docker compose up -d
 Open http://127.0.0.1:8080. At the first start, Zotra adds 60 sample
 cases over 30 days, so the inbox, the triage and the supervision have
 data. No AI key is needed for the demo: the app replays recorded AI
-answers for the example policies. The steps are in
+answers for the sample policies. A thin line at the top of the studio
+says so.
+
+### Tour in 5 minutes
+
+These steps work with no AI key.
+
+1. **Import a policy.** On the library page, under Start here, click
+   Import a sample policy. Click Home loan (EN), then Analyze policy.
+   Each step of the draft cites its paragraph. Click Accept.
+2. **Change the process with the AI.** Open the library again and open
+   Home loan. Click New draft, give a label, then Create draft. Send
+   these two messages, in this order. For each one, click Yes, make
+   the change, then Accept:
+   - `Give the step Loan offer a deadline of 12 h.`
+   - `Add a step Property valuation before Credit analysis, done by a new role Property expert, with a deadline of 72 h and the required document Valuation report.`
+
+   Then open the Documentation menu and click Update the policy.
+3. **Test it.** Click Test, then Create a test case. Fill the client
+   fields, then click Create and start. Click Take the step a few
+   times. Click an earlier event in the timeline: the diagram shows
+   the case at that event.
+4. **Work the cases.** Open the bank app (`/app`). In Demo profile,
+   pick Demo Analyst, then click Triage. Press D to see the documents,
+   Escape to close them, V to verify the hash chain of the case, and F
+   to give a favorable decision.
+5. **Supervise and audit.** Pick Demo Director. Click Supervision to
+   see where cases wait and why. Click Audit log, then Verify chain.
+
+The other features (other PDFs, other messages, scans read by SAM,
+generated test cases) need a key. See
 [examples/ai-replay](examples/ai-replay/README.md).
 
 To call the live Meta models with your own key, see [Use the live AI with your own Meta key](#use-the-live-ai-with-your-own-meta-key).

@@ -10,16 +10,18 @@ path and body). The files hold no key.
 
 ## What works with no key
 
-1. Import a policy: in the studio, click New, then From policy, and
-   open one of these files:
+1. Import a policy: in the studio, click New, then From a policy.
+   Click one of the sample buttons (Home loan, SME loan, Prêt
+   immobilier), or open one of these files:
    - `examples/home-loan/policy.pdf`
    - `examples/policies/sme-loan-disbursement.pdf`
    - `examples/policies/deblocage-pret-immobilier.pdf`
 2. Change a process with the AI assistant, on a fresh database:
    1. Open the process Home loan, version 1.
-   2. Click New draft from this version.
+   2. Click New draft, give a label, then click Create draft.
    3. Select no step. Keep Restate first on.
-   4. Send, in this order, and accept each change:
+   4. Send, in this order. For each one, click Yes, make the change,
+      then Accept:
       - `Give the step Loan offer a deadline of 12 h.`
       - `Add a step Property valuation before Credit analysis, done by a new role Property expert, with a deadline of 72 h and the required document Valuation report.`
 3. Update the policy: on the same draft, open the Documentation menu,
