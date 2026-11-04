@@ -140,13 +140,15 @@ func uploadForZones(t *testing.T, h http.Handler) string {
 // record and one mask record.
 const samRecord = `<0f>0<|box;x1=454;y1=835;x2=719;y2=908;w=806;h=1131|><|mask;x=0;y=0;data=AAA|>`
 
-// primeAll primes the three noun phrases of one scan, in the order of
-// sam.Phrases, with one answer text each.
+// primeAll primes every noun phrase of sam.Phrases for one scan: the
+// first phrase of each label gets its answer text, the other phrases
+// of the label find no zone.
 func primeAll(t *testing.T, dir string, image []byte, signature, stamp, idCard string) {
 	t.Helper()
-	primeSAM(t, dir, "handwritten scribble", "image/png", image, signature)
-	primeSAM(t, dir, "circular stamp", "image/png", image, stamp)
-	primeSAM(t, dir, "identity card", "image/png", image, idCard)
+	first := map[string]string{"handwritten scribble": signature, "circular stamp": stamp, "identity card": idCard}
+	for _, p := range sam.Phrases {
+		primeSAM(t, dir, p.Text, "image/png", image, first[p.Text])
+	}
 }
 
 // The live answers of the signature and stamp phrases, with the
@@ -361,6 +363,27 @@ func TestDocumentZonesLive(t *testing.T) {
 	wantBox(t, zones[1], "stamp", 960, 1444, 160, 160)
 }
 
+// 15d. A real contract scan: "handwritten scribble" finds no zone, but
+// "signature" finds the mark. The answer holds one signature zone.
+func TestDocumentZonesOtherSignaturePhrase(t *testing.T) {
+	dir := aiEnv(t)
+	h := newTestAPI(t)
+	id := uploadForZones(t, h)
+	primeAll(t, dir, pngBytes(t), "", "", "")
+	primeSAM(t, dir, "signature", "image/png", pngBytes(t),
+		"<0f>0<|box;x1=452;y1=833;x2=721;y2=910;w=806;h=1131|>")
+
+	rec := postZones(t, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("zones: status %d: %s", rec.Code, rec.Body.String())
+	}
+	zones := decode(t, rec)["zones"].([]any)
+	if len(zones) != 1 {
+		t.Fatalf("zones = %d, want 1: %s", len(zones), rec.Body.String())
+	}
+	wantBox(t, zones[0], "signature", 452, 833, 270, 78)
+}
+
 // 16.
 func TestDocumentZonesEmpty(t *testing.T) {
 	dir := aiEnv(t)
@@ -404,7 +427,7 @@ func TestDocumentZonesReplayMiss(t *testing.T) {
 	checkError(t, rec, http.StatusServiceUnavailable, "ai_not_recorded", msgReplayMiss)
 }
 
-// 17c. The 3 requests of one scan run at the same time, and the zones
+// 17c. The requests of one scan run at the same time, and the zones
 // keep the order of the phrases.
 func TestDocumentZonesParallel(t *testing.T) {
 	answers := map[string]string{
@@ -432,7 +455,7 @@ func TestDocumentZonesParallel(t *testing.T) {
 		n := inFlight.Add(1)
 		for m := maxInFlight.Load(); n > m && !maxInFlight.CompareAndSwap(m, n); m = maxInFlight.Load() {
 		}
-		if n == 3 {
+		if n == int32(len(sam.Phrases)) {
 			close(all)
 		}
 		select {
@@ -463,11 +486,11 @@ func TestDocumentZonesParallel(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("zones: status %d: %s", rec.Code, rec.Body.String())
 	}
-	if n := count.Load(); n != 3 {
-		t.Fatalf("requests = %d, want 3", n)
+	if n := count.Load(); n != int32(len(sam.Phrases)) {
+		t.Fatalf("requests = %d, want %d", n, len(sam.Phrases))
 	}
-	if m := maxInFlight.Load(); m != 3 {
-		t.Fatalf("maximum in flight = %d, want 3", m)
+	if m := maxInFlight.Load(); m != int32(len(sam.Phrases)) {
+		t.Fatalf("maximum in flight = %d, want %d", m, len(sam.Phrases))
 	}
 	zones := decode(t, rec)["zones"].([]any)
 	if len(zones) != 3 {
@@ -744,7 +767,7 @@ func TestDocumentEndpoint(t *testing.T) {
 		for i, label := range []string{"signature", "stamp", "id"} {
 			wantBox(t, zones[i], label, 454, 835, 266, 74)
 		}
-		if doc.count != 3 || doc.path != "/responses" || doc.auth != "Bearer doc-key" {
+		if doc.count != len(sam.Phrases) || doc.path != "/responses" || doc.auth != "Bearer doc-key" {
 			t.Errorf("doc saw count %d, path %q, auth %q", doc.count, doc.path, doc.auth)
 		}
 		var phrases []string
@@ -761,8 +784,13 @@ func TestDocumentEndpoint(t *testing.T) {
 		}
 		// The requests run at the same time, so their order is free.
 		slices.Sort(phrases)
-		if strings.Join(phrases, "|") != "circular stamp|handwritten scribble|identity card" {
-			t.Errorf("input_text = %q, want circular stamp, handwritten scribble, identity card", phrases)
+		var want []string
+		for _, p := range sam.Phrases {
+			want = append(want, p.Text)
+		}
+		slices.Sort(want)
+		if !slices.Equal(phrases, want) {
+			t.Errorf("input_text = %q, want %q", phrases, want)
 		}
 		if text.count != 0 {
 			t.Errorf("text saw %d requests, want 0", text.count)

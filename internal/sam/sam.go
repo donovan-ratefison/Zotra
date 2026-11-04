@@ -31,12 +31,47 @@ type Zone struct {
 type Phrase struct{ Text, Label string }
 
 // Phrases are the requests of one scan, in answer order. The live
-// model finds no zone for the plain words signature, stamp and ID
-// card, but it matches these phrases.
+// model matches a noun phrase on one scan and not on another: a scan
+// of a contract with a script signature matches "signature" but not
+// "handwritten scribble", and another scan matches only "handwritten
+// scribble". So each label has more than one phrase, and Merge joins
+// the zones that two phrases find for the same mark.
 var Phrases = []Phrase{
 	{"handwritten scribble", "signature"},
+	{"signature", "signature"},
 	{"circular stamp", "stamp"},
 	{"identity card", "id"},
+}
+
+// Merge keeps the zones in order and drops a zone that covers the same
+// mark as an earlier zone of the same label: the two boxes share at
+// least half of the area of the smaller box.
+func Merge(zones []Zone) []Zone {
+	out := []Zone{}
+	for _, z := range zones {
+		dup := false
+		for _, k := range out {
+			if k.Label == z.Label && sameMark(k.Box, z.Box) {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			out = append(out, z)
+		}
+	}
+	return out
+}
+
+// sameMark tells if two boxes share at least half of the area of the
+// smaller box.
+func sameMark(a, b Box) bool {
+	w := min(a.X+a.Width, b.X+b.Width) - max(a.X, b.X)
+	h := min(a.Y+a.Height, b.Y+b.Height) - max(a.Y, b.Y)
+	if w <= 0 || h <= 0 {
+		return false
+	}
+	return 2*w*h >= min(a.Width*a.Height, b.Width*b.Height)
 }
 
 // requestPayload is the Responses API request of one scan.

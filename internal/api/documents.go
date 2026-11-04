@@ -245,8 +245,9 @@ func (d apiDeps) documentRead(w http.ResponseWriter, r *http.Request) {
 // documentZones asks SAM 3.1 for the zones of one scan. It sends one
 // Responses request for each noun phrase of sam.Phrases, so the cache
 // holds each request under its own key. The requests run at the same
-// time. The zones join in the order of sam.Phrases, and the first
-// error in that order gives the answer.
+// time. The zones join in the order of sam.Phrases, sam.Merge drops a
+// mark that two phrases of one label find, and the first error in the
+// order of sam.Phrases gives the answer.
 func (d apiDeps) documentZones(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	doc, err := d.st.GetDocument(r.Context(), id)
@@ -286,5 +287,5 @@ func (d apiDeps) documentZones(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, struct {
 		Zones []sam.Zone `json:"zones"`
-	}{zones})
+	}{sam.Merge(zones)})
 }

@@ -148,6 +148,7 @@ func TestParseTextSplit(t *testing.T) {
 func TestPhrases(t *testing.T) {
 	want := []Phrase{
 		{"handwritten scribble", "signature"},
+		{"signature", "signature"},
 		{"circular stamp", "stamp"},
 		{"identity card", "id"},
 	}
@@ -207,5 +208,35 @@ func TestRequestBytes(t *testing.T) {
 	want := `{"model":"sam-3.1","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"circular stamp"},{"type":"input_image","image_url":"data:image/png;base64,AQID"}]}],"metadata":{"include_confidence":"true","mask_encoding":"one_bit"}}`
 	if got != want {
 		t.Errorf("Request =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestMergeDropsTheSameMark(t *testing.T) {
+	in := []Zone{
+		{Label: "signature", Box: Box{X: 454, Y: 835, Width: 266, Height: 74}},
+		{Label: "signature", Box: Box{X: 452, Y: 833, Width: 270, Height: 78}}, // same mark, other phrase
+		{Label: "stamp", Box: Box{X: 454, Y: 835, Width: 266, Height: 74}},     // same box, other label
+		{Label: "signature", Box: Box{X: 10, Y: 10, Width: 50, Height: 20}},    // another mark
+	}
+	got := Merge(in)
+	want := []Zone{in[0], in[2], in[3]}
+	if len(got) != len(want) {
+		t.Fatalf("Merge = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("zone %d = %v, want %v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestMergeKeepsBoxesThatTouchLittle(t *testing.T) {
+	a := Zone{Label: "stamp", Box: Box{X: 0, Y: 0, Width: 100, Height: 100}}
+	b := Zone{Label: "stamp", Box: Box{X: 80, Y: 0, Width: 100, Height: 100}} // 20 % of the smaller box
+	if got := Merge([]Zone{a, b}); len(got) != 2 {
+		t.Errorf("Merge = %v, want both zones", got)
+	}
+	if got := Merge(nil); got == nil || len(got) != 0 {
+		t.Errorf("Merge(nil) = %v, want an empty list", got)
 	}
 }
