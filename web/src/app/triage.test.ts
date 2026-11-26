@@ -152,6 +152,8 @@ describe("triage model", () => {
   test("A12: decisionLabel", () => {
     expect(decisionLabel("favorable")).toBe("Favorable");
     expect(decisionLabel("approve")).toBe("Approve");
+    expect(decisionLabel("request_missing")).toBe("Request missing");
+    expect(decisionLabel("return_to_advisor_now")).toBe("Return to advisor now");
     expect(decisionLabel("")).toBe("");
   });
 });

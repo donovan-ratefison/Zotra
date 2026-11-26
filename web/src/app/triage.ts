@@ -167,8 +167,11 @@ export function docConsequence(
   return { tone: "ok", title: "This document passes the check.", detail: `No blocker for the step ${node.name}.` };
 }
 
+// decisionLabel gives the label of a decision id.
+// Snake case ids read as words: request_missing gives Request missing.
 export function decisionLabel(decision: string): string {
-  return decision.charAt(0).toUpperCase() + decision.slice(1);
+  const text = decision.replaceAll("_", " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 // lockReason gives the reason why F and U are locked, or null. The
