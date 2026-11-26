@@ -153,6 +153,10 @@ Muse Spark on `/chat/completions`, SAM 3.1 on `/responses`.
 
 ## Install
 
+Zotra has no sign-in yet. The app picks the user from the X-Zotra-User
+header, and the demo profiles set it. Before a real use, put an
+authentication proxy in front of Zotra that sets this header.
+
 ### Docker (recommended)
 
 See [Try it in 2 minutes](#try-it-in-2-minutes). To use another port:

@@ -14,7 +14,7 @@ import { ApiError } from "./api";
 import { FieldInput, fieldInput, parseFieldValue } from "./field-inputs";
 import { listUsers, runCommand } from "./case-api";
 import { NewCaseDialogBody } from "./NewCaseDialog";
-import { StepScreen } from "./StepScreen";
+import { ActorSelect, actorsFor, shownActor, StepScreen } from "./StepScreen";
 import { runGenerateTests, TestScreen } from "./TestScreen";
 import { useStudioStore, type StudioMode } from "./store";
 import type { CaseState, UserDTO } from "./case-api";
@@ -245,6 +245,8 @@ function stubFetch(status: number, body: unknown) {
 // The scan of the fixture provides the required name ID of entry, so
 // the document gate stays open.
 function renderStep(state: CaseState, props?: {
+  def?: ProcessDefinition;
+  isTest?: boolean;
   actor?: string;
   failedChecks?: { id: string; message: string }[];
   actorLocked?: boolean;
@@ -252,7 +254,8 @@ function renderStep(state: CaseState, props?: {
 }): string {
   return renderToString(
     createElement(StepScreen, {
-      def: testDefinition,
+      def: props?.def ?? testDefinition,
+      isTest: props?.isTest ?? false,
       state,
       users: usersFixture,
       actor: props?.actor ?? "u-advisor",
@@ -273,7 +276,7 @@ function renderStep(state: CaseState, props?: {
 
 // renderTestScreen renders TestScreen with both queries pre-seeded
 // and the store set to the test mode with case c1.
-function renderTestScreen(state: CaseState = stateFixture, isTest = true): string {
+function renderTestScreen(state: CaseState = stateFixture, isTest = true, def: ProcessDefinition = testDefinition): string {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -292,10 +295,23 @@ function renderTestScreen(state: CaseState = stateFixture, isTest = true): strin
       createElement(
         ReactFlowProvider,
         null,
-        createElement(TestScreen, { def: testDefinition, version: versionFixture }),
+        createElement(TestScreen, { def, version: versionFixture }),
       ),
     ),
   );
+}
+
+// orphanNode is the entry node with a role that no user holds, as
+// after a policy import. orphanDefinition holds it.
+const orphanNode = { ...testDefinition.nodes[1]!, role: "sme_client_advisor" };
+const orphanDefinition: ProcessDefinition = {
+  ...testDefinition,
+  nodes: testDefinition.nodes.map((n) => (n.id === "entry" ? orphanNode : n)),
+};
+
+// actAsTrigger gives the HTML of the Act as trigger button.
+function actAsTrigger(html: string): string {
+  return html.match(/<button[^>]*aria-label="Act as"[^>]*>.*?<\/button>/s)?.[0] ?? "";
 }
 
 afterEach(() => {
@@ -625,5 +641,64 @@ describe("generate tests toast", () => {
       "The generation created no case.",
     );
     expect(toast.success).not.toHaveBeenCalled();
+  });
+});
+
+describe("act as on a test case", () => {
+  const analystNode = { ...testDefinition.nodes[1]!, role: "analyst" };
+  const noRoleNode = { ...testDefinition.nodes[1]!, role: null };
+  const select = (isTest: boolean) =>
+    renderToString(
+      createElement(ActorSelect, {
+        users: usersFixture,
+        node: orphanNode,
+        state: stateFixture,
+        actor: "u-advisor",
+        onActorChange: () => {},
+        disabled: false,
+        isTest,
+      }),
+    );
+
+  test("a role that no user holds gives all users on a test case", () => {
+    expect(actorsFor(usersFixture, orphanNode, true)).toEqual(usersFixture);
+  });
+
+  test("a role that no user holds gives no user on a real case", () => {
+    expect(actorsFor(usersFixture, orphanNode, false)).toEqual([]);
+  });
+
+  test("a role with a holder gives only the holder on a test case", () => {
+    expect(actorsFor(usersFixture, analystNode, true).map((u) => u.id)).toEqual(["u-analyst"]);
+  });
+
+  test("a node with no role gives all users", () => {
+    expect(actorsFor(usersFixture, noRoleNode, false)).toEqual(usersFixture);
+  });
+
+  test("shownActor keeps the actor on a test case only", () => {
+    expect(shownActor(usersFixture, orphanNode, stateFixture, "u-advisor", true)).toBe("u-advisor");
+    expect(shownActor(usersFixture, orphanNode, stateFixture, "u-advisor", false)).toBe("");
+  });
+
+  test("ActorSelect shows the actor on a test case only", () => {
+    expect(select(true)).toContain("Demo Advisor");
+    expect(select(false)).not.toContain("Demo Advisor");
+  });
+
+  test("the step screen shows the actor on a test case only", () => {
+    const trigger = (isTest: boolean) =>
+      actAsTrigger(renderStep(stateFixture, { def: orphanDefinition, isTest, actor: "u-advisor" }));
+    expect(trigger(true)).toContain("Demo Advisor");
+    expect(trigger(false)).not.toBe("");
+    expect(trigger(false)).not.toContain("Demo");
+  });
+
+  test("the test screen shows the actor on a test case only", () => {
+    const trigger = (isTest: boolean) =>
+      actAsTrigger(renderTestScreen(stateFixture, isTest, orphanDefinition));
+    expect(trigger(true)).toContain("Demo Advisor");
+    expect(trigger(false)).not.toBe("");
+    expect(trigger(false)).not.toContain("Demo");
   });
 });

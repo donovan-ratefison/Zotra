@@ -286,7 +286,7 @@ func TestJourney(t *testing.T) {
 	t.Run("R2 wrong role", func(t *testing.T) {
 		c := client{t: t, base: srv.URL}
 		c.refuse(caseID, "u-advisor", map[string]any{"type": "submit", "values": map[string]any{}},
-			http.StatusForbidden, "forbidden", "step analysis waits for role analyst")
+			http.StatusForbidden, "forbidden", "The step Credit analysis waits for the role Credit analyst.")
 	})
 	c.command(caseID, "u-analyst", map[string]any{"type": "take"})
 	c.command(caseID, "u-analyst", map[string]any{"type": "submit", "values": map[string]any{

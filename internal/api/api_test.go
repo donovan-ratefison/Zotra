@@ -691,12 +691,75 @@ func TestCommandRefusals(t *testing.T) {
 	rec = do(t, "POST", "/api/cases/"+caseID+"/commands",
 		`{"type":"decide","decision":"favorable"}`, "u-legal")
 	checkError(t, rec, http.StatusForbidden, "forbidden",
-		"step analysis waits for role analyst")
+		"The step Credit analysis waits for the role Credit analyst.")
 
 	// an unknown case.
 	rec = do(t, "POST", "/api/cases/ghost/commands",
 		`{"type":"decide","decision":"favorable"}`, "u-analyst")
 	checkError(t, rec, http.StatusNotFound, "not_found", "no case ghost")
+}
+
+// A test case accepts a command from each known user. The user
+// check still runs.
+func TestTestCaseAnyUser(t *testing.T) {
+	newTestAPI(t)
+	caseID := analysisCaseOf(t, true)
+
+	// a user with no analyst role.
+	rec := do(t, "POST", "/api/cases/"+caseID+"/commands",
+		`{"type":"submit","values":{}}`, "u-legal")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("submit: status %d: %s", rec.Code, rec.Body.String())
+	}
+	events := decode(t, rec)["events"].([]any)
+	if len(events) != 1 {
+		t.Fatalf("events = %d, want 1", len(events))
+	}
+	e := events[0].(map[string]any)
+	if e["type"] != "data_submitted" || e["actor"] != "u-legal" {
+		t.Errorf("event = %v, want data_submitted by u-legal", e)
+	}
+
+	// an unknown user.
+	rec = do(t, "POST", "/api/cases/"+caseID+"/commands",
+		`{"type":"submit","values":{}}`, "ghost")
+	checkError(t, rec, http.StatusForbidden, "forbidden", "unknown user ghost")
+
+	// no header.
+	rec = do(t, "POST", "/api/cases/"+caseID+"/commands",
+		`{"type":"submit","values":{}}`, "")
+	checkError(t, rec, http.StatusUnauthorized, "unauthorized",
+		"the X-Zotra-User header is required")
+}
+
+// A role id that the definition does not declare shows as the id in
+// the refusal of a real case.
+func TestRefusalUnknownRole(t *testing.T) {
+	newTestAPI(t)
+	var doc map[string]any
+	if err := json.Unmarshal(exampleDefinition(t), &doc); err != nil {
+		t.Fatalf("decode example definition: %v", err)
+	}
+	for _, n := range doc["nodes"].([]any) {
+		if node := n.(map[string]any); node["id"] == "entry" {
+			node["role"] = "ghost_role"
+		}
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("marshal definition: %v", err)
+	}
+	caseID := createCase(t, createProcessVersion(t, out, "Ghost role"), false)
+
+	rec := do(t, "POST", "/api/cases/"+caseID+"/commands",
+		`{"type":"start","data":{}}`, "u-advisor")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("start: status %d: %s", rec.Code, rec.Body.String())
+	}
+	rec = do(t, "POST", "/api/cases/"+caseID+"/commands",
+		`{"type":"submit","values":{}}`, "u-advisor")
+	checkError(t, rec, http.StatusForbidden, "forbidden",
+		"The step Application entry waits for the role ghost_role.")
 }
 
 // T1: a test case at the same step stays out of the inbox.

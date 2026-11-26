@@ -57,25 +57,29 @@ export function accessOf(field: Field, node: ProcessNode, def: ProcessDefinition
 
 // actorsFor gives the users who can act on the node: the users whose
 // roles hold the node role, or every user on a node without a role.
-export function actorsFor(users: UserDTO[], node: ProcessNode): UserDTO[] {
-  return users.filter((u) => node.role === null || u.role_ids.includes(node.role));
+// A test case accepts each known user, so on a test case a node role
+// that no user holds gives every user.
+export function actorsFor(users: UserDTO[], node: ProcessNode, isTest = false): UserDTO[] {
+  const list = users.filter((u) => node.role === null || u.role_ids.includes(node.role));
+  return isTest && list.length === 0 ? users : list;
 }
 
 // shownActor gives the user the screen shows, which is the user the
 // commands send: the assignee when one is set, else the actor when
-// the list holds it, else the first entry.
-export function shownActor(users: UserDTO[], node: ProcessNode, state: CaseState, actor: string): string {
+// the list holds it, else the first entry. On a test case, the list
+// follows the test case rule of actorsFor.
+export function shownActor(users: UserDTO[], node: ProcessNode, state: CaseState, actor: string, isTest = false): string {
   if (state.assignee !== "") {
     return state.assignee;
   }
-  const list = actorsFor(users, node);
+  const list = actorsFor(users, node, isTest);
   return list.some((u) => u.id === actor) ? actor : (list[0]?.id ?? "");
 }
 
 // ActorSelect is the Act as pick of one task node. The test screen
 // renders it in its toolbar; the step screen renders it when no
 // toolbar holds it.
-export function ActorSelect({ users, node, state, actor, onActorChange, disabled, className }: {
+export function ActorSelect({ users, node, state, actor, onActorChange, disabled, className, isTest = false }: {
   users: UserDTO[];
   node: ProcessNode;
   state: CaseState;
@@ -83,9 +87,10 @@ export function ActorSelect({ users, node, state, actor, onActorChange, disabled
   onActorChange: (id: string) => void;
   disabled: boolean;
   className?: string;
+  isTest?: boolean;
 }) {
-  const list = actorsFor(users, node);
-  const value = shownActor(users, node, state, actor);
+  const list = actorsFor(users, node, isTest);
+  const value = shownActor(users, node, state, actor, isTest);
   // A closed Radix select renders no selected label on the server,
   // so the label goes in as children (the lot 2.3 pattern).
   const label = list.find((u) => u.id === value)?.name ?? "";
@@ -153,7 +158,7 @@ function Footer({ children }: { children: ReactNode }) {
   );
 }
 
-export function StepScreen({ def, state, users, actor, onActorChange, onCommand, onDecide, failedChecks, readOnly = false, actorLocked = false, actorInBar = false, showHeader = true, finalData = false, documents, documentsError, events, uploading, onUpload, showSummary = true, checkResult }: {
+export function StepScreen({ def, state, users, actor, onActorChange, onCommand, onDecide, failedChecks, readOnly = false, actorLocked = false, actorInBar = false, showHeader = true, finalData = false, documents, documentsError, events, uploading, onUpload, showSummary = true, checkResult, isTest = false }: {
   def: ProcessDefinition;
   state: CaseState;
   users: UserDTO[];
@@ -174,6 +179,7 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
   onUpload: (file: File, targetName: string) => void;
   showSummary?: boolean; // false: the caller renders the case data
   checkResult?: ReactNode; // the check result, above the actions
+  isTest?: boolean; // the case is a test case
 }) {
   if (state.status === "closed") {
     return (
@@ -230,6 +236,7 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
           readOnly={readOnly}
           actorLocked={actorLocked}
           actorInBar={actorInBar}
+          isTest={isTest}
           documents={documents}
           documentsError={documentsError}
           events={events}
@@ -246,7 +253,7 @@ export function StepScreen({ def, state, users, actor, onActorChange, onCommand,
 // TaskBody is the task-only part: the Act as pick, then the take
 // button or the form with the actions. A replay disables the pick and
 // hides the commands.
-function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, onDecide, failedChecks, readOnly, actorLocked, actorInBar, documents, documentsError, events, uploading, onUpload, showSummary, checkResult }: {
+function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, onDecide, failedChecks, readOnly, actorLocked, actorInBar, documents, documentsError, events, uploading, onUpload, showSummary, checkResult, isTest }: {
   def: ProcessDefinition;
   node: ProcessNode;
   state: CaseState;
@@ -266,6 +273,7 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, on
   onUpload: (file: File, targetName: string) => void;
   showSummary: boolean;
   checkResult: ReactNode;
+  isTest: boolean;
 }) {
   // The effect fires with the assignee when one is set, else with
   // the first list entry when the actor is not in the list: what the
@@ -280,11 +288,11 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, on
       onActorChange(state.assignee);
       return;
     }
-    const list = actorsFor(users, node);
+    const list = actorsFor(users, node, isTest);
     if (list.length > 0 && !list.some((u) => u.id === actor)) {
       onActorChange(list[0]!.id);
     }
-  }, [state.node_id, state.assignee, users, node, actor, onActorChange, actorLocked]);
+  }, [state.node_id, state.assignee, users, node, actor, onActorChange, actorLocked, isTest]);
 
   const actorName = (id: string) => users.find((u) => u.id === id)?.name ?? id;
 
@@ -302,6 +310,7 @@ function TaskBody({ def, node, state, users, actor, onActorChange, onCommand, on
         actor={actor}
         onActorChange={onActorChange}
         disabled={readOnly}
+        isTest={isTest}
       />
     </label>
   );
