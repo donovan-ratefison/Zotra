@@ -22,7 +22,13 @@ import {
   type ZoneDTO,
 } from "./doc-api";
 import { FieldInput } from "./field-inputs";
-import { ScanDialogBody, ZoneOverlay, zoneStyle } from "./ScanDialog";
+import {
+  ScanDialogBody,
+  ZONES_NOT_RECORDED_TEXT,
+  ZoneOverlay,
+  zonesErrorView,
+  zoneStyle,
+} from "./ScanDialog";
 import { documentProvides, StepDocuments } from "./StepDocuments";
 import { decisionCommands, DecisionConfirmBody, nextStepText, sendsBack, StepScreen } from "./StepScreen";
 import { TestScreen } from "./TestScreen";
@@ -307,16 +313,22 @@ function renderStep(state: CaseState, props?: {
 }
 
 // renderBody renders ScanDialogBody with the zones cache pre-seeded,
-// or left pending when zones is null. The read argument, when given,
-// adds the five read props of lot 5.3 beside the lot 5.2 props.
-function renderBody(mode: "view" | "sign", zones: ZoneDTO[] | null, read?: {
+// left pending when zones is null, or in error when zones is an
+// ApiError. The read argument, when given, adds the five read props of
+// lot 5.3 beside the lot 5.2 props.
+function renderBody(mode: "view" | "sign", zones: ZoneDTO[] | null | ApiError, read?: {
   reading?: boolean;
   readValues?: Record<string, unknown> | null;
 }): string {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: { queries: { retry: false, retryOnMount: false } },
   });
-  if (zones !== null) {
+  if (zones instanceof ApiError) {
+    client
+      .getQueryCache()
+      .build(client, { queryKey: ["zones", "d1"] })
+      .setState({ status: "error", error: zones, fetchStatus: "idle" });
+  } else if (zones !== null) {
     client.setQueryData(["zones", "d1"], zones);
   }
   return renderToString(
@@ -808,6 +820,33 @@ describe("scan dialog body", () => {
   test("5.2 row 20: a pending zones query gives the detection line", () => {
     const html = renderBody("view", null);
     expect(html).toContain("Detecting the zones...");
+  });
+
+  test("demo-6 row 1: a replay miss gives the neutral text", () => {
+    expect(zonesErrorView(new ApiError(503, "ai_not_recorded", "x"))).toEqual({
+      text: ZONES_NOT_RECORDED_TEXT,
+      muted: true,
+    });
+  });
+
+  test("demo-6 row 2: another API error keeps the error text", () => {
+    expect(zonesErrorView(new ApiError(503, "ai_unavailable", "ai_unavailable text"))).toEqual({
+      text: "The zones did not load: ai_unavailable text",
+      muted: false,
+    });
+  });
+
+  test("demo-6 row 3: a plain error keeps the error text", () => {
+    expect(zonesErrorView(new Error("boom"))).toEqual({
+      text: "The zones did not load: Error: boom",
+      muted: false,
+    });
+  });
+
+  test("demo-6 row 6: the scan dialog shows the neutral line on a replay miss", () => {
+    const html = renderBody("view", new ApiError(503, "ai_not_recorded", "x"));
+    expect(html).toContain('<p class="text-sm text-muted-foreground">Zone detection needs the live AI.');
+    expect(html).not.toContain("The zones did not load");
   });
 
   test("5.2 row 21: no signature zone disables the sign action", () => {

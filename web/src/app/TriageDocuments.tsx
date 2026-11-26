@@ -6,10 +6,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CircleCheck, FileText, FileX, Info, Lock, ShieldCheck } from "lucide-react";
-import { ApiError } from "../studio/api";
 import type { CaseEvent } from "../studio/case-api";
 import { documentBytesUrl, readZones, type DocumentDTO } from "../studio/doc-api";
-import { ZoneOverlay } from "../studio/ScanDialog";
+import { ZoneOverlay, zonesErrorView } from "../studio/ScanDialog";
 import type { ProcessNode } from "../studio/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/ui/button";
@@ -71,6 +70,7 @@ export function TriageDocumentsBody(props: BodyProps & {
     queryFn: () => readZones(scan!.id),
     enabled: scan !== null,
   });
+  const zonesError = zonesQ.isError ? zonesErrorView(zonesQ.error) : null;
   const cons = docConsequence(row, node, props.events);
   const { box, Icon } = CONSEQUENCE[cons.tone];
   const attached = rows.filter((r) => r.scan !== null).length;
@@ -191,11 +191,9 @@ export function TriageDocumentsBody(props: BodyProps & {
           <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-auto px-3.5 pb-3">
             {scan !== null && (
               <>
-                {zonesQ.isError ? (
-                  <p className="text-[12.5px] text-red-700">
-                    {`The zones did not load: ${
-                      zonesQ.error instanceof ApiError ? zonesQ.error.message : String(zonesQ.error)
-                    }`}
+                {zonesError !== null ? (
+                  <p className={cn("text-[12.5px]", zonesError.muted ? "text-muted-foreground" : "text-red-700")}>
+                    {zonesError.text}
                   </p>
                 ) : zonesQ.data === undefined ? (
                   <p className="text-[12.5px] text-muted-foreground">Detecting the zones...</p>
