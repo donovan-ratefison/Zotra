@@ -4,6 +4,7 @@
 // the components, no DOM events, and the IO of the helpers is
 // stubbed through their last parameter.
 
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { describe, expect, test } from "vitest";
@@ -12,6 +13,7 @@ import { TaskCard } from "./diagram";
 import type { RestateQuestion } from "./ai-api";
 import {
   ChatPanelView,
+  SAMPLE_REQUESTS,
   acceptProposal,
   answerLabels,
   answersReady,
@@ -29,7 +31,7 @@ import { diffChips, diffDefinitions } from "./diff";
 import type { ProcessDefinition, Version } from "./types";
 
 const REPLAY_MISS =
-  "This request is not in the recorded demo answers. To use the live AI, set ZOTRA_AI_API_KEY and ZOTRA_AI_MODE=live in .env, then restart.";
+  "This request is not in the recorded answers. Free text and other files need the live AI: run Zotra on your machine with your own Meta key.";
 
 // The mini definition fixture of the approved 2.2 brief, with all
 // fields. Local copy: every test file keeps its fixtures local.
@@ -707,5 +709,51 @@ describe("selected step", () => {
     const html = renderAbout(publishedVersion, about);
     expect(html).not.toContain("About:");
     expect(html).not.toContain("Clear the selected step");
+  });
+});
+
+describe("recorded sample requests", () => {
+  const ROW_TEXT = "Try a recorded request:";
+  function renderSamples(state: ChatState, version: Version, samples = SAMPLE_REQUESTS) {
+    return renderToString(
+      createElement(ChatPanelView, { state, version, collapsed: false, samples }),
+    );
+  }
+
+  test("draft with samples: the row shows each label with its text as title", () => {
+    const html = renderSamples(EMPTY, draftVersion);
+    expect(html).toContain(ROW_TEXT);
+    for (const s of SAMPLE_REQUESTS) {
+      expect(html).toContain(`title="${s.text}">${s.label}</button>`);
+    }
+  });
+
+  test("no samples: no row", () => {
+    expect(renderSamples(EMPTY, draftVersion, [])).not.toContain(ROW_TEXT);
+  });
+
+  test("published version: no row", () => {
+    expect(renderSamples(EMPTY, publishedVersion)).not.toContain(ROW_TEXT);
+  });
+
+  test("pending proposal: no row", () => {
+    expect(renderSamples(proposed, draftVersion)).not.toContain(ROW_TEXT);
+  });
+
+  test("a replay miss error turn shows the new text", () => {
+    const state = chatEvent(sent, {
+      type: "error", status: 503, code: "ai_not_recorded", message: REPLAY_MISS, details: [],
+    });
+    expect(renderSamples(state, draftVersion)).toContain(REPLAY_MISS);
+  });
+
+  test("each sample text is the recorded request of the replay README", () => {
+    const readme = readFileSync(
+      new URL("../../../examples/ai-replay/README.md", import.meta.url),
+      "utf8",
+    );
+    const list = readme.slice(readme.indexOf("Send, in this order"));
+    const recorded = [...list.matchAll(/- `([^`]+)`/g)].slice(0, 2).map((m) => m[1]);
+    expect(SAMPLE_REQUESTS.map((s) => s.text)).toEqual(recorded);
   });
 });

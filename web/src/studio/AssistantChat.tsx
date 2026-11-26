@@ -10,6 +10,7 @@ import {
   useState,
   type ReactElement,
 } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   ArrowUp,
   Check,
@@ -30,6 +31,7 @@ import { Button } from "@/ui/button";
 import { Hint } from "@/ui/hint";
 import { Checkbox } from "@/ui/checkbox";
 import { Switch } from "@/ui/switch";
+import { fetchHealth } from "./ReplayBanner";
 import type { ProcessDefinition, Version } from "./types";
 
 const VIOLET = "#7c3aed";
@@ -61,6 +63,18 @@ const RESTATE_TITLE =
   "The assistant restates your request and waits for your OK before it changes the draft.";
 const RESTATE_KEY = "zotra.chat.restateFirst";
 const CHOICES_TEXT = "Make the change with these choices";
+// SAMPLE_REQUESTS are the two chat requests of the recorded AI
+// answers. Each text must stay letter by letter the recorded request.
+export const SAMPLE_REQUESTS: { label: string; text: string }[] = [
+  {
+    label: "Set a 12 h deadline on Loan offer",
+    text: "Give the step Loan offer a deadline of 12 h.",
+  },
+  {
+    label: "Add a Property valuation step",
+    text: "Add a step Property valuation before Credit analysis, done by a new role Property expert, with a deadline of 72 h and the required document Valuation report.",
+  },
+];
 const INPUT_CLASS =
   "min-w-0 flex-1 rounded-md border bg-transparent px-3 text-[13px] outline-none";
 
@@ -603,8 +617,10 @@ export function ChatPanelView(props: {
   accepting?: boolean;
   about?: { id: string; name: string } | null;
   onClearAbout?: () => void;
+  samples?: { label: string; text: string }[];
+  onSample?: (text: string) => void;
 }): ReactElement {
-  const { state, version, collapsed, listHeight = 220 } = props;
+  const { state, version, collapsed, listHeight = 220, samples = [] } = props;
   const last = state.turns[state.turns.length - 1] ?? null;
   const pending = last !== null && last.kind === "proposal";
   const waiting = last !== null && last.kind === "waiting";
@@ -693,6 +709,22 @@ export function ChatPanelView(props: {
               />
             ))}
           </div>
+          {!disabled && samples.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2">
+              <span className="text-[12px] text-muted-foreground">Try a recorded request:</span>
+              {samples.map((s) => (
+                <Button
+                  key={s.label}
+                  variant="outline"
+                  size="sm"
+                  title={s.text}
+                  onClick={() => props.onSample?.(s.text)}
+                >
+                  {s.label}
+                </Button>
+              ))}
+            </div>
+          )}
           <div className="flex items-center gap-2 px-4 pb-3">
             {props.about != null && version.status === "draft" && (
               <span
@@ -859,6 +891,7 @@ export function AssistantChat({
   // restate and the confirm does not change the request.
   const [pendingNodeId, setPendingNodeId] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Answers>({});
+  const { data: health } = useQuery({ queryKey: ["health"], queryFn: fetchHealth });
   const [restateFirst, setRestateFirst] = useState(() => {
     if (typeof localStorage === "undefined") {
       return true;
@@ -879,8 +912,9 @@ export function AssistantChat({
     }
   }
 
-  function send() {
-    const text = draft.trim();
+  // send sends the typed text, or the text of a sample button.
+  function send(raw: string = draft) {
+    const text = raw.trim();
     if (text === "" || accepting) {
       return;
     }
@@ -990,7 +1024,7 @@ export function AssistantChat({
       listHeight={listHeight}
       draft={draft}
       onDraftChange={setDraft}
-      onSend={send}
+      onSend={() => send()}
       onToggle={() => setCollapsed((v) => !v)}
       onAccept={() => void accept()}
       onReject={reject}
@@ -1001,6 +1035,8 @@ export function AssistantChat({
       accepting={accepting}
       about={about}
       onClearAbout={onClearAbout}
+      samples={health?.ai_mode === "replay" ? SAMPLE_REQUESTS : []}
+      onSample={send}
     />
   );
 }
