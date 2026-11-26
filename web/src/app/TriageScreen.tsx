@@ -1,7 +1,7 @@
 // The triage deck: the inbox queue as cards, most urgent first, with
 // the checks and the documents of the front case. F and U send the
-// decisions of the step with the commands of the case screen. The
-// pure rules live in triage.ts.
+// decisions of the step with the commands of the case screen, after a
+// pause with Undo. The pure rules live in triage.ts.
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -28,16 +28,20 @@ import { fetchChecks, type CheckResult, type InboxCase } from "./app-api";
 import { pickField } from "./InboxScreen";
 import {
   SHARE_LIMIT,
+  UNDO_MS,
   decisionLabel,
+  delayedSends,
   documentRows,
   dueText,
   editableTarget,
   enteredAt,
   firstDocIndex,
   keyFigures,
+  leftText,
   lockReason,
   moveAfterSend,
   msLeft,
+  pendingText,
   queueOrder,
   receivedText,
   sendCommands,
@@ -46,6 +50,7 @@ import {
   shareOfIncome,
   startIndex,
   triageAction,
+  undoneText,
   type Answer,
 } from "./triage";
 import { TriageDocuments } from "./TriageDocuments";
@@ -54,6 +59,13 @@ import { appendBlock, blockText, chainBlocks, ghostLabels, newBlock } from "./ch
 
 // The pause before the move to the next card, so the user sees the stamp.
 const MOVE_MS = 1200;
+
+const keyClass =
+  "inline-flex h-[34px] items-center gap-2 rounded-lg border bg-white pr-3 pl-2 text-[13px] font-medium whitespace-nowrap text-zinc-700 shadow-sm hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-45";
+
+function dropKey<T>(map: Record<string, T>, key: string): Record<string, T> {
+  return Object.fromEntries(Object.entries(map).filter(([k]) => k !== key));
+}
 
 // A sent case keeps the documents and checks of the send moment.
 interface Sent {
@@ -303,6 +315,47 @@ export function TriageScreen(props: {
   );
 }
 
+// DecisionKeys gives the decision buttons of the front card. While the
+// decision of the card waits for its send, it gives the pending text
+// and Undo in their place.
+export function DecisionKeys({
+  decisions,
+  pending,
+  disabled,
+  onDecide,
+  onUndo,
+}: {
+  decisions: string[];
+  pending: string | undefined;
+  disabled: boolean;
+  onDecide: (decision: string) => void;
+  onUndo: () => void;
+}) {
+  if (pending !== undefined) {
+    return (
+      <>
+        <span className="self-center text-[13px] text-muted-foreground">{pendingText(decisionLabel(pending))}</span>
+        <button type="button" className={keyClass} onClick={onUndo}>
+          Undo
+        </button>
+      </>
+    );
+  }
+  return decisions.map((d, i) => (
+    <button
+      key={d}
+      type="button"
+      disabled={disabled}
+      aria-keyshortcuts={i === 0 ? "F" : i === 1 ? "U" : undefined}
+      onClick={() => onDecide(d)}
+      className={cn(keyClass, i === 0 && "border-primary bg-primary text-primary-foreground hover:bg-primary/90")}
+    >
+      {i < 2 && <Kbd light={i === 0}>{i === 0 ? "F" : "U"}</Kbd>}
+      {decisionLabel(d)}
+    </button>
+  ));
+}
+
 function Deck({
   userId,
   users,
@@ -333,7 +386,14 @@ function Deck({
   const [index, setIndex] = useState(() =>
     readOnly ? Math.max(0, queue.findIndex((it) => it.id === startId)) : startIndex(queue.map((it) => it.id), start),
   );
-  const [busy, setBusy] = useState(false);
+  // The cases with a send in progress.
+  const [busy, setBusy] = useState<string[]>([]);
+  // The cases with a decision that waits for its send: case id to
+  // decision. It mirrors the delayed sends for the render.
+  const [pending, setPending] = useState<Record<string, string>>({});
+  const [delayed] = useState(() => delayedSends(UNDO_MS));
+  // The reference of each decided case, for the texts after an unmount.
+  const references = useRef(new Map<string, string>());
   // The open document row of the dialog (null: closed), and the last
   // one, so the focus goes back to it after a close.
   const [docIndex, setDocIndex] = useState<number | null>(null);
@@ -345,10 +405,20 @@ function Deck({
     setLastDoc(i);
     setDocIndex(i);
   };
-  // Blocks a second send before the busy state renders.
-  const sending = useRef(false);
+  // Blocks a second send of a case before the busy state renders.
+  const sending = useRef(new Set<string>());
   const moveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(moveTimer.current), []);
+  // A user who leaves the triage sends no pending decision.
+  useEffect(
+    () => () => {
+      clearTimeout(moveTimer.current);
+      for (const id of delayed.cancelAll()) {
+        toast.dismiss(`decision-${id}`);
+        toast(leftText(references.current.get(id) ?? id));
+      }
+    },
+    [delayed],
+  );
 
   const last = queue.length - 1;
   const front = queue[Math.min(index, last)]!;
@@ -388,7 +458,14 @@ function Deck({
   });
   const sentDecision = snap?.decision;
   const chain = useChainVerify();
-  const canSend = !readOnly && lock === null && sentDecision === undefined && !busy && chain.busy === null;
+  const pendingDecision = pending[front.id];
+  const canSend =
+    !readOnly &&
+    lock === null &&
+    sentDecision === undefined &&
+    pendingDecision === undefined &&
+    !busy.includes(front.id) &&
+    chain.busy === null;
   const rows = docs === null ? null : documentRows(def, events, node.id, docs);
   // A sent card keeps its snapshot: the events of the answer add one block.
   const extra = snap?.answer.events ?? [];
@@ -399,14 +476,44 @@ function Deck({
   const n = events.length + extra.length;
   const verifyFront = () => chain.verify(front.id, n);
 
-  async function send(decision: string) {
-    if (sending.current) return;
-    sending.current = true;
+  // decide shows the pending decision, moves to the next card after
+  // the usual pause, and sends the decision after UNDO_MS. The send
+  // uses the values of this render.
+  function decide(decision: string) {
+    if (!canSend) return;
     const id = front.id;
     const at = Math.min(index, last);
+    references.current.set(id, front.row.reference);
+    setPending((old) => ({ ...old, [id]: decision }));
+    toast(pendingText(decisionLabel(decision)), {
+      id: `decision-${id}`,
+      duration: UNDO_MS,
+      action: { label: "Undo", onClick: () => undo(id) },
+    });
+    clearTimeout(moveTimer.current);
+    moveTimer.current = setTimeout(() => setIndex((i) => moveAfterSend(i, at, last)), MOVE_MS);
+    delayed.queue(id, () => {
+      setPending((old) => dropKey(old, id));
+      void send(decision);
+    });
+  }
+
+  function undo(id: string) {
+    if (!delayed.undo(id)) return;
+    setPending((old) => dropKey(old, id));
+    toast.dismiss(`decision-${id}`);
+    toast(undoneText(references.current.get(id) ?? id));
+    clearTimeout(moveTimer.current);
+    setIndex(queue.findIndex((it) => it.id === id));
+  }
+
+  async function send(decision: string) {
+    const id = front.id;
+    if (sending.current.has(id)) return;
+    sending.current.add(id);
     const label = decisionLabel(decision);
     const shot = { decision, docs: docs ?? [], checks: checks ?? [] };
-    setBusy(true);
+    setBusy((old) => [...old, id]);
     try {
       const cmds = sendCommands(def, node, state, shot.docs, decision);
       const answer = await sendDecision(id, userId, cmds, runCommand);
@@ -417,8 +524,6 @@ function Deck({
         onSent(id, { ...shot, answer });
         chain.reset(id);
         void queryClient.invalidateQueries({ queryKey: ["inbox", userId] });
-        clearTimeout(moveTimer.current);
-        moveTimer.current = setTimeout(() => setIndex((i) => moveAfterSend(i, at, last)), MOVE_MS);
       } else {
         toast.error(result.text);
         void queryClient.invalidateQueries({ queryKey: ["checks", id] });
@@ -426,8 +531,8 @@ function Deck({
     } catch (err) {
       toast.error(messageOf(err));
     } finally {
-      sending.current = false;
-      setBusy(false);
+      sending.current.delete(id);
+      setBusy((old) => old.filter((x) => x !== id));
     }
   }
 
@@ -466,7 +571,7 @@ function Deck({
       }
       else {
         const decision = node.decisions[action === "first" ? 0 : 1];
-        if (decision !== undefined && canSend) void send(decision);
+        if (decision !== undefined) decide(decision);
       }
     };
   });
@@ -493,8 +598,6 @@ function Deck({
   const due = dueText(msLeft(enteredAt(events, node.id), node.deadline_hours, now));
   const figures = keyFigures(def, node, state);
   const share = shareOfIncome(state);
-  const keyClass =
-    "inline-flex h-[34px] items-center gap-2 rounded-lg border bg-white pr-3 pl-2 text-[13px] font-medium whitespace-nowrap text-zinc-700 shadow-sm hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-45";
 
   return (
     <div className="min-h-full flex-1 bg-[#f1f1ef] px-7 pt-3.5 pb-5">
@@ -513,7 +616,7 @@ function Deck({
       <div className="mb-3.5 grid grid-cols-[1fr_auto_1fr] items-center gap-4">
         <div className="flex min-w-0 items-center gap-2">
           <h1 className="text-[18px] font-semibold tracking-tight">{`${readOnly ? "Queue" : "Triage"}: ${node.name}`}</h1>
-          <Hint label="About the triage" side="bottom">Rules and humans decide. The AI only checks.</Hint>
+          <Hint label="About the triage" side="bottom">Rules and humans decide. The AI only checks. A decision waits 5 s before its signature: Undo cancels it.</Hint>
         </div>
         <div className="grid justify-items-center gap-1.5">
           <b className="text-[13px] font-semibold">{`Case ${index + 1} of ${queue.length}`}</b>
@@ -679,19 +782,15 @@ function Deck({
           <Kbd>J</Kbd>
           Next
         </button>
-        {!readOnly && node.decisions.map((d, i) => (
-          <button
-            key={d}
-            type="button"
+        {!readOnly && (
+          <DecisionKeys
+            decisions={node.decisions}
+            pending={pendingDecision}
             disabled={!canSend}
-            aria-keyshortcuts={i === 0 ? "F" : i === 1 ? "U" : undefined}
-            onClick={() => void send(d)}
-            className={cn(keyClass, i === 0 && "border-primary bg-primary text-primary-foreground hover:bg-primary/90")}
-          >
-            {i < 2 && <Kbd light={i === 0}>{i === 0 ? "F" : "U"}</Kbd>}
-            {decisionLabel(d)}
-          </button>
-        ))}
+            onDecide={decide}
+            onUndo={() => undo(front.id)}
+          />
+        )}
         <button
           type="button"
           className={keyClass}

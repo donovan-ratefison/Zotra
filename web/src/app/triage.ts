@@ -272,6 +272,58 @@ export function moveAfterSend(i: number, at: number, last: number): number {
   return i === at ? Math.min(i + 1, last) : i;
 }
 
+// The pause between a decision and its send, so the user can undo it.
+export const UNDO_MS = 5000;
+
+export function pendingText(label: string): string {
+  return `${label} is signed in 5 s.`;
+}
+
+export function undoneText(reference: string): string {
+  return `Undone. No decision was sent for ${reference}.`;
+}
+
+export function leftText(reference: string): string {
+  return `No decision was sent for ${reference}: you left the triage.`;
+}
+
+// delayedSends runs each queued send after ms, unless the user undoes
+// it first. A second queue of a pending id is ignored.
+export function delayedSends(ms: number): {
+  queue(id: string, run: () => void): void;
+  undo(id: string): boolean;
+  pending(id: string): boolean;
+  cancelAll(): string[];
+} {
+  const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  return {
+    queue(id, run) {
+      if (timers.has(id)) return;
+      timers.set(
+        id,
+        setTimeout(() => {
+          timers.delete(id);
+          run();
+        }, ms),
+      );
+    },
+    undo(id) {
+      const t = timers.get(id);
+      if (t === undefined) return false;
+      clearTimeout(t);
+      timers.delete(id);
+      return true;
+    },
+    pending: (id) => timers.has(id),
+    cancelAll() {
+      const ids = [...timers.keys()];
+      for (const t of timers.values()) clearTimeout(t);
+      timers.clear();
+      return ids;
+    },
+  };
+}
+
 const KEYS: Record<string, "prev" | "next" | "first" | "second" | "docs" | "open" | "verify"> = {
   k: "prev",
   j: "next",
