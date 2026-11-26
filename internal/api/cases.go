@@ -250,14 +250,23 @@ func (d apiDeps) runCommand(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_json", msgInvalidJSON)
 		return
 	}
-	// 4. The role check. It runs only on a node with a role, so the
-	// engine answers for a fresh case and for a closed case.
-	if slices.Contains(commandTypes, body.Type) {
+	// 4. The role check. It runs only on a real case and only on a
+	// node with a role, so the engine answers for a fresh case and for
+	// a closed case. A test case accepts a command from each known
+	// user. The refusal names the step and the role, or the role id
+	// when the definition has no such role.
+	if !c.IsTest && slices.Contains(commandTypes, body.Type) {
 		for _, node := range def.Nodes {
 			if node.ID == st.NodeID && node.Role != nil &&
 				!slices.Contains(user.RoleIDs, *node.Role) {
+				roleName := *node.Role
+				for _, role := range def.Roles {
+					if role.ID == *node.Role {
+						roleName = role.Name
+					}
+				}
 				writeError(w, http.StatusForbidden, "forbidden",
-					fmt.Sprintf("step %s waits for role %s", node.ID, *node.Role))
+					fmt.Sprintf("The step %s waits for the role %s.", node.Name, roleName))
 				return
 			}
 		}

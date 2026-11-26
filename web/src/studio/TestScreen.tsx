@@ -459,6 +459,7 @@ export function TestScreen({ def, version }: {
                 onActorChange={setActor}
                 disabled={at !== null || loaded.state.status === "closed"}
                 className="h-8 w-[200px]"
+                isTest={loaded.case.is_test}
               />
               <span aria-hidden className="h-5 w-px bg-border" />
             </>
@@ -631,6 +632,7 @@ export function TestScreen({ def, version }: {
                 actorInBar
                 showHeader={false}
                 finalData
+                isTest={loaded.case.is_test}
               />
             )}
             {panelTab === "inspector" && (
