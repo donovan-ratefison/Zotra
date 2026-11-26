@@ -103,7 +103,7 @@ describe("scan route client", () => {
     [
       503,
       "ai_not_recorded",
-      "This request is not in the recorded demo answers. To use the live AI, set ZOTRA_AI_API_KEY and ZOTRA_AI_MODE=live in .env, then restart.",
+      "This request is not in the recorded answers. Free text and other files need the live AI: run Zotra on your machine with your own Meta key.",
     ],
     [503, "ai_unavailable", "The AI layer is off."],
     [422, "invalid_output", "the AI answer has no content"],

@@ -1031,8 +1031,8 @@ func TestPolicyProvider401(t *testing.T) {
 }
 
 func TestWriteAIError(t *testing.T) {
-	const miss = "This request is not in the recorded demo answers. To use the live AI, " +
-		"set ZOTRA_AI_API_KEY and ZOTRA_AI_MODE=live in .env, then restart."
+	const miss = "This request is not in the recorded answers. Free text and other files " +
+		"need the live AI: run Zotra on your machine with your own Meta key."
 	cases := []struct {
 		err     error
 		code    string
