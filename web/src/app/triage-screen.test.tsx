@@ -1,4 +1,5 @@
-// The triage screen test rows V1, V2, D1 to D8, CV1, CV2, V3 and T1 to T7, in order. The
+// The triage screen test rows V1, V2, D1 to D8, CV1, CV2, V3, T1 to T7,
+// R1 to R5 and P1, in order. The
 // environment is node: renderToString with pre-seeded caches.
 
 import { createElement } from "react";
@@ -11,7 +12,7 @@ import type { CaseEvent, CaseState, UserDTO } from "../studio/case-api";
 import type { ProcessDefinition } from "../studio/types";
 import type { CheckResult, InboxCase } from "./app-api";
 import { viewOf, viewUrl } from "./AppShell";
-import { TriageScreen } from "./TriageScreen";
+import { DecisionKeys, TriageScreen } from "./TriageScreen";
 
 const def = seedJson as ProcessDefinition;
 const version = {
@@ -323,5 +324,37 @@ describe("read-only deck", () => {
   test("R5: an unknown start id gives the first case", () => {
     const html = renderRO(seed(), [c1, c2], "c9");
     expect(html).toContain("Case 1 of 2");
+  });
+});
+
+describe("pending decision", () => {
+  test("P1: a pending card has the pending text and Undo, no decision button", () => {
+    const html = renderToString(
+      createElement(DecisionKeys, {
+        decisions: ["favorable", "unfavorable"],
+        pending: "favorable",
+        disabled: false,
+        onDecide: () => {},
+        onUndo: () => {},
+      }),
+    );
+    expect(html).toContain("Favorable is signed in 5 s.");
+    expect(html).toMatch(/<button type="button" class="[^"]*">Undo<\/button>/);
+    expect(html).not.toContain('aria-keyshortcuts="F"');
+    expect(html).not.toContain(">Unfavorable<");
+  });
+
+  test("P2: with no pending decision, the decision buttons", () => {
+    const html = renderToString(
+      createElement(DecisionKeys, {
+        decisions: ["favorable", "unfavorable"],
+        pending: undefined,
+        disabled: false,
+        onDecide: () => {},
+        onUndo: () => {},
+      }),
+    );
+    expect(html).toMatch(F_ENABLED);
+    expect(html).not.toContain("Undo");
   });
 });

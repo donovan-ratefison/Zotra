@@ -66,7 +66,8 @@ These steps work with no AI key.
 4. **Work the cases.** Open the bank app (`/app`). In Demo profile,
    pick Demo Analyst, then click Triage. Press D to see the documents,
    Escape to close them, V to verify the hash chain of the case, and F
-   to give a favorable decision.
+   to give a favorable decision. The decision is signed after 5 s:
+   click Undo in the message to cancel it.
 5. **Supervise and audit.** Pick Demo Director. Click Supervision to
    see where cases wait and why. Click Audit log, then Verify chain.
 

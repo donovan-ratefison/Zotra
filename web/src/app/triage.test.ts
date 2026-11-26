@@ -8,6 +8,7 @@ import { ApiError } from "../studio/api";
 import { fetchChecks, type CheckResult } from "./app-api";
 import {
   decisionLabel,
+  delayedSends,
   docConsequence,
   docStep,
   documentRows,
@@ -17,9 +18,11 @@ import {
   firstDocIndex,
   keyFigures,
   leftStep,
+  leftText,
   lockReason,
   moveAfterSend,
   msLeft,
+  pendingText,
   queueOrder,
   receivedText,
   sendCommands,
@@ -28,6 +31,7 @@ import {
   shareOfIncome,
   startIndex,
   triageAction,
+  undoneText,
   zoneText,
 } from "./triage";
 
@@ -466,5 +470,77 @@ describe("checks client", () => {
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(409);
     expect((err as ApiError).code).toBe("not_a_task");
+  });
+});
+
+describe("delayed sends", () => {
+  afterEach(() => vi.useRealTimers());
+  const setup = () => {
+    vi.useFakeTimers();
+    return { d: delayedSends(5000), run: vi.fn() };
+  };
+
+  test("U1: the texts of the pause", () => {
+    expect(pendingText("Favorable")).toBe("Favorable is signed in 5 s.");
+    expect(undoneText("HL-2026-0042")).toBe("Undone. No decision was sent for HL-2026-0042.");
+    expect(leftText("HL-2026-0042")).toBe("No decision was sent for HL-2026-0042: you left the triage.");
+  });
+
+  test("U2: no run before the pause ends", () => {
+    const { d, run } = setup();
+    d.queue("a", run);
+    vi.advanceTimersByTime(4999);
+    expect(run).not.toHaveBeenCalled();
+    expect(d.pending("a")).toBe(true);
+  });
+
+  test("U3: one run when the pause ends", () => {
+    const { d, run } = setup();
+    d.queue("a", () => {
+      expect(d.pending("a")).toBe(false);
+      run();
+    });
+    vi.advanceTimersByTime(5000);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(d.pending("a")).toBe(false);
+  });
+
+  test("U4: undo stops the run", () => {
+    const { d, run } = setup();
+    d.queue("a", run);
+    vi.advanceTimersByTime(2000);
+    expect(d.undo("a")).toBe(true);
+    vi.advanceTimersByTime(5000);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  test("U5: undo with nothing pending", () => {
+    expect(setup().d.undo("x")).toBe(false);
+  });
+
+  test("U6: a second queue of a pending id is ignored", () => {
+    const { d, run } = setup();
+    const second = vi.fn();
+    d.queue("a", run);
+    d.queue("a", second);
+    vi.advanceTimersByTime(5000);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(second).not.toHaveBeenCalled();
+  });
+
+  test("U7: cancelAll gives the pending ids in queue order", () => {
+    const { d, run } = setup();
+    d.queue("a", run);
+    d.queue("b", run);
+    expect(d.cancelAll()).toEqual(["a", "b"]);
+    vi.advanceTimersByTime(10000);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  test("U8: undo after the send", () => {
+    const { d, run } = setup();
+    d.queue("a", run);
+    vi.advanceTimersByTime(5000);
+    expect(d.undo("a")).toBe(false);
   });
 });
