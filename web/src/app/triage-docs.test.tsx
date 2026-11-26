@@ -81,6 +81,19 @@ describe("triage documents dialog", () => {
         .setState({ status: "error", error: new ApiError(503, "ai_unavailable", "ai_unavailable text", []), fetchStatus: "idle" }),
     );
     expect(html).toContain("The zones did not load: ai_unavailable text");
+    expect(html).toMatch(/text-red-700">The zones did not load/);
+  });
+
+  test("B3b: a replay miss gives a neutral line", () => {
+    const html = render({}, (c) =>
+      c
+        .getQueryCache()
+        .build(c, { queryKey: ["zones", "d1"] })
+        .setState({ status: "error", error: new ApiError(503, "ai_not_recorded", "x", []), fetchStatus: "idle" }),
+    );
+    expect(html).toContain("Zone detection needs the live AI.");
+    expect(html).not.toContain("The zones did not load");
+    expect(html).toMatch(/<p class="text-\[12\.5px\] text-muted-foreground">Zone detection needs the live AI\./);
   });
 
   test("B4: no zone", () => {

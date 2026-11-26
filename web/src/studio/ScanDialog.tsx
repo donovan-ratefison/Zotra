@@ -32,6 +32,23 @@ export function zoneStyle(
   };
 }
 
+// ZONES_NOT_RECORDED_TEXT is the neutral line of a replay miss: the
+// demo has no recorded zone answer for this scan.
+export const ZONES_NOT_RECORDED_TEXT =
+  "Zone detection needs the live AI. This demo has no recorded answer for this scan.";
+
+// zonesErrorView gives the text of a zones error. A replay miss
+// (ai_not_recorded) is muted. Each other error stays an error.
+export function zonesErrorView(error: unknown): { text: string; muted: boolean } {
+  if (error instanceof ApiError && error.code === "ai_not_recorded") {
+    return { text: ZONES_NOT_RECORDED_TEXT, muted: true };
+  }
+  return {
+    text: `The zones did not load: ${error instanceof ApiError ? error.message : String(error)}`,
+    muted: false,
+  };
+}
+
 // ZoneOverlay draws one box per zone over the image. Without the
 // natural size it draws nothing: the percents need it.
 export function ZoneOverlay({ zones, size }: {
@@ -74,6 +91,7 @@ export function ScanDialogBody({ doc, mode, onSign, reading, readValues, onRead,
     queryFn: () => readZones(doc.id),
   });
   const zones = zonesQuery.data;
+  const zonesError = zonesQuery.isError ? zonesErrorView(zonesQuery.error) : null;
   const hasSignatureZone =
     zones !== undefined && zones.some((zone) => zone.label === "signature");
   const signBlocked = zonesQuery.isPending || (zones !== undefined && !hasSignatureZone);
@@ -104,13 +122,9 @@ export function ScanDialogBody({ doc, mode, onSign, reading, readValues, onRead,
           )}
         </div>
       </div>
-      {zonesQuery.isError && (
-        <p className="text-destructive text-sm">
-          {`The zones did not load: ${
-            zonesQuery.error instanceof ApiError
-              ? zonesQuery.error.message
-              : String(zonesQuery.error)
-          }`}
+      {zonesError !== null && (
+        <p className={zonesError.muted ? "text-sm text-muted-foreground" : "text-destructive text-sm"}>
+          {zonesError.text}
         </p>
       )}
       {zonesQuery.isPending && (
