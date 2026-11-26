@@ -601,16 +601,16 @@ export function AppShell() {
 
   return (
     <div
-      className="flex h-screen"
+      className="flex h-screen max-md:flex-col"
       style={brandVars(theme) as CSSProperties}
     >
       <aside
-        className="flex w-[240px] shrink-0 flex-col border-r border-t-[3px] bg-card"
+        className="flex w-[240px] shrink-0 flex-col border-r border-t-[3px] bg-card max-md:w-full max-md:flex-row max-md:flex-wrap max-md:items-center max-md:gap-2 max-md:border-r-0 max-md:border-b max-md:px-3 max-md:py-2"
         style={{
           borderTopColor: bankQuery.data?.accent_color ?? "transparent",
         }}
       >
-        <div className="flex items-center gap-2.5 px-4 pt-4">
+        <div className="flex items-center gap-2.5 px-4 pt-4 max-md:px-0 max-md:pt-0">
           {theme.logo_url !== null ? (
             <img
               src={theme.logo_url}
@@ -632,7 +632,10 @@ export function AppShell() {
             <span className="text-xs text-muted-foreground">Credits</span>
           </div>
         </div>
-        <nav className="mt-4 flex flex-col gap-0.5 px-3" aria-label="App">
+        <nav
+          className="mt-4 flex flex-col gap-0.5 px-3 max-md:order-last max-md:mt-0 max-md:w-full max-md:flex-row max-md:overflow-x-auto max-md:px-0"
+          aria-label="App"
+        >
           <button
             type="button"
             aria-pressed={view === "inbox"}
@@ -662,7 +665,7 @@ export function AppShell() {
             }`}
           >
             Triage
-            <kbd className="ml-auto inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded border bg-background px-1 font-mono text-[11px] text-muted-foreground">
+            <kbd className="ml-auto inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded border bg-background px-1 font-mono text-[11px] text-muted-foreground max-md:hidden">
               T
             </kbd>
           </button>
@@ -691,15 +694,15 @@ export function AppShell() {
             Audit log
           </button>
         </nav>
-        <div className="mt-4 px-6">
+        <div className="mt-4 px-6 max-md:hidden">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">
             Process
           </p>
           <p className="mt-1 text-sm">{`${def.name} v${versionRow.number}`}</p>
         </div>
-        <div className="mt-auto flex flex-col gap-3 border-t px-4 py-4">
+        <div className="mt-auto flex flex-col gap-3 border-t px-4 py-4 max-md:mt-0 max-md:ml-auto max-md:border-t-0 max-md:p-0">
           {usersQuery.data !== undefined && cardUser !== null && (
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5 max-md:hidden">
               <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-medium">
                 {initials(cardUser.name)}
               </div>
@@ -717,7 +720,10 @@ export function AppShell() {
           )}
           {usersQuery.data !== undefined && (
             <Select value={effectiveUserId} onValueChange={onPickUser}>
-              <SelectTrigger aria-label="Demo profile" className="w-full">
+              <SelectTrigger
+                aria-label="Demo profile"
+                className="w-full max-md:w-[160px]"
+              >
                 <SelectValue>
                   {users.find((u) => u.id === effectiveUserId)?.name ?? ""}
                 </SelectValue>
@@ -731,10 +737,15 @@ export function AppShell() {
               </SelectContent>
             </Select>
           )}
-          <p className="text-xs text-muted-foreground">Powered by Zotra</p>
+          <p className="text-xs text-muted-foreground max-md:hidden">
+            Powered by Zotra
+          </p>
         </div>
+        <p className="w-full text-xs text-muted-foreground md:hidden max-md:order-last">
+          Best on a desktop screen
+        </p>
       </aside>
-      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto max-md:min-h-0">
         {main}
       </main>
     </div>

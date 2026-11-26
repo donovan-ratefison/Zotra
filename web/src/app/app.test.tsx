@@ -495,6 +495,38 @@ describe("app shell", () => {
     expect(html).toContain('aria-keyshortcuts="T"');
   });
 
+  test("demo-8 row 1: a phone screen gets the top bar, the note and the 4 nav buttons", () => {
+    const client = newClient();
+    seedShell(client);
+    const html = renderApp(client);
+    expect(html).toMatch(/<p class="[^"]*md:hidden[^"]*">Best on a desktop screen<\/p>/);
+    expect(html).toMatch(/<aside class="[^"]*max-md:w-full/);
+    const nav = html.match(/<nav[^>]*aria-label="App"[^>]*>([\s\S]*?)<\/nav>/);
+    expect(nav).not.toBeNull();
+    expect(nav![1].match(/<button/g)).toHaveLength(4);
+    for (const label of ["Inbox", "Triage", "Supervision", "Audit log"]) {
+      expect(nav![1]).toContain(label);
+    }
+  });
+
+  test("demo-8 row 2: a phone screen hides the process, the user card and Powered by Zotra", () => {
+    const client = newClient();
+    seedShell(client);
+    const html = renderApp(client);
+    expect(html).toMatch(/<div class="[^"]*max-md:hidden[^"]*"><p[^>]*>Process<\/p>/);
+    expect(html).toMatch(/<div class="[^"]*max-md:hidden[^"]*"><div[^>]*>DA<\/div>/);
+    expect(html).toMatch(/<p class="[^"]*max-md:hidden[^"]*">Powered by Zotra<\/p>/);
+  });
+
+  test("demo-8 row 3: on a phone screen the inbox toolbar wraps and the search takes the full width", () => {
+    const client = newClient();
+    seedShell(client);
+    const html = renderApp(client);
+    expect(html).toMatch(/<div class="[^"]*max-md:flex-wrap[^"]*"><div role="group" aria-label="Filter"/);
+    expect(html).toMatch(/<button type="button" aria-pressed="true" class="whitespace-nowrap /);
+    expect(html).toContain('<div class="relative w-[280px] max-md:w-full">');
+  });
+
   test("6.2 row 13: a logo renders an img and no letter square", () => {
     const client = newClient();
     seedShell(client);

@@ -285,14 +285,14 @@ export function InboxScreen({
         </Hint>
       </div>
       <div className="rounded-lg border bg-card">
-        <div className="flex items-center justify-between gap-3 border-b px-3 py-2.5">
+        <div className="flex items-center justify-between gap-3 border-b px-3 py-2.5 max-md:flex-wrap">
           <div role="group" aria-label="Filter" className="flex rounded-lg bg-muted p-0.5">
             {TABS.map(({ tab: t, text }) => (
               <button
                 key={t}
                 type="button"
                 aria-pressed={tab === t}
-                className={`rounded-md px-3 py-1 text-sm ${
+                className={`whitespace-nowrap rounded-md px-3 py-1 text-sm ${
                   tab === t ? "bg-background font-medium shadow-sm" : ""
                 }`}
                 onClick={() => setTab(t)}
@@ -302,7 +302,7 @@ export function InboxScreen({
               </button>
             ))}
           </div>
-          <div className="relative w-[280px]">
+          <div className="relative w-[280px] max-md:w-full">
             <Search
               size={16}
               className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted-foreground"
