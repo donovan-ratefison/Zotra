@@ -5,6 +5,7 @@ import App from "./App";
 import { AppShell } from "./app/AppShell";
 import { FeedbackBoard } from "./feedback/FeedbackBoard";
 import { ReportButton } from "./feedback/ReportButton";
+import { BannerFrame } from "./studio/ReplayBanner";
 import { Toaster } from "@/ui/sonner";
 import "@fontsource-variable/inter/index.css";
 import "./styles.css";
@@ -26,7 +27,9 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <>
         {app ? (
           <QueryClientProvider client={appClient}>
-            <AppShell />
+            <BannerFrame>
+              <AppShell />
+            </BannerFrame>
           </QueryClientProvider>
         ) : (
           <App />

@@ -2,7 +2,7 @@ import { renderToString } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
-import { fetchHealth, ReplayBanner } from "./studio/ReplayBanner";
+import { bannerLine, fetchHealth, KEY_HELP_URL, ReplayBanner, TOUR_URL } from "./studio/ReplayBanner";
 
 describe("App", () => {
   test("27: with no answer from the API, the shell renders the loading state", () => {
@@ -19,7 +19,7 @@ describe("App", () => {
 
 // The banner rows: the query cache holds the health answer, so the
 // server render shows the state with no fetch.
-function bannerHtml(health?: { ai_mode: string }) {
+function bannerHtml(health?: { ai_mode?: string; demo_notice?: string }) {
   const client = new QueryClient();
   if (health) {
     client.setQueryData(["health"], health);
@@ -76,5 +76,31 @@ describe("replay banner", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("banner line", () => {
+  const replayLine = {
+    text: "AI answers are replayed for the sample policies. Add your Meta key for live AI.",
+    linkText: "How to add a key",
+    href: KEY_HELP_URL,
+  };
+
+  test.each([
+    ["notice wins over replay", { demo_notice: "Demo", ai_mode: "replay" }, { text: "Demo", linkText: "Guided tour", href: TOUR_URL }],
+    ["blank notice falls back to replay", { demo_notice: "  ", ai_mode: "replay" }, replayLine],
+    ["replay mode", { ai_mode: "replay" }, replayLine],
+    ["cache mode", { ai_mode: "cache" }, null],
+    ["no answer", undefined, null],
+  ])("demo1: %s", (_name, health, want) => {
+    expect(bannerLine(health)).toEqual(want);
+  });
+
+  test("demo1: the banner shows the notice and the tour link", () => {
+    const html = bannerHtml({ demo_notice: "Demo" });
+    expect(html).toContain('role="status"');
+    expect(html).toContain("Demo");
+    expect(html).toContain("Guided tour");
+    expect(html).toContain(`href="${TOUR_URL}"`);
   });
 });
