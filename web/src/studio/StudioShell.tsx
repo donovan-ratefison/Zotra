@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -28,6 +29,7 @@ import { updatePolicy } from "./ai-api";
 import { PolicyDraftDialog } from "./PolicyDraft";
 import { readCase, type CaseDTO, type CaseState } from "./case-api";
 import { Button } from "@/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/ui/tabs";
 import { BrandLoader } from "@/components/BrandLoader";
 import { cn } from "@/lib/utils";
 import { compareUrl } from "./compare";
@@ -138,6 +140,23 @@ function ErrorScreen({ error }: { error: unknown }) {
 
 const TAB_VALUES: PanelTab[] = ["general", "requirements", "scope"];
 
+// The pane of the design view that a phone screen shows. From the md
+// breakpoint up, all panes show side by side.
+export type Pane = "diagram" | "assistant" | "step";
+
+// paneClasses gives the mobile classes of the three panes: the
+// selected pane fills the main area, the other panes are hidden. The
+// classes have the max-md variant only, so the md layout stays.
+export function paneClasses(pane: Pane): { diagram: string; chat: string; aside: string } {
+  const on = "max-md:flex max-md:min-h-0 max-md:w-full max-md:flex-1 max-md:flex-col";
+  const off = "max-md:hidden";
+  return {
+    diagram: pane === "diagram" ? on : off,
+    chat: pane === "assistant" ? on : off,
+    aside: pane === "step" ? on : off,
+  };
+}
+
 // caseVersionUrl builds the studio URL that pins a test case on its
 // own version: a reload reopens the same case on the same version.
 export function caseVersionUrl(
@@ -195,6 +214,8 @@ export function StudioShell() {
   const [policyMax, setPolicyMax] = useState(false);
   const [asideWidth, setAsideWidth] = useState(380);
   const [chatHeight, setChatHeight] = useState(220);
+  const [pane, setPane] = useState<Pane>("diagram");
+  const panes = paneClasses(pane);
   const columnRef = useRef<HTMLDivElement | null>(null);
   const policyRef = useRef<HTMLDivElement | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);
@@ -618,6 +639,9 @@ export function StudioShell() {
       return;
     }
     select(id);
+    if (id !== null) {
+      setPane("step");
+    }
   }
   const selectedNode =
     selectedNodeId === null
@@ -856,7 +880,13 @@ export function StudioShell() {
               : undefined
           }
         />
-        <main ref={mainRef} className="flex min-h-0 flex-1">
+        <main
+          ref={mainRef}
+          className={cn(
+            "flex min-h-0 flex-1",
+            compareBase === null && mode !== "test" && "max-md:flex-col",
+          )}
+        >
           {compareBase !== null ? (
             // The key resets the pair when History opens another compare.
             <CompareScreen
@@ -870,65 +900,87 @@ export function StudioShell() {
             <TestScreen def={loaded.definition} version={version} />
           ) : (
             <>
-              <div ref={columnRef} className="flex min-w-0 flex-1 flex-col">
-                <div className={diagramClass}>
-                  <ProcessDiagram
-                    def={chatProposal ?? loaded.definition}
-                    selectedNodeId={selectedNodeId}
-                    onNodeSelect={selectOnDiagram}
-                    ghost={false}
-                    ghostIds={
-                      chatProposal !== null
-                        ? changedIds(loaded.definition, chatProposal)
-                        : undefined
-                    }
-                    onCitationClick={onCitationClick}
-                    highlightNodeIds={selectedNodeId === null ? canvasFocus : null}
-                    edit={
-                      editing
-                        ? {
-                            onAdd: (t) => void onAdd(t),
-                            onConnect,
-                            onDeleteNode,
-                            onDeleteEdge,
-                            onUndo: () => void step("undo"),
-                            onRedo: () => void step("redo"),
-                            canUndo: history.undo.length > 0,
-                            canRedo: history.redo.length > 0,
-                            versionNumber: version.number,
-                            savedAt,
-                          }
-                        : null
-                    }
+              <Tabs
+                value={pane}
+                onValueChange={(value) => setPane(value as Pane)}
+                className="h-10 shrink-0 items-center gap-3 border-b px-2 data-[orientation=horizontal]:flex-row md:hidden"
+              >
+                <TabsList aria-label="Studio panes" className="shrink-0">
+                  <TabsTrigger value="diagram">Diagram</TabsTrigger>
+                  <TabsTrigger value="assistant">Assistant</TabsTrigger>
+                  <TabsTrigger value="step">Step</TabsTrigger>
+                </TabsList>
+                <span className="min-w-0 truncate text-xs text-muted-foreground">
+                  Best on a desktop screen
+                </span>
+              </Tabs>
+              <div
+                ref={columnRef}
+                className={cn("flex min-w-0 flex-1 flex-col", pane === "step" && "max-md:hidden")}
+              >
+                {/* The diagram pane. From md up, the wrapper has no box. */}
+                <div className={cn("md:contents", panes.diagram)}>
+                  <div className={diagramClass}>
+                    <ProcessDiagram
+                      def={chatProposal ?? loaded.definition}
+                      selectedNodeId={selectedNodeId}
+                      onNodeSelect={selectOnDiagram}
+                      ghost={false}
+                      ghostIds={
+                        chatProposal !== null
+                          ? changedIds(loaded.definition, chatProposal)
+                          : undefined
+                      }
+                      onCitationClick={onCitationClick}
+                      highlightNodeIds={selectedNodeId === null ? canvasFocus : null}
+                      edit={
+                        editing
+                          ? {
+                              onAdd: (t) => void onAdd(t),
+                              onConnect,
+                              onDeleteNode,
+                              onDeleteEdge,
+                              onUndo: () => void step("undo"),
+                              onRedo: () => void step("redo"),
+                              canUndo: history.undo.length > 0,
+                              canRedo: history.redo.length > 0,
+                              versionNumber: version.number,
+                              savedAt,
+                            }
+                          : null
+                      }
+                    />
+                  </div>
+                  {policyBlock}
+                </div>
+                <div className="contents max-md:hidden">
+                  <ResizeHandle
+                    orientation="horizontal"
+                    label="Resize the chat"
+                    value={chatHeight}
+                    min={120}
+                    max={480}
+                    step={20}
+                    onResize={setChatHeight}
+                    measure={(e) => {
+                      // The list sits below the chat header: its new
+                      // height is the cursor distance to the list
+                      // bottom, less the header height.
+                      const section = chatRef.current?.firstElementChild;
+                      const header = section?.firstElementChild;
+                      const list = chatRef.current?.querySelector("#chat-thread");
+                      if (header == null || list == null) {
+                        return chatHeight;
+                      }
+                      return (
+                        list.getBoundingClientRect().bottom -
+                        e.clientY -
+                        header.getBoundingClientRect().height
+                      );
+                    }}
                   />
                 </div>
-                {policyBlock}
-                <ResizeHandle
-                  orientation="horizontal"
-                  label="Resize the chat"
-                  value={chatHeight}
-                  min={120}
-                  max={480}
-                  step={20}
-                  onResize={setChatHeight}
-                  measure={(e) => {
-                    // The list sits below the chat header: its new
-                    // height is the cursor distance to the list
-                    // bottom, less the header height.
-                    const section = chatRef.current?.firstElementChild;
-                    const header = section?.firstElementChild;
-                    const list = chatRef.current?.querySelector("#chat-thread");
-                    if (header == null || list == null) {
-                      return chatHeight;
-                    }
-                    return (
-                      list.getBoundingClientRect().bottom -
-                      e.clientY -
-                      header.getBoundingClientRect().height
-                    );
-                  }}
-                />
-                <div ref={chatRef} className="shrink-0">
+                <div ref={chatRef} className={cn("shrink-0", panes.chat)}>
                   <AssistantChat
                     version={loaded}
                     def={loaded.definition}
@@ -944,23 +996,28 @@ export function StudioShell() {
                   />
                 </div>
               </div>
-              <ResizeHandle
-                orientation="vertical"
-                label="Resize the step panel"
-                value={asideWidth}
-                min={300}
-                max={640}
-                step={20}
-                onResize={setAsideWidth}
-                measure={(e) => {
-                  const main = mainRef.current?.getBoundingClientRect();
-                  return main === undefined ? asideWidth : main.right - e.clientX;
-                }}
-              />
+              <div className="contents max-md:hidden">
+                <ResizeHandle
+                  orientation="vertical"
+                  label="Resize the step panel"
+                  value={asideWidth}
+                  min={300}
+                  max={640}
+                  step={20}
+                  onResize={setAsideWidth}
+                  measure={(e) => {
+                    const main = mainRef.current?.getBoundingClientRect();
+                    return main === undefined ? asideWidth : main.right - e.clientX;
+                  }}
+                />
+              </div>
               <aside
                 aria-label="Step detail"
-                className="flex shrink-0 flex-col border-l"
-                style={{ width: asideWidth }}
+                className={cn(
+                  "flex w-full shrink-0 flex-col md:w-[var(--aside-w)] md:border-l",
+                  panes.aside,
+                )}
+                style={{ "--aside-w": `${asideWidth}px` } as CSSProperties}
               >
                 {selectedNodeId === null ? (
                   <ProcessPanel
@@ -1077,12 +1134,12 @@ export function TopBar({
   const dirty = useStudioStore((s) => s.dirty);
   return (
     <header
-      className="flex h-12 w-full shrink-0 items-center gap-3 border-b px-4"
+      className="flex h-12 w-full shrink-0 items-center gap-3 border-b px-4 max-md:overflow-x-auto"
       style={{ background: "var(--card)" }}
     >
       <img src="/zotra-wordmark.svg" alt="Zotra" width={76} height={22} className="shrink-0" />
       <span className="h-5 w-px shrink-0" style={{ background: "var(--border)" }} />
-      <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1 text-[13px]">
+      <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1 text-[13px] max-md:shrink-0">
         <a
           href="/processes"
           title="All processes"
