@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -68,5 +69,38 @@ func TestHealthAIMode(t *testing.T) {
 	handler.ServeHTTP(rec, httptest.NewRequest("GET", "/api/health", nil))
 	if !strings.Contains(rec.Body.String(), `"ai_mode":"replay"`) {
 		t.Errorf("body does not contain ai_mode replay: %q", rec.Body.String())
+	}
+}
+
+func TestHealthDemoNotice(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		set   bool
+		want  string
+	}{
+		{name: "text is trimmed", value: "  Demo text  ", set: true, want: `"demo_notice":"Demo text"`},
+		{name: "blank text", value: "   ", set: true},
+		{name: "unset"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// t.Setenv restores the old value at the end of the test.
+			t.Setenv("ZOTRA_DEMO_NOTICE", tt.value)
+			if !tt.set {
+				os.Unsetenv("ZOTRA_DEMO_NOTICE")
+			}
+			handler := NewHandler(fstest.MapFS{}, "test", nil, "")
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest("GET", "/api/health", nil))
+			body := rec.Body.String()
+			if tt.want != "" {
+				if !strings.Contains(body, tt.want) {
+					t.Errorf("body does not contain %q: %q", tt.want, body)
+				}
+			} else if strings.Contains(body, "demo_notice") {
+				t.Errorf("body contains demo_notice: %q", body)
+			}
+		})
 	}
 }

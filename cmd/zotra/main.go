@@ -57,6 +57,7 @@ Zotra serves the web app and the API. Environment variables:
   ZOTRA_AI_CACHE_DIR     Folder of the AI cache. Default local/ai-cache.
   ZOTRA_AI_STATE_DIR     Folder of the daily AI budget. Empty: the cache folder.
   ZOTRA_AI_BUDGET_USD    Daily AI budget in USD. Default 2.
+  ZOTRA_DEMO_NOTICE      Text of the top line on a public demo. Empty: no notice.
 
 health asks /api/health of the app on ZOTRA_ADDR and exits 1 if it fails.
 `

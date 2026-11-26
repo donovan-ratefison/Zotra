@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/donovan-ratefison/zotra/internal/ai"
@@ -32,6 +33,10 @@ func NewHandler(static fs.FS, version string, st *store.Store, feedbackDir strin
 
 	cfg := ai.LoadConfig()
 	health := map[string]string{"status": "ok", "version": version, "ai_mode": cfg.Mode}
+	// A public demo shows this text in the top line of the web app.
+	if notice := strings.TrimSpace(os.Getenv("ZOTRA_DEMO_NOTICE")); notice != "" {
+		health["demo_notice"] = notice
+	}
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, _ *http.Request) {
 		b, _ := json.Marshal(health)
 		w.Header().Set("Content-Type", "application/json")
